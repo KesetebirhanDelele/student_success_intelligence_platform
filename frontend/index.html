@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSIP Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    header { background: #1e293b; border-bottom: 1px solid #334155; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .5px; }
+    .badge { font-size: .7rem; background: #0ea5e9; color: #fff; border-radius: 999px; padding: 2px 8px; font-weight: 600; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .dot-green { background: #22c55e; }
+    .dot-red   { background: #ef4444; }
+    main { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.2rem; }
+    .card .label { font-size: .75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
+    .card .value { font-size: 2rem; font-weight: 700; margin-top: .25rem; }
+    .card .sub   { font-size: .8rem; color: #64748b; margin-top: .2rem; }
+    .blue  { color: #38bdf8; }
+    .green { color: #4ade80; }
+    .yellow{ color: #fbbf24; }
+    .red   { color: #f87171; }
+    .purple{ color: #a78bfa; }
+    section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: #cbd5e1; }
+    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    select, input, button { border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: .45rem .75rem; font-size: .85rem; }
+    button { background: #0ea5e9; border-color: #0ea5e9; color: #fff; cursor: pointer; font-weight: 600; transition: opacity .15s; }
+    button:hover { opacity: .85; }
+    button.danger { background: #ef4444; border-color: #ef4444; }
+    button.neutral { background: #475569; border-color: #475569; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th { text-align: left; padding: .5rem .75rem; color: #64748b; text-transform: uppercase; font-size: .7rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
+    td { padding: .55rem .75rem; border-bottom: 1px solid #1e293b; }
+    tr:last-child td { border-bottom: none; }
+    .state { border-radius: 4px; padding: 2px 7px; font-size: .7rem; font-weight: 600; text-transform: uppercase; }
+    .s-contacted   { background:#0c4a6e; color:#38bdf8; }
+    .s-responded   { background:#14532d; color:#4ade80; }
+    .s-no_response { background:#451a03; color:#fbbf24; }
+    .s-closed      { background:#1e1b4b; color:#a78bfa; }
+    .s-eligible    { background:#1e293b; color:#94a3b8; }
+    .s-queued      { background:#1e3a5f; color:#60a5fa; }
+    .s-other       { background:#1e293b; color:#94a3b8; }
+    #log { font-family: monospace; font-size: .75rem; background: #0f172a; border-radius: 6px; padding: .75rem; max-height: 180px; overflow-y: auto; color: #94a3b8; }
+    #log p { margin: 2px 0; }
+    .info { color: #38bdf8; }
+    .err  { color: #f87171; }
+    .ok   { color: #4ade80; }
+    .empty { color: #475569; text-align: center; padding: 2rem; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>SSIP Dashboard</h1>
+  <span class="badge">MVP</span>
+  <span style="margin-left:auto; font-size:.8rem; color:#94a3b8">
+    Scheduler: <span id="sched-status">—</span>
+  </span>
+</header>
+
+<main>
+  <!-- Metrics -->
+  <div class="grid" id="metrics-grid">
+    <div class="card"><div class="label">Total Outreach</div><div class="value blue" id="m-total">—</div></div>
+    <div class="card"><div class="label">Contacted</div><div class="value blue" id="m-contacted">—</div></div>
+    <div class="card"><div class="label">Responded</div><div class="value green" id="m-responded">—</div></div>
+    <div class="card"><div class="label">No Response</div><div class="value yellow" id="m-no_response">—</div></div>
+    <div class="card"><div class="label">Meetings Booked</div><div class="value purple" id="m-meeting">—</div></div>
+    <div class="card"><div class="label">Closed</div><div class="value red" id="m-closed">—</div></div>
+    <div class="card"><div class="label">Success Rate</div><div class="value green" id="m-success">—</div><div class="sub">responded / total</div></div>
+    <div class="card"><div class="label">Meeting Rate</div><div class="value purple" id="m-mrate">—</div></div>
+  </div>
+
+  <!-- Trigger Outreach -->
+  <section>
+    <h2>Trigger Outreach Batch</h2>
+    <div class="controls">
+      <select id="checkpoint">
+        <option value="SQL">SQL</option>
+        <option value="SSRS">SSRS</option>
+        <option value="SSIS">SSIS</option>
+        <option value="POST_COMPLETION">Post Completion</option>
+      </select>
+      <button onclick="triggerOutreach()">Run Batch</button>
+    </div>
+  </section>
+
+  <!-- Student lookup -->
+  <section>
+    <h2>Student Lookup</h2>
+    <div class="controls">
+      <input id="student-id" type="number" placeholder="Student ID" style="width:140px" />
+      <button onclick="lookupStudent()">Look Up</button>
+    </div>
+    <div id="student-result"></div>
+  </section>
+
+  <!-- Manual action -->
+  <section>
+    <h2>Manual Action</h2>
+    <div class="controls">
+      <input id="action-user-id" type="number" placeholder="Student ID" style="width:140px" />
+      <select id="action-type">
+        <option value="CLOSE_CASE">Close Case</option>
+        <option value="BOOK_MEETING">Book Meeting</option>
+      </select>
+      <button class="danger" onclick="executeAction()">Execute</button>
+    </div>
+  </section>
+
+  <!-- Activity log -->
+  <section>
+    <h2>Activity Log</h2>
+    <div id="log"><p class="info">Waiting for activity…</p></div>
+  </section>
+</main>
+
+<script>
+  const BASE = '';
+
+  function log(msg, cls='info') {
+    const el = document.getElementById('log');
+    const p = document.createElement('p');
+    p.className = cls;
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    el.prepend(p);
+  }
+
+  function stateClass(s) {
+    const map = { CONTACTED:'s-contacted', RESPONDED:'s-responded', NO_RESPONSE:'s-no_response', CLOSED:'s-closed', ELIGIBLE:'s-eligible', QUEUED:'s-queued' };
+    return map[s] || 's-other';
+  }
+
+  async function apiFetch(path, opts={}) {
+    const r = await fetch(BASE + path, { headers: {'Content-Type':'application/json'}, ...opts });
+    return r.json();
+  }
+
+  async function loadHealth() {
+    try {
+      const res = await apiFetch('/health');
+      if (res.status === 'success') {
+        const el = document.getElementById('sched-status');
+        const active = res.data.scheduler_status === 'active';
+        el.innerHTML = `<span class="status-dot ${active ? 'dot-green' : 'dot-red'}"></span>${res.data.scheduler_status}`;
+      }
+    } catch(e) { /* silent */ }
+  }
+
+  async function loadMetrics() {
+    try {
+      const res = await apiFetch('/metrics');
+      if (res.status !== 'success') return;
+      const d = res.data;
+      document.getElementById('m-total').textContent     = d.total_outreach;
+      document.getElementById('m-contacted').textContent = d.contacted;
+      document.getElementById('m-responded').textContent = d.responded;
+      document.getElementById('m-no_response').textContent = d.no_response;
+      document.getElementById('m-meeting').textContent   = d.meeting_booked;
+      document.getElementById('m-closed').textContent    = d.closed;
+      document.getElementById('m-success').textContent   = (d.success_rate * 100).toFixed(1) + '%';
+      document.getElementById('m-mrate').textContent     = (d.meeting_rate * 100).toFixed(1) + '%';
+    } catch(e) { /* silent */ }
+  }
+
+  async function triggerOutreach() {
+    const checkpoint = document.getElementById('checkpoint').value;
+    log(`Triggering batch for checkpoint: ${checkpoint}…`);
+    try {
+      const res = await apiFetch('/outreach/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ checkpoint_type: checkpoint }),
+      });
+      if (res.status === 'success') {
+        const s = res.data.summary;
+        log(`Batch complete — triggered:${s.triggered} skipped:${s.skipped} errors:${s.errors}`, 'ok');
+      } else {
+        log(`Error: ${res.error?.message}`, 'err');
+      }
+      loadMetrics();
+    } catch(e) { log(`Request failed: ${e}`, 'err'); }
+  }
+
+  async function lookupStudent() {
+    const id = document.getElementById('student-id').value;
+    if (!id) return;
+    const el = document.getElementById('student-result');
+    el.innerHTML = '';
+    try {
+      const res = await apiFetch(`/students/${id}`);
+      if (res.status !== 'success') {
+        el.innerHTML = `<p class="empty">${res.error?.message || 'Not found'}</p>`;
+        return;
+      }
+      const d = res.data;
+      const rows = d.history.map(h => `
+        <tr>
+          <td>${h.outreach_id}</td>
+          <td>${h.checkpoint_type}</td>
+          <td><span class="state ${stateClass(h.state)}">${h.state}</span></td>
+          <td>${h.contact_attempt}</td>
+          <td>${h.call_connected ? 'Yes' : 'No'}</td>
+          <td>${h.meeting_booked ? 'Yes' : 'No'}</td>
+          <td>${h.contact_date ? new Date(h.contact_date).toLocaleString() : '—'}</td>
+        </tr>`).join('');
+      el.innerHTML = `
+        <p style="margin-bottom:.75rem;color:#94a3b8">Student <strong style="color:#e2e8f0">${id}</strong> — current state: <span class="state ${stateClass(d.state)}">${d.state}</span></p>
+        <table>
+          <thead><tr><th>ID</th><th>Checkpoint</th><th>State</th><th>Attempt</th><th>Connected</th><th>Meeting</th><th>Date</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="7" class="empty">No records</td></tr>'}</tbody>
+        </table>`;
+    } catch(e) { el.innerHTML = `<p class="empty">Error: ${e}</p>`; }
+  }
+
+  async function executeAction() {
+    const userId = document.getElementById('action-user-id').value;
+    const actionType = document.getElementById('action-type').value;
+    if (!userId) return;
+    log(`Executing ${actionType} for student ${userId}…`);
+    try {
+      const res = await apiFetch('/actions/manual', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: parseInt(userId), action_type: actionType }),
+      });
+      if (res.status === 'success') {
+        log(`${actionType} executed for student ${userId}`, 'ok');
+        loadMetrics();
+      } else {
+        log(`Error: ${res.error?.message}`, 'err');
+      }
+    } catch(e) { log(`Request failed: ${e}`, 'err'); }
+  }
+
+  // Initial load + auto-refresh every 30s
+  loadHealth();
+  loadMetrics();
+  setInterval(() => { loadHealth(); loadMetrics(); }, 30000);
+</script>
+</body>
+</html>
