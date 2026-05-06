@@ -101,6 +101,13 @@
     .s-CLOSED                { background: #f7fafc; color: #718096; }
     .s-other                 { background: #f7fafc; color: #718096; }
 
+    /* ── Priority level badges ──────────────────────────────────── */
+    .p-badge { font-size: .62rem; font-weight: 700; border-radius: 3px; padding: 2px 7px; display: inline-block; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+    .p-URGENT { background: #fff5f5; color: #c53030; border: 1px solid #fc8181; }
+    .p-HIGH   { background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; }
+    .p-MEDIUM { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
+    .p-LOW    { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+
     /* ── Alert rows ──────────────────────────────────────────────── */
     .alert-item { border-left: 3px solid; padding: .6rem .85rem; margin-bottom: .5rem; border-radius: 0 4px 4px 0; }
     .alert-critical { border-color: var(--color-secondary); background: #fff5f5; }
@@ -354,6 +361,68 @@
     </div>
   </div>
 
+  <!-- Operations -->
+  <div class="section-label mb-3">Operations</div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailSourceSummary()">
+        <div class="card-header">
+          <span>Source Analysis</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-source">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-source" aria-expanded="false" onclick="event.stopPropagation();loadExpandSource()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-source">Loading…</div>
+          <div id="met-source" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-source">
+          <div class="expand-inner" id="expand-source-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailWorkQueue()">
+        <div class="card-header">
+          <span>Work Queue</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-workqueue">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-workqueue" aria-expanded="false" onclick="event.stopPropagation();initExpandWorkQueue()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-workqueue">Loading…</div>
+          <div id="met-workqueue" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-workqueue">
+          <div class="expand-inner" id="expand-workqueue-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Batch Preview Modal ──────────────────────────────────────── -->
+<div class="modal fade" id="batchPreviewModal" tabindex="-1" role="dialog" aria-modal="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Batch Preview <span class="mode-shadow ms-2">SHADOW</span></h5>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="batch-preview-body" style="background:var(--color-bg)">
+        <p class="text-center text-muted py-3">Loading preview…</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" id="batch-run-btn" onclick="executeBatch()">Run Batch <span class="mode-shadow ms-1">SHADOW</span></button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── Modal ───────────────────────────────────────────────────────── -->
@@ -381,6 +450,8 @@
   let _execMode    = 'SHADOW';
   let _bsModal     = null;
   let _allExpanded = false;
+  let _bsBatchModal = null;
+  let _batchPreviewCheckpoint = '';
 
   // Track which static panels have been initialized
   const _initDone = {};
@@ -388,6 +459,14 @@
   function getModal() {
     if (!_bsModal) _bsModal = new bootstrap.Modal(document.getElementById('mainModal'));
     return _bsModal;
+  }
+  function getBatchModal() {
+    if (!_bsBatchModal) _bsBatchModal = new bootstrap.Modal(document.getElementById('batchPreviewModal'));
+    return _bsBatchModal;
+  }
+  function priorityBadge(level) {
+    const map = { URGENT: 'p-URGENT', HIGH: 'p-HIGH', MEDIUM: 'p-MEDIUM', LOW: 'p-LOW' };
+    return `<span class="p-badge ${map[level] || 'p-badge'}">${level || '—'}</span>`;
   }
 
   function sc(s) {
@@ -480,10 +559,12 @@
       loadExpandStates();
       loadExpandChannels();
       loadExpandActivity();
+      loadExpandSource();
       initExpandStudents();
       initExpandActions();
       initExpandTrigger();
       initExpandSync();
+      initExpandWorkQueue();
     }
     const btn = document.getElementById('expand-all-btn');
     if (btn) btn.textContent = _allExpanded ? '⊟ Collapse All' : '⊞ Expand All';
@@ -625,6 +706,83 @@
     } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
   }
 
+  async function loadExpandSource() {
+    const el = document.getElementById('expand-source-content');
+    if (!el) return;
+    try {
+      const res = await api('/source/summary');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const d = res.data;
+      el.innerHTML = `
+        <div class="d-flex flex-wrap gap-3 mb-2 small">
+          <span>Source: <strong style="color:var(--color-primary)">${d.total_source ?? 0}</strong></span>
+          <span>Tracked: <strong class="text-success">${d.total_tracked ?? 0}</strong></span>
+          <span>Untracked: <strong class="${(d.total_untracked ?? 0) > 0 ? 'text-warning' : 'text-muted'}">${d.total_untracked ?? 0}</strong></span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
+            <thead class="table-light"><tr><th>Path</th><th>Total</th><th>Tracked</th><th>Untracked</th><th>URGENT</th><th>HIGH</th><th>MED</th><th>LOW</th></tr></thead>
+            <tbody>${(d.by_path || []).map(p => `<tr>
+              <td class="fw-semibold">${p.path}</td><td>${p.total}</td>
+              <td class="text-success">${p.tracked}</td>
+              <td class="${p.untracked > 0 ? 'text-warning fw-semibold' : 'text-muted'}">${p.untracked}</td>
+              <td class="text-danger">${p.risk?.URGENT ?? 0}</td>
+              <td class="text-warning">${p.risk?.HIGH ?? 0}</td>
+              <td class="text-info">${p.risk?.MEDIUM ?? 0}</td>
+              <td class="text-muted">${p.risk?.LOW ?? 0}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  async function initExpandWorkQueue() {
+    if (_initDone.workqueue) return;
+    _initDone.workqueue = true;
+    const el = document.getElementById('expand-workqueue-content');
+    if (!el) return;
+    const QLABELS = [
+      ['untracked','Untracked'],['eligible','Eligible'],['contacted','Contacted'],
+      ['intervention','Intervention'],['retry_due','Retry Due'],
+    ];
+    let counts = {};
+    try {
+      const r = await api('/work-queue/summary');
+      counts = r.data?.queues || {};
+    } catch (_) {}
+    el.innerHTML = `
+      <div class="d-flex flex-wrap gap-1 mb-2">
+        ${QLABELS.map(([q, l]) => `<button class="btn btn-sm btn-outline-secondary" onclick="loadExpandWorkQueueTab('${q}')" style="font-size:.72rem;padding:2px 10px">${l} <span class="badge bg-secondary ms-1">${counts[q] ?? 0}</span></button>`).join('')}
+      </div>
+      <div id="expand-workqueue-table" class="small"><p class="text-muted">Select a queue above</p></div>`;
+  }
+
+  async function loadExpandWorkQueueTab(queueName) {
+    const el = document.getElementById('expand-workqueue-table');
+    if (!el) return;
+    el.innerHTML = '<p class="text-muted small">Loading…</p>';
+    try {
+      const res = await api(`/work-queue/${queueName}?limit=10`);
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small">Failed</p>'; return; }
+      const { rows, total } = res.data;
+      if (!rows?.length) { el.innerHTML = '<p class="text-muted small">No students in this queue</p>'; return; }
+      el.innerHTML = `
+        <div class="text-muted mb-1" style="font-size:.7rem">Top 10 of ${total} (priority sorted)</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
+            <thead class="table-light"><tr><th>Student</th><th>Path</th><th>Priority</th><th>Recommended Action</th><th>State</th></tr></thead>
+            <tbody>${rows.map(r => `<tr>
+              <td class="fw-semibold">${r.name || ('#' + r.user_id)}</td>
+              <td class="text-muted">${r.path || '—'}</td>
+              <td>${priorityBadge(r.priority_level)} <span class="text-muted" style="font-size:.7rem">${r.priority_score}</span></td>
+              <td class="text-muted small">${(r.recommended_action || '—').replace(/_/g,' ')}</td>
+              <td>${r.state ? `<span class="${sc(r.state)}">${sp(r.state)}</span>` : '<span class="text-muted">—</span>'}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (_) { el.innerHTML = '<p class="text-danger small">Error</p>'; }
+  }
+
   // ── Inline static expand panels ────────────────────────────────
 
   function initExpandStudents() {
@@ -659,7 +817,7 @@
       <div id="inline-action-result" class="text-muted small"></div>`;
   }
 
-  function initExpandTrigger() {
+  async function initExpandTrigger() {
     if (_initDone.trigger) return;
     _initDone.trigger = true;
     const el = document.getElementById('expand-trigger-content');
@@ -667,14 +825,30 @@
     el.innerHTML = `
       <div class="d-flex gap-2 align-items-center flex-wrap">
         <select id="inline-checkpoint" class="form-select form-select-sm" style="max-width:180px">
-          <option value="SQL">SQL</option>
-          <option value="SSRS">SSRS</option>
-          <option value="SSIS">SSIS</option>
-          <option value="POST_COMPLETION">Post Completion</option>
+          <option value="">Loading paths…</option>
         </select>
+        <button class="btn btn-sm btn-outline-primary" onclick="previewFromTrigger()">Preview</button>
         <button class="btn btn-sm btn-primary" onclick="triggerOutreachInline()">Run Batch</button>
         <span id="inline-trigger-result" class="text-muted small"></span>
       </div>`;
+    // Populate paths dynamically
+    try {
+      const res = await api('/source/paths');
+      const paths = res.data?.paths || [];
+      const sel = document.getElementById('inline-checkpoint');
+      if (sel) {
+        sel.innerHTML = paths.length
+          ? paths.map(p => `<option value="${p}">${p}</option>`).join('')
+          : '<option value="">No paths found</option>';
+      }
+    } catch (_) {
+      const sel = document.getElementById('inline-checkpoint');
+      if (sel) sel.innerHTML = ['SQL','SSRS','SSIS','POST_COMPLETION'].map(p => `<option value="${p}">${p}</option>`).join('');
+    }
+  }
+  function previewFromTrigger() {
+    const cp = document.getElementById('inline-checkpoint')?.value;
+    if (cp) batchPreview(cp);
   }
 
   function initExpandSync() {
@@ -900,6 +1074,38 @@
     } catch (_) {}
   }
 
+  async function loadSourceSummary() {
+    try {
+      const res = await api('/source/summary');
+      if (res.status !== 'success') return;
+      const d = res.data;
+      const untracked = d.total_untracked ?? 0;
+      const total = d.total_source ?? 0;
+      const tracked = d.total_tracked ?? 0;
+      setBadge('source', untracked > 0 ? 'warning' : 'ok', untracked > 0 ? `${untracked} NEW` : 'OK');
+      setSummary('source', `${total} source · ${tracked} tracked · <span class="${untracked > 0 ? 'text-warning fw-semibold' : 'text-success'}">${untracked} untracked</span>`);
+      setMetric('source', `<span class="card-metric metric-info">${total}</span><span class="card-metric-sub">students</span>`);
+    } catch (_) {}
+  }
+
+  async function loadWorkQueueSummary() {
+    try {
+      const res = await api('/work-queue/summary');
+      if (res.status !== 'success') return;
+      const q = res.data.queues || {};
+      const intervention = q.intervention || 0;
+      const urgent = (q.eligible || 0) + (q.retry_due || 0);
+      setBadge('workqueue',
+        intervention > 0 ? 'critical' : urgent > 0 ? 'warning' : 'ok',
+        intervention > 0 ? 'ACTION' : urgent > 0 ? 'PENDING' : 'OK');
+      setSummary('workqueue',
+        `${q.untracked || 0} untracked · ${q.eligible || 0} eligible · ${q.retry_due || 0} retry due · ${intervention} intervention`);
+      setMetric('workqueue',
+        `<span class="card-metric ${intervention > 0 ? 'metric-danger' : 'metric-warning'}">${intervention > 0 ? intervention : urgent}</span>` +
+        `<span class="card-metric-sub">${intervention > 0 ? 'intervention' : 'action needed'}</span>`);
+    } catch (_) {}
+  }
+
   // ── Detail modal views ─────────────────────────────────────────
 
   async function detailHealth() {
@@ -1071,6 +1277,107 @@
     } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
+  async function detailSourceSummary() {
+    openModal('Source Analysis', '<p class="text-center text-muted py-4">Loading…</p>');
+    try {
+      const res = await api('/source/summary');
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
+      const d = res.data;
+      document.getElementById('modal-body').innerHTML = `
+        <div class="row g-2 mb-3">
+          ${kpiBox('Total Source', d.total_source ?? 0, 'metric-primary')}
+          ${kpiBox('Tracked', d.total_tracked ?? 0, 'metric-success')}
+          ${kpiBox('Untracked', d.total_untracked ?? 0, (d.total_untracked ?? 0) > 0 ? 'metric-warning' : 'metric-success')}
+          ${kpiBox('Pathways', (d.by_path || []).length, 'metric-info')}
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr>
+              <th>Pathway</th><th>Total</th><th>Tracked</th><th>Untracked</th>
+              <th>URGENT</th><th>HIGH</th><th>MEDIUM</th><th>LOW</th>
+            </tr></thead>
+            <tbody>${(d.by_path || []).map(p => `<tr>
+              <td class="fw-semibold">${p.path}</td><td>${p.total}</td>
+              <td class="text-success">${p.tracked}</td>
+              <td class="${p.untracked > 0 ? 'text-warning fw-semibold' : 'text-muted'}">${p.untracked}</td>
+              <td class="text-danger">${p.risk?.URGENT ?? 0}</td>
+              <td class="text-warning">${p.risk?.HIGH ?? 0}</td>
+              <td class="text-info">${p.risk?.MEDIUM ?? 0}</td>
+              <td class="text-muted">${p.risk?.LOW ?? 0}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
+  }
+
+  async function detailWorkQueue() {
+    const QUEUES = [
+      ['all_source','All Source'],['untracked','Untracked'],['eligible','Eligible'],
+      ['contacted','Contacted'],['intervention','Intervention'],
+      ['retry_due','Retry Due'],['resolved_closed','Resolved/Closed'],
+    ];
+    openModal('Work Queue', '<p class="text-center text-muted py-4">Loading…</p>');
+    try {
+      const summRes = await api('/work-queue/summary');
+      const counts = summRes.data?.queues || {};
+      document.getElementById('modal-body').innerHTML = `
+        <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+          <select id="modal-queue-select" class="form-select form-select-sm" style="max-width:220px" onchange="loadModalWorkQueue(this.value)">
+            ${QUEUES.map(([q, l]) => `<option value="${q}">${l} (${counts[q] ?? 0})</option>`).join('')}
+          </select>
+          <select id="modal-queue-path" class="form-select form-select-sm" style="max-width:180px" onchange="loadModalWorkQueue(document.getElementById('modal-queue-select').value)">
+            <option value="">All Pathways</option>
+          </select>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadModalWorkQueue(document.getElementById('modal-queue-select').value)">↺</button>
+        </div>
+        <div id="modal-queue-body"><p class="text-muted small">Loading…</p></div>`;
+      // Populate paths
+      try {
+        const pr = await api('/source/paths');
+        const pathSel = document.getElementById('modal-queue-path');
+        (pr.data?.paths || []).forEach(p => {
+          const o = document.createElement('option'); o.value = p; o.textContent = p; pathSel?.appendChild(o);
+        });
+      } catch (_) {}
+      await loadModalWorkQueue('all_source');
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
+  }
+
+  async function loadModalWorkQueue(queueName) {
+    const el = document.getElementById('modal-queue-body');
+    if (!el) return;
+    const pathFilter = document.getElementById('modal-queue-path')?.value;
+    el.innerHTML = '<p class="text-muted small">Loading…</p>';
+    try {
+      const url = `/work-queue/${queueName}?limit=50${pathFilter ? '&path=' + encodeURIComponent(pathFilter) : ''}`;
+      const res = await api(url);
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small">Failed to load</p>'; return; }
+      const { rows, total } = res.data;
+      if (!rows?.length) { el.innerHTML = '<p class="text-muted text-center py-3">No students in this queue</p>'; return; }
+      el.innerHTML = `
+        <div class="text-muted small mb-2">Showing top 50 of ${total} (priority sorted)</div>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0" style="font-size:.82rem">
+            <thead class="table-light"><tr>
+              <th>Student</th><th>Path</th><th>Priority</th><th>Score</th>
+              <th>HW</th><th>Eff</th><th>Inact.</th><th>State</th><th>Action</th>
+            </tr></thead>
+            <tbody>${rows.map(r => `<tr>
+              <td class="fw-semibold">${r.name || ('#' + r.user_id)}</td>
+              <td class="text-muted small">${r.path || '—'}</td>
+              <td>${priorityBadge(r.priority_level)}</td>
+              <td class="fw-semibold text-center" style="color:var(--color-primary)">${r.priority_score}</td>
+              <td class="${(r.hws_behind ?? 0) >= 3 ? 'text-danger fw-semibold' : ''}">${r.hws_behind ?? '—'}</td>
+              <td class="${(r.eff_rating ?? 5) < 3 ? 'text-warning fw-semibold' : ''}">${r.eff_rating != null ? r.eff_rating.toFixed(1) : '—'}</td>
+              <td>${r.inactivity_days ?? '—'}</td>
+              <td>${r.state ? `<span class="${sc(r.state)}">${sp(r.state)}</span>` : '<span class="text-muted">—</span>'}</td>
+              <td class="text-muted small">${(r.recommended_action || '—').replace(/_/g,' ')}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (e) { el.innerHTML = `<p class="text-danger small">Error: ${e}</p>`; }
+  }
+
   function detailStudents() {
     openModal('Student Cases', `
       <p class="text-muted mb-3">Enter a student ID to view their profile, outreach history, and state transitions.</p>
@@ -1081,19 +1388,30 @@
       <div id="student-result"></div>`);
   }
 
-  function detailTrigger() {
+  async function detailTrigger() {
     openModal('Trigger Outreach Batch', `
-      <p class="text-muted mb-3">Select a checkpoint and run the outreach batch. All outreach is simulated in SHADOW mode — no real communication will be sent.</p>
+      <p class="text-muted mb-3">Select a checkpoint and preview or run the outreach batch. All outreach is simulated in SHADOW mode — no real communication will be sent.</p>
       <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
         <select id="checkpoint" class="form-select form-select-sm" style="max-width:220px">
-          <option value="SQL">SQL</option>
-          <option value="SSRS">SSRS</option>
-          <option value="SSIS">SSIS</option>
-          <option value="POST_COMPLETION">Post Completion</option>
+          <option value="">Loading paths…</option>
         </select>
+        <button class="btn btn-sm btn-outline-primary" onclick="batchPreview(document.getElementById('checkpoint').value)">Preview</button>
         <button class="btn btn-sm btn-primary" onclick="triggerOutreach()">Run Batch</button>
       </div>
       <div id="trigger-result" class="text-muted small"></div>`);
+    try {
+      const res = await api('/source/paths');
+      const paths = res.data?.paths || [];
+      const sel = document.getElementById('checkpoint');
+      if (sel) {
+        sel.innerHTML = paths.length
+          ? paths.map(p => `<option value="${p}">${p}</option>`).join('')
+          : '<option value="">No paths found in DB</option>';
+      }
+    } catch (_) {
+      const sel = document.getElementById('checkpoint');
+      if (sel) sel.innerHTML = ['SQL','SSRS','SSIS','POST_COMPLETION'].map(p => `<option value="${p}">${p}</option>`).join('');
+    }
   }
 
   function detailSync() {
@@ -1284,19 +1602,88 @@
     }
   }
 
+  // ── Batch preview + execution ──────────────────────────────────
+
+  async function batchPreview(checkpoint) {
+    if (!checkpoint) return;
+    _batchPreviewCheckpoint = checkpoint;
+    const bodyEl = document.getElementById('batch-preview-body');
+    if (bodyEl) bodyEl.innerHTML = '<p class="text-center text-muted py-3">Loading preview…</p>';
+    getBatchModal().show();
+    try {
+      const res = await api(`/batch/preview?checkpoint_type=${encodeURIComponent(checkpoint)}&limit=50`);
+      if (res.status !== 'success') { if (bodyEl) bodyEl.innerHTML = '<p class="text-danger text-center py-3">Failed to load preview</p>'; return; }
+      const d = res.data;
+      const decs = d.decisions || {};
+      if (bodyEl) bodyEl.innerHTML = `
+        <div class="alert ${d.shadow ? 'alert-warning' : 'alert-info'} py-2 mb-3 small">
+          <strong>${d.shadow ? 'SHADOW mode' : 'LIVE mode'}:</strong> Preview for <strong>${d.checkpoint_type}</strong> —
+          ${d.would_process} students in scope.
+        </div>
+        <div class="row g-2 mb-3">
+          ${[['Trigger',decs.TRIGGER_OUTREACH,'metric-info'],['Retry',decs.RETRY_OUTREACH,'metric-warning'],
+             ['Escalate',decs.ESCALATE,'metric-danger'],['Close',decs.CLOSE,''],['No Action',decs.NO_ACTION,'text-muted']]
+            .map(([l,v,cls]) => `<div class="col"><div class="kpi-box text-center"><div class="kpi-label">${l}</div><div class="kpi-val ${cls}">${v ?? 0}</div></div></div>`).join('')}
+        </div>
+        <div class="table-responsive" style="max-height:320px;overflow-y:auto">
+          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
+            <thead class="table-light" style="position:sticky;top:0">
+              <tr><th>Student</th><th>Priority</th><th>Score</th><th>Decision</th><th>Recommended</th><th>State</th></tr>
+            </thead>
+            <tbody>${(d.rows || []).map(r => `<tr>
+              <td class="fw-semibold">${r.name || ('#' + r.user_id)}</td>
+              <td>${priorityBadge(r.priority_level)}</td>
+              <td class="text-center fw-semibold" style="color:var(--color-primary)">${r.priority_score}</td>
+              <td class="text-muted small">${sp(r.decision || '—')}</td>
+              <td class="text-muted small">${(r.recommended_action || '—').replace(/_/g,' ')}</td>
+              <td>${r.current_state ? `<span class="${sc(r.current_state)}">${sp(r.current_state)}</span>` : '<span class="text-muted">New</span>'}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (e) { if (bodyEl) bodyEl.innerHTML = `<p class="text-danger text-center py-3">Error: ${e}</p>`; }
+  }
+
+  async function executeBatch() {
+    const btn = document.getElementById('batch-run-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+    try {
+      const res = await api('/batch/run', {
+        method: 'POST',
+        body: JSON.stringify({ checkpoint_type: _batchPreviewCheckpoint }),
+      });
+      getBatchModal().hide();
+      if (res.status === 'success') {
+        const s = res.data;
+        loadSummary(); loadAlerts(); loadActivity(); loadWorkQueueSummary();
+        if (document.getElementById('expand-activity')?.classList.contains('show')) loadExpandActivity();
+      }
+    } catch (e) {
+      const bodyEl = document.getElementById('batch-preview-body');
+      if (bodyEl) {
+        const d = document.createElement('div');
+        d.className = 'alert alert-danger py-2 mt-2 small'; d.textContent = `Error: ${e}`;
+        bodyEl.appendChild(d);
+      }
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Run Batch <span class="mode-shadow ms-1">SHADOW</span>'; }
+    }
+  }
+
   // ── Boot ───────────────────────────────────────────────────────
   async function loadAll() {
     await Promise.allSettled([
       loadHealth(), loadAlerts(), loadSummary(), loadChannelPerf(), loadActivity(),
+      loadSourceSummary(), loadWorkQueueSummary(),
     ]);
     document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
     // Refresh any open expand panels
-    if (document.getElementById('expand-health')?.classList.contains('show'))   loadExpandHealth();
-    if (document.getElementById('expand-alerts')?.classList.contains('show'))   loadExpandAlerts();
-    if (document.getElementById('expand-kpi')?.classList.contains('show'))      loadExpandKpi();
-    if (document.getElementById('expand-states')?.classList.contains('show'))   loadExpandStates();
-    if (document.getElementById('expand-channels')?.classList.contains('show')) loadExpandChannels();
-    if (document.getElementById('expand-activity')?.classList.contains('show')) loadExpandActivity();
+    if (document.getElementById('expand-health')?.classList.contains('show'))     loadExpandHealth();
+    if (document.getElementById('expand-alerts')?.classList.contains('show'))     loadExpandAlerts();
+    if (document.getElementById('expand-kpi')?.classList.contains('show'))        loadExpandKpi();
+    if (document.getElementById('expand-states')?.classList.contains('show'))     loadExpandStates();
+    if (document.getElementById('expand-channels')?.classList.contains('show'))   loadExpandChannels();
+    if (document.getElementById('expand-activity')?.classList.contains('show'))   loadExpandActivity();
+    if (document.getElementById('expand-source')?.classList.contains('show'))     loadExpandSource();
   }
 
   loadAll();

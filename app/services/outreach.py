@@ -29,7 +29,6 @@ from app.state_machine import StateViolationError, can_transition, validate_tran
 logger = logging.getLogger(__name__)
 
 CONCURRENCY_LIMIT = 50
-CHECKPOINTS = {"SQL", "SSRS", "SSIS", "POST_COMPLETION"}
 
 
 async def run_outreach_batch(db: AsyncSession, checkpoint_type: str) -> dict:
@@ -52,10 +51,7 @@ async def run_outreach_batch(db: AsyncSession, checkpoint_type: str) -> dict:
         s = {c.key: getattr(student, c.key) for c in student.__table__.columns}
         path = s.get("PathName", "")
 
-        if checkpoint_type == "POST_COMPLETION" and path != "POST_COMPLETION":
-            skipped += 1
-            continue
-        if checkpoint_type != "POST_COMPLETION" and path != checkpoint_type:
+        if path != checkpoint_type:
             skipped += 1
             continue
 

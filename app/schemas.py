@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Any, Optional
 from pydantic import BaseModel, field_validator
 
-VALID_CHECKPOINTS = {"SQL", "SSRS", "SSIS", "POST_COMPLETION"}
 VALID_ACTION_TYPES = {"CLOSE_CASE", "BOOK_MEETING", "FORCE_RETRY", "ESCALATE"}
 VALID_GHL_EVENTS = {"CALL_COMPLETED", "SMS_RESPONSE", "EMAIL_RESPONSE", "TRANSCRIPT_READY"}
 
@@ -26,13 +25,6 @@ class APIResponse(BaseModel):
 class TriggerOutreachRequest(BaseModel):
     checkpoint_type: str
     limit: int = 50
-
-    @field_validator("checkpoint_type")
-    @classmethod
-    def validate_checkpoint(cls, v: str) -> str:
-        if v not in VALID_CHECKPOINTS:
-            raise ValueError(f"checkpoint_type must be one of {VALID_CHECKPOINTS}")
-        return v
 
 
 class ManualActionRequest(BaseModel):

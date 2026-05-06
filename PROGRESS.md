@@ -110,7 +110,51 @@
   - What changed: frontend/index.html — each card gains a ▼ chevron toggle button (stops propagation, doesn't open modal); inline Bootstrap collapse panel renders compact live data below card body; "⊞ Expand All / ⊟ Collapse All" button added to navbar; auto-refreshes open panels every 60 s; static panels (Student Cases, Manual Actions, Trigger, Sync) render interactive forms inline; async panels (Health, Alerts, KPI, States, Channels, Activity) fetch and render on expand
   - Verification: user confirmed
 
-- [ ] PROGRESS.md created
+- [x] PROGRESS.md created
   - Date: 2026-05-06
   - What changed: this file created to satisfy CLAUDE.md hard gate; documents full project state through commit 22802e3
   - Verification: user confirmed
+
+---
+
+## Phase 4 — Operational Outreach Command Center
+
+- [x] Priority scoring engine
+  - Date: 2026-05-06
+  - What changed: app/services/priority.py — additive numeric score 0–135 mapping to URGENT/HIGH/MEDIUM/LOW; recommended action derived from score + tracking state; reason codes per student
+  - Verification: pytest tests/ → 33 passed, 0 failed (7 new priority tests in test_work_queue.py)
+
+- [x] Remove hardcoded PathName/checkpoint validators
+  - Date: 2026-05-06
+  - What changed: removed VALID_CHECKPOINTS set from schemas.py (TriggerOutreachRequest no longer rejects unknown PathNames); removed CHECKPOINTS set from outreach.py; simplified path filter from POST_COMPLETION special-case to generic `path != checkpoint_type`
+  - Verification: test_trigger_outreach_request_accepts_arbitrary_path passes; existing batch logic unchanged
+
+- [x] Source analysis router
+  - Date: 2026-05-06
+  - What changed: app/routers/source.py — GET /source/paths (distinct PathNames from mirror), GET /source/summary (per-path totals, tracked vs untracked, URGENT/HIGH/MEDIUM/LOW risk distribution)
+  - Verification: pytest tests/ → 33 passed; endpoints live at localhost:8080/source/paths and /source/summary
+
+- [x] Work queue router
+  - Date: 2026-05-06
+  - What changed: app/routers/work_queue.py — GET /work-queue/summary (counts for 7 named queues), GET /work-queue/{queue_name} (paginated, priority-sorted student list with PathName filter); queues: all_source, untracked, eligible, contacted, intervention, retry_due, resolved_closed
+  - Verification: pytest tests/ → 33 passed; invalid queue name returns APIResponse.fail
+
+- [x] Batch preview and run router
+  - Date: 2026-05-06
+  - What changed: app/routers/batch.py — GET /batch/preview (dry-run: per-student decision + priority without executing), POST /batch/run (shadow-safe delegation to outreach service); both carry execution_mode + shadow flags
+  - Verification: pytest tests/ → 33 passed
+
+- [x] Register new routers in main.py
+  - Date: 2026-05-06
+  - What changed: app/main.py imports and registers source_router, work_queue_router, batch_router with tags Source/WorkQueue/Batch
+  - Verification: container running; all new endpoints return 200 OK at startup
+
+- [x] Test suite expanded to 33 tests
+  - Date: 2026-05-06
+  - What changed: tests/test_work_queue.py — 14 new tests covering priority engine (7), source router (2), work queue summary structure (1), invalid queue name (1), batch preview keys (1), schema accepts arbitrary path (2)
+  - Verification: pytest tests/ → 33 passed, 0 failed
+
+- [x] Dashboard operational upgrade — Source Analysis + Work Queue + Batch Preview
+  - Date: 2026-05-06
+  - What changed: frontend/index.html — Operations section added with Source Analysis card (per-path tracked/untracked/risk breakdown) and Work Queue card (7-queue browser with priority-sorted table); Batch Preview modal (decision summary + per-student preview before running); dynamic PathName dropdown in Trigger Outreach (fetches /source/paths, falls back to static list); priority badge component (URGENT/HIGH/MEDIUM/LOW); updated loadAll to call loadSourceSummary + loadWorkQueueSummary; updated toggleAllCards to include new panels
+  - Verification: pytest tests/ → 33 passed, 0 failed; container running at localhost:8080
