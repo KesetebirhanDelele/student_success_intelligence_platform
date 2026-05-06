@@ -8,6 +8,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 _ANALYSIS_PROMPT = """\
 You are analyzing a student outreach interaction transcript.
 
@@ -39,21 +40,21 @@ async def analyze_transcript(
         return {"status": "skipped", "reason": "LLM_NOT_CONFIGURED"}
 
     try:
-        import anthropic
+        from openai import AsyncOpenAI
 
-        client = anthropic.AsyncAnthropic(api_key=settings.LLM_API_KEY)
+        client = AsyncOpenAI(api_key=settings.LLM_API_KEY)
         prompt = _ANALYSIS_PROMPT.format(
             user_id=user_id,
             attempt=attempt,
             checkpoint=checkpoint,
             transcript=transcript,
         )
-        message = await client.messages.create(
+        response = await client.chat.completions.create(
             model=settings.LLM_MODEL,
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = message.content[0].text.strip()
+        raw = response.choices[0].message.content.strip()
         start = raw.find("{")
         end = raw.rfind("}") + 1
         if start >= 0 and end > start:

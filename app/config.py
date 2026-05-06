@@ -37,7 +37,7 @@ class Settings(BaseSettings):
 
     # LLM
     LLM_API_KEY: str = ""
-    LLM_MODEL: str = "claude-sonnet-4-6"
+    LLM_MODEL: str = "gpt-4o"
 
     # Scheduler
     SCHEDULER_HOUR: int = 18

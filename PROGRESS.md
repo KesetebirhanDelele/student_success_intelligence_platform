@@ -81,7 +81,12 @@
   - Blocker: `mssql_configured` guard returns `False`; sync returns `{"connected": false}`; entire student data pipeline is inert until credentials are set
   - Host and database already set: `hypv8669.hostedbyappliedi.net:1433`, DB=`CCPP`, table=`AI_ChatBot_TriggerData`
 
-- [ ] GHL, Synthflow, LLM API keys — fill in `.env`
+- [x] Switch LLM integration from Anthropic to OpenAI GPT-4o
+  - Date: 2026-05-06
+  - What changed: app/services/integrations/llm.py rewritten to use `openai.AsyncOpenAI` + `chat.completions.create`; requirements.txt swapped `anthropic>=0.34.0` → `openai>=1.0.0`; config.py default model updated to `gpt-4o`; .env.example updated
+  - Verification: pytest tests/ → 19 passed, 0 failed
+
+- [ ] GHL, Synthflow, LLM (OpenAI) API keys — fill in `.env`
   - Blocker: all outbound integrations are stubbed in shadow mode; real execution requires credentials and `EXECUTION_MODE=LIVE` (strategic decision — requires explicit approval before flip)
 
 - [x] Pytest suite — all 19 tests green
