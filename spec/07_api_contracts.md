@@ -147,26 +147,74 @@ POST /outreach/trigger
 
 ### Endpoint
 
-```plaintext id="l5v4c8"
+```plaintext
 GET /students/{user_id}
 ```
 
 ---
 
-### Response
+### Response (success)
 
-```json id="u1k3hp"
+```json
 {
   "status": "success",
   "data": {
     "user_id": 123,
     "state": "CONTACTED",
-    "attempt_count": 1,
-    "history": []
+    "checkpoint_type": "SQL",
+    "current_attempt": 1,
+    "last_contact_at": "ISO8601 | null",
+    "next_retry_at": "ISO8601 | null",
+    "profile": {
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "jane@example.com",
+      "phone": "+15550001001",
+      "path": "Data Analytics",
+      "risk_level": "HIGH | MEDIUM | LOW",
+      "hws_behind": 3,
+      "avg_eff_rating": 2.1,
+      "last_activity_days": 8
+    },
+    "history": [
+      {
+        "created_at": "ISO8601",
+        "attempt_number": 1,
+        "channel": "CALL",
+        "action": "CALL_SIMULATED",
+        "execution_mode": "SHADOW",
+        "state_before": "QUEUED",
+        "state_after": "CONTACTED"
+      }
+    ],
+    "transitions": [
+      {
+        "created_at": "ISO8601",
+        "from_state": "QUEUED",
+        "to_state": "CONTACTED",
+        "trigger": "scheduler",
+        "actor": "system"
+      }
+    ]
   },
   "error": null
 }
 ```
+
+### Response (not found — HTTP 404)
+
+```json
+{
+  "status": "error",
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No tracking record for student 123"
+  }
+}
+```
+
+> `risk_level` is derived server-side: HIGH if hws_behind ≥ 3 OR avg_eff_rating < 2.5 OR last_activity_days > 7; MEDIUM if hws_behind ≥ 2 OR avg_eff_rating < 3.0 OR last_activity_days ≥ 5; else LOW.
 
 ---
 
@@ -209,7 +257,7 @@ GET /metrics
 
 ### Endpoint
 
-```plaintext id="7d4z1r"
+```plaintext
 POST /actions/manual
 ```
 
@@ -217,39 +265,268 @@ POST /actions/manual
 
 ### Request
 
-```json id="q3r6x9"
+```json
 {
   "user_id": 123,
-  "action_type": "TRIGGER_OUTREACH | RETRY | CLOSE_CASE | BOOK_MEETING"
+  "action_type": "CLOSE_CASE | FORCE_RETRY | BOOK_MEETING | ESCALATE",
+  "notes": "optional free-text reason"
 }
 ```
 
 ---
 
-### Validation Rules
+### Action Map
 
-* action_type must be valid
-* Must respect state constraints
+| action_type  | Transitions to       | Guard                                           |
+| ------------ | -------------------- | ----------------------------------------------- |
+| CLOSE_CASE   | CLOSED               | Blocked if already CLOSED                       |
+| FORCE_RETRY  | RETRY                | Blocked if current_attempt ≥ MAX_ATTEMPTS       |
+| BOOK_MEETING | RESOLVED             | Must be valid state machine transition          |
+| ESCALATE     | INTERVENTION_REQUIRED | Only from CONTACTED, NO_RESPONSE, RETRY, RESPONDED |
 
 ---
 
-### Response
+### Response (success)
 
-```json id="v6m2f1"
+```json
 {
   "status": "success",
   "data": {
-    "executed": true
+    "from_state": "NO_RESPONSE",
+    "to_state": "RETRY",
+    "current_attempt": 2
   },
   "error": null
 }
 ```
 
----
+### Response (student not found — HTTP 200 with error)
+
+```json
+{
+  "status": "error",
+  "data": null,
+  "error": { "code": "NOT_FOUND", "message": "No tracking record for student 999" }
+}
+```
+
+### Response (MAX_ATTEMPTS reached)
+
+```json
+{
+  "status": "error",
+  "data": null,
+  "error": {
+    "code": "MAX_ATTEMPTS_REACHED",
+    "message": "Cannot retry: student has reached the maximum of 3 attempts (current: 3)."
+  }
+}
+```
+
+### Response (invalid state transition)
+
+```json
+{
+  "status": "error",
+  "data": null,
+  "error": { "code": "STATE_VIOLATION", "message": "Transition CLOSED → RETRY is not permitted." }
+}
+```
+
+### Response (unknown action)
+
+```json
+{
+  "status": "error",
+  "data": null,
+  "error": { "code": "INVALID_ACTION", "message": "Unknown action type: DO_SOMETHING_WEIRD" }
+}
+```
 
 ---
 
-## 3.6 GHL Webhook Endpoint
+---
+
+## 3.6 Dashboard Endpoints
+
+---
+
+> All dashboard endpoints return `{ "status": "success", "data": {...}, "error": null }` on success and require no request body unless noted.
+
+---
+
+### GET /dashboard/health
+
+Returns system component status. Used to populate the System Health card.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "execution_mode": "SHADOW | LIVE",
+    "outbound_enabled": false,
+    "db": { "connected": true },
+    "mssql": { "configured": false, "host": "" },
+    "scheduler": { "status": "active | idle", "last_run": "ISO8601 | null" },
+    "channels": { "call": false, "sms": false, "email": false }
+  }
+}
+```
+
+---
+
+### GET /dashboard/alerts
+
+Returns prioritised operational alerts. Used to populate the Operational Alerts card.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "count": 2,
+    "alerts": [
+      {
+        "severity": "CRITICAL | WARNING | INFO",
+        "message": "SQL Server is not configured.",
+        "recommended_action": "Add MSSQL_HOST, MSSQL_USER, MSSQL_PASS to .env",
+        "student_id": null
+      },
+      {
+        "severity": "WARNING",
+        "message": "Student 1001 has been CONTACTED for over 48 hours without response.",
+        "recommended_action": "Manually escalate or close the case.",
+        "student_id": 1001
+      }
+    ]
+  }
+}
+```
+
+Alert trigger conditions:
+
+| Severity | Trigger |
+| -------- | ------- |
+| CRITICAL | MSSQL not configured |
+| WARNING  | Student stuck in CONTACTED > 48 hours |
+| WARNING  | Student in NO_RESPONSE with missed retry window |
+| WARNING  | Scheduler has never run |
+| INFO     | System running in SHADOW mode |
+| INFO     | Synthflow or GHL API key missing |
+
+---
+
+### GET /dashboard/summary
+
+Returns funnel KPIs, conversion ratios, and state-by-state counts. Used to populate KPI Summary and State Distribution cards.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "total_tracked": 152,
+    "shadow_executions": 48,
+    "funnel": {
+      "tracked": 152,
+      "contacted": 48,
+      "responded": 15,
+      "no_response": 22,
+      "intervention_required": 4,
+      "resolved": 9,
+      "closed": 11,
+      "shadow_executions": 48
+    },
+    "conversion": {
+      "contacted_rate": 0.315,
+      "response_rate": 0.312,
+      "resolution_rate": 0.692
+    },
+    "by_state": {
+      "ELIGIBLE": 80,
+      "QUEUED": 12,
+      "CONTACTED": 18,
+      "NO_RESPONSE": 22,
+      "RETRY": 5,
+      "RESPONDED": 15,
+      "ANALYZED": 3,
+      "INTERVENTION_REQUIRED": 4,
+      "RESOLVED": 9,
+      "CLOSED": 11
+    }
+  }
+}
+```
+
+---
+
+### GET /dashboard/channel-performance
+
+Returns per-channel outreach breakdown. Used to populate the Channel Performance card.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "shadow_mode": true,
+    "note": "All simulated",
+    "channels": [
+      {
+        "channel": "CALL",
+        "attempts": 30,
+        "shadow_count": 30,
+        "responses": 8,
+        "no_response": 22,
+        "success_rate": 0.267
+      },
+      {
+        "channel": "SMS",
+        "attempts": 12,
+        "shadow_count": 12,
+        "responses": 5,
+        "no_response": 7,
+        "success_rate": 0.417
+      },
+      {
+        "channel": "EMAIL",
+        "attempts": 6,
+        "shadow_count": 6,
+        "responses": 2,
+        "no_response": 4,
+        "success_rate": 0.333
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET /dashboard/recent-activity?limit=N
+
+Returns the most recent N OutreachHistory rows. Default limit 20, max 100. Used to populate the Recent Activity card.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "items": [
+      {
+        "created_at": "ISO8601",
+        "user_id": 1001,
+        "checkpoint_type": "SQL",
+        "channel": "CALL",
+        "action": "CALL_SIMULATED",
+        "execution_mode": "SHADOW",
+        "state_before": "QUEUED",
+        "state_after": "CONTACTED"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 3.7 GHL Webhook Endpoint
 
 ---
 
@@ -322,13 +599,15 @@ POST /webhook/ghl-update
 
 ### Common Error Codes
 
-| Code              | Description              |
-| ----------------- | ------------------------ |
-| INVALID_INPUT     | Validation failed        |
-| NOT_FOUND         | Resource not found       |
-| DUPLICATE_REQUEST | Duplicate operation      |
-| INTERNAL_ERROR    | Unexpected error         |
-| STATE_VIOLATION   | Invalid state transition |
+| Code                 | Description                                        |
+| -------------------- | -------------------------------------------------- |
+| INVALID_INPUT        | Validation failed                                  |
+| NOT_FOUND            | Resource not found                                 |
+| DUPLICATE_REQUEST    | Duplicate operation                                |
+| INTERNAL_ERROR       | Unexpected error                                   |
+| STATE_VIOLATION      | Invalid state transition                           |
+| MAX_ATTEMPTS_REACHED | FORCE_RETRY blocked — current_attempt ≥ MAX_ATTEMPTS |
+| INVALID_ACTION       | Unknown action_type supplied to /actions/manual    |
 
 ---
 

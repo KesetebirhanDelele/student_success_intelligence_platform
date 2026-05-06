@@ -74,12 +74,14 @@ The goal is to ensure:
 ```json
 {
   "escalation_required": boolean,
-  "escalation_type": "NONE | HIGH_RISK | NO_RESPONSE | NEGATIVE_SENTIMENT | MANUAL",
+  "escalation_type": "NONE | HIGH_RISK | NO_RESPONSE | NEGATIVE_SENTIMENT | MANUAL | OPERATOR_INITIATED",
   "priority": "LOW | MEDIUM | HIGH",
   "action": "NOTIFY_OPERATOR | FLAG_CASE | NONE",
   "reason_codes": ["string"]
 }
 ```
+
+> `OPERATOR_INITIATED` is used exclusively when an operator manually calls `ESCALATE` via `POST /actions/manual`. It bypasses this directive's automated rules and goes directly to the state machine.
 
 ---
 
@@ -226,6 +228,68 @@ IF no escalation rules triggered:
   "reason_codes": ["NO_ESCALATION_REQUIRED"]
 }
 ```
+
+---
+
+## 4B. OPERATOR-INITIATED ESCALATION (MANUAL ACTION)
+
+---
+
+This section covers operator escalation triggered via `POST /actions/manual` with `action_type: "ESCALATE"`. It is **distinct** from the automated rules in section 4 — it does not run through this directive's logic. It goes directly through the state machine.
+
+---
+
+### Trigger
+
+Operator clicks "Escalate" in the Manual Actions dashboard card.
+
+---
+
+### Valid Source States
+
+```plaintext
+CONTACTED → INTERVENTION_REQUIRED  ✓
+NO_RESPONSE → INTERVENTION_REQUIRED  ✓
+RETRY → INTERVENTION_REQUIRED  ✓
+RESPONDED → INTERVENTION_REQUIRED  ✓
+```
+
+### Blocked Source States
+
+```plaintext
+CLOSED → ESCALATE  ✗  (terminal, no transitions)
+ELIGIBLE → ESCALATE  ✗  (not yet in outreach)
+QUEUED → ESCALATE  ✗  (not yet contacted)
+ANALYZED → ESCALATE  ✗  (use automated path)
+INTERVENTION_REQUIRED → ESCALATE  ✗  (already escalated)
+RESOLVED → ESCALATE  ✗  (case concluded)
+```
+
+---
+
+### Output Written
+
+* `OutreachHistory` record: `action = "ESCALATED"`, `execution_mode = SHADOW|LIVE`
+* `StateTransitionLog` record: from_state → `INTERVENTION_REQUIRED`, actor = "operator"
+
+---
+
+### No MAX_ATTEMPTS Guard
+
+The `MAX_ATTEMPTS` check applies only to `FORCE_RETRY`. `ESCALATE` is never blocked by attempt count.
+
+---
+
+### Audit
+
+Every operator escalation MUST log:
+
+* `user_id`
+* `from_state`
+* `to_state` = `INTERVENTION_REQUIRED`
+* `notes` (operator-supplied, optional)
+* `timestamp`
+* `actor` = `"operator"`
 
 ---
 
@@ -390,6 +454,30 @@ IF no escalation rules triggered:
 **Given** no conditions met
 **When** evaluated
 **Then** escalation_required = false
+
+---
+
+### Case 5 — Operator ESCALATE From CONTACTED
+
+**Given** student in CONTACTED state
+**When** operator clicks Escalate in dashboard
+**Then** student transitions to INTERVENTION_REQUIRED and audit record written
+
+---
+
+### Case 6 — Operator ESCALATE Blocked From CLOSED
+
+**Given** student in CLOSED state
+**When** operator clicks Escalate
+**Then** API returns STATE_VIOLATION — no transition occurs
+
+---
+
+### Case 7 — Operator ESCALATE Not Blocked by MAX_ATTEMPTS
+
+**Given** student has current_attempt = MAX_ATTEMPTS
+**When** operator clicks Escalate (not Force Retry)
+**Then** ESCALATE proceeds normally — MAX_ATTEMPTS guard does not apply
 
 ---
 

@@ -49,17 +49,19 @@ This file is the **authoritative source** for:
 ---
 
 ```plaintext
-ELIGIBLE  
-QUEUED  
-CONTACTED  
-NO_RESPONSE  
-RESPONDED  
-ANALYZED  
-INTERVENTION_REQUIRED  
-MEETING_SCHEDULED  
-RESOLVED  
-CLOSED  
+ELIGIBLE
+QUEUED
+CONTACTED
+NO_RESPONSE
+RETRY
+RESPONDED
+ANALYZED
+INTERVENTION_REQUIRED
+RESOLVED
+CLOSED
 ```
+
+> **Note:** `MEETING_SCHEDULED` was removed from the implemented state machine. `RETRY` was added as a distinct state between `NO_RESPONSE` and re-contact, replacing the previous `NO_RESPONSE → QUEUED` loop. `RESOLVED` is now reachable directly from `RESPONDED`, `ANALYZED`, and `INTERVENTION_REQUIRED`.
 
 ---
 
@@ -72,28 +74,43 @@ CLOSED
 ### Core Transition Map
 
 ```plaintext
-ELIGIBLE → QUEUED  
+ELIGIBLE → QUEUED
+ELIGIBLE → CLOSED
 
-QUEUED → CONTACTED  
+QUEUED → CONTACTED
+QUEUED → CLOSED
 
-CONTACTED → NO_RESPONSE  
-CONTACTED → RESPONDED  
+CONTACTED → NO_RESPONSE
+CONTACTED → RESPONDED
+CONTACTED → CLOSED
+CONTACTED → INTERVENTION_REQUIRED  ← operator ESCALATE
 
-NO_RESPONSE → QUEUED  
-NO_RESPONSE → CLOSED  
+NO_RESPONSE → RETRY
+NO_RESPONSE → CLOSED
+NO_RESPONSE → INTERVENTION_REQUIRED  ← operator ESCALATE
 
-RESPONDED → ANALYZED  
+RETRY → CONTACTED
+RETRY → CLOSED
+RETRY → INTERVENTION_REQUIRED  ← operator ESCALATE
 
-ANALYZED → INTERVENTION_REQUIRED  
-ANALYZED → RESOLVED  
+RESPONDED → ANALYZED
+RESPONDED → RESOLVED
+RESPONDED → CLOSED
+RESPONDED → INTERVENTION_REQUIRED  ← operator ESCALATE
 
-INTERVENTION_REQUIRED → MEETING_SCHEDULED  
-INTERVENTION_REQUIRED → RESOLVED  
+ANALYZED → INTERVENTION_REQUIRED
+ANALYZED → RESOLVED
+ANALYZED → CLOSED
 
-MEETING_SCHEDULED → RESOLVED  
+INTERVENTION_REQUIRED → RESOLVED
+INTERVENTION_REQUIRED → CLOSED
 
-RESOLVED → CLOSED  
+RESOLVED → CLOSED
+
+CLOSED → (none — terminal)
 ```
+
+> Transitions marked `← operator ESCALATE` are triggered only by the manual `ESCALATE` action via `POST /actions/manual`. They are not reachable by the automated scheduler.
 
 ---
 
@@ -118,33 +135,45 @@ CLOSED → ANY_STATE ❌
 ### 5.2 Backward Transitions
 
 ```plaintext
-CONTACTED → QUEUED ❌  
-RESPONDED → CONTACTED ❌  
-ANALYZED → RESPONDED ❌  
+CONTACTED → QUEUED ❌
+RESPONDED → CONTACTED ❌
+ANALYZED → RESPONDED ❌
+RETRY → NO_RESPONSE ❌
 ```
-
----
 
 ---
 
 ### 5.3 Skip-Level Transitions
 
 ```plaintext
-ELIGIBLE → CONTACTED ❌  
-QUEUED → RESPONDED ❌  
-CONTACTED → ANALYZED ❌ (must pass RESPONDED)  
+ELIGIBLE → CONTACTED ❌
+QUEUED → RESPONDED ❌
+CONTACTED → ANALYZED ❌  (must pass RESPONDED)
+NO_RESPONSE → CONTACTED ❌  (must pass RETRY)
 ```
-
----
 
 ---
 
 ### 5.4 Retry Violations
 
 ```plaintext
-RESPONDED → NO_RESPONSE ❌  
-ANALYZED → NO_RESPONSE ❌  
+RESPONDED → NO_RESPONSE ❌
+ANALYZED → NO_RESPONSE ❌
+ANALYZED → RETRY ❌
 ```
+
+---
+
+### 5.5 Scheduler Cannot ESCALATE
+
+```plaintext
+(scheduler) → INTERVENTION_REQUIRED from CONTACTED ❌
+(scheduler) → INTERVENTION_REQUIRED from NO_RESPONSE ❌
+(scheduler) → INTERVENTION_REQUIRED from RETRY ❌
+(scheduler) → INTERVENTION_REQUIRED from RESPONDED ❌
+```
+
+> The automated scheduler may only reach `INTERVENTION_REQUIRED` from `ANALYZED`. All other `INTERVENTION_REQUIRED` transitions require a human operator via the `ESCALATE` manual action.
 
 ---
 
@@ -160,12 +189,14 @@ ANALYZED → NO_RESPONSE ❌
 
 Allowed ONLY IF:
 
-* contact_attempt < MAX_ATTEMPTS
+* current_attempt < MAX_ATTEMPTS
 * retry_policy allows
 
 ```plaintext
-NO_RESPONSE → QUEUED
+NO_RESPONSE → RETRY
 ```
+
+> The RETRY state is a holding state. The scheduler then moves the student from RETRY → CONTACTED on the next execution cycle. RETRY is distinct from QUEUED — it carries context that a prior contact was attempted.
 
 ---
 
@@ -175,18 +206,38 @@ NO_RESPONSE → QUEUED
 
 ---
 
-Allowed ONLY via manual action:
+Allowed ONLY via manual action (`CLOSE_CASE`):
 
 ```plaintext
-ANY_STATE → CLOSED
+ANY_NON_CLOSED_STATE → CLOSED
 ```
-
----
 
 ### Constraints
 
-* Must include reason
-* Must be logged
+* Must include notes (optional but recommended)
+* Must write OutreachHistory record with action = `CASE_CLOSED`
+* Must write StateTransitionLog record
+
+---
+
+### 6.3 Manual ESCALATE
+
+---
+
+Allowed via manual action (`ESCALATE`):
+
+```plaintext
+CONTACTED → INTERVENTION_REQUIRED
+NO_RESPONSE → INTERVENTION_REQUIRED
+RETRY → INTERVENTION_REQUIRED
+RESPONDED → INTERVENTION_REQUIRED
+```
+
+### Constraints
+
+* Not allowed from CLOSED, ELIGIBLE, QUEUED, ANALYZED, INTERVENTION_REQUIRED, RESOLVED
+* Must write OutreachHistory and StateTransitionLog
+* MAX_ATTEMPTS guard does NOT apply to ESCALATE (only to FORCE_RETRY)
 
 ---
 
@@ -376,11 +427,16 @@ StateTransitionLog
 
 ---
 
-* CLOSED is terminal
-* No backward transitions
-* No skipped states (unless explicitly allowed)
-* Retry only from NO_RESPONSE
-* State must always be valid enum
+* CLOSED is terminal — no transitions out, ever
+* No backward transitions allowed
+* No skip-level transitions (unless explicitly listed in section 4)
+* Automated retry enters RETRY state, not QUEUED
+* RETRY can only be entered from NO_RESPONSE
+* INTERVENTION_REQUIRED from active outreach states (CONTACTED, NO_RESPONSE, RETRY, RESPONDED) requires a human operator ESCALATE action
+* ESCALATE is blocked on CLOSED, ELIGIBLE, QUEUED, ANALYZED, INTERVENTION_REQUIRED, RESOLVED
+* FORCE_RETRY is blocked when current_attempt ≥ MAX_ATTEMPTS
+* State must always be a valid enum value from section 3
+* Every transition must produce a StateTransitionLog record
 
 ---
 

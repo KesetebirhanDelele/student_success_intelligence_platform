@@ -71,23 +71,23 @@ The goal is to ensure:
 
 **Steps:**
 
-1. Open dashboard
-2. Review Overview:
-
-   * Total outreach attempts
-   * Success rate
-   * Failures
-3. Check:
-
-   * High-risk students
-   * Pending retries
+1. Open dashboard at `http://host/` (served by FastAPI static mount)
+2. Wait for auto-load — all 10 summary cards populate within 1–2 seconds
+3. Scan card badges across the grid:
+   * `CRITICAL` on System Health → investigate immediately (database or MSSQL issue)
+   * `CRITICAL` or `WARNING` on Operational Alerts → click card for alert list
+   * Metric values on KPI Summary → check tracked vs contacted rate
+4. Click **Operational Alerts** card → review each alert with its recommended action
+5. Click **System Health** card → confirm PostgreSQL connected, scheduler ran, execution mode is SHADOW
+6. Dashboard auto-refreshes every 60 seconds; click "↺ Refresh" in header for immediate update
 
 ---
 
 ### Expected Outcome
 
-* System health verified
-* No critical issues missed
+* System health verified across all 10 cards
+* No CRITICAL or WARNING alerts missed
+* Execution mode confirmed (SHADOW = no real sends)
 
 ---
 
@@ -103,14 +103,15 @@ The goal is to ensure:
 
 **Steps:**
 
-1. Search for student
-2. Open student detail view
-3. Review:
-
-   * Current state
-   * Outreach history
-   * Decision outputs
-   * Transcript (if available)
+1. Click the **Student Cases** card on the dashboard home page
+2. Modal opens with a Student ID input
+3. Enter the student's numeric ID and click "Look Up"
+4. Review the profile card:
+   * Name, risk badge (HIGH / MEDIUM / LOW), path, email, phone
+   * Academic metrics: HWs Behind, Avg Effort Rating, Inactive Days
+   * Current state pill, checkpoint, attempt count, last contact date, next retry date
+5. Review **Outreach History** table below the profile: date, attempt #, channel, action, execution mode, from/to states
+6. Review **State Transitions** table: date, from, to, trigger, actor
 
 ---
 
@@ -118,8 +119,18 @@ The goal is to ensure:
 
 Operator may determine:
 
-* If system behaved correctly
-* If manual intervention is needed
+* If system behaved correctly (state transitions are valid and ordered)
+* If the student is stuck (same state for too long — also surfaced by Alerts card)
+* If manual intervention is needed (use Manual Actions card)
+
+---
+
+### Not Found
+
+If the student ID has no tracking record:
+
+* Clear error message appears inside the modal
+* No crash or blank state
 
 ---
 
@@ -182,53 +193,72 @@ Allowed actions:
 
 ---
 
-### 6.1 Trigger Manual Outreach
+All manual actions share the same entry point:
+
+1. Click the **Manual Actions** card on the dashboard home page
+2. Modal opens with: Student ID input, Notes input, and 4 action buttons
+3. Enter Student ID (required) and optional notes
+4. Click the desired action button
+
+---
+
+### 6.1 Force Retry
 
 ---
 
 **Steps:**
 
-1. Select student
-2. Click “Trigger Outreach”
-3. Confirm action
+1. Open Manual Actions modal
+2. Enter Student ID
+3. Click “Force Retry”
+
+**Guard:** If `current_attempt ≥ MAX_ATTEMPTS`, the API returns `MAX_ATTEMPTS_REACHED` and the action is blocked. The error message is shown inline.
+
+**Effect:** Student transitions to `RETRY` state. The scheduler will move them to `CONTACTED` on the next cycle.
 
 ---
 
-### Constraints
-
-* Must validate:
-
-  * State is not CLOSED
-  * Max attempts not exceeded
-
----
-
----
-
-### 6.2 Retry Outreach
+### 6.2 Mark Resolved
 
 ---
 
 **Steps:**
 
-1. Select failed outreach
-2. Click “Retry”
-3. Confirm action
+1. Open Manual Actions modal
+2. Enter Student ID and optional notes
+3. Click “Mark Resolved”
+
+**Effect:** Student transitions to `RESOLVED`. No further automated outreach. Case is treated as successfully concluded.
 
 ---
 
----
-
-### 6.3 Force Close Case
+### 6.3 Close Case
 
 ---
 
 **Steps:**
 
-1. Select student
-2. Click “Close Case”
-3. Provide reason
-4. Confirm
+1. Open Manual Actions modal
+2. Enter Student ID and reason in Notes (recommended)
+3. Click “Close Case”
+
+**Guard:** Blocked if student is already `CLOSED`.
+
+**Effect:** Student transitions to `CLOSED` (terminal). No further actions possible.
+
+---
+
+### 6.4 Batch Outreach Trigger
+
+---
+
+**Steps:**
+
+1. Click the **Trigger Outreach Batch** card
+2. Select checkpoint from dropdown: SQL, SSRS, SSIS, Post Completion
+3. Click “Run Batch”
+
+**Effect:** `POST /outreach/trigger` fires. Result line shows triggered / retried / skipped / error counts. KPI Summary, Alerts, and Recent Activity cards auto-refresh.
 
 ---
 
@@ -238,29 +268,41 @@ Allowed actions:
 
 ---
 
-### 7.1 Identify High-Risk Case
+### 7.1 Identify Cases Requiring Escalation
 
 ---
 
-**Triggers:
+**Sources:**
 
-* High-risk flag from decision engine
-* Multiple failed attempts
-* Negative sentiment
-
----
+* **Operational Alerts card** — WARNING or CRITICAL alerts include student_id where relevant
+* **Student Cases card** — risk badge (HIGH / MEDIUM) visible in profile card
+* **State Distribution card** — high counts in INTERVENTION_REQUIRED signal backlog
 
 ---
 
-### 7.2 Escalate
+### 7.2 Operator-Initiated Escalation (ESCALATE action)
 
 ---
 
 **Steps:**
 
-1. Mark case for escalation
-2. Notify program manager
-3. Log escalation
+1. Note the student ID from the alert or Student Cases lookup
+2. Click the **Manual Actions** card
+3. Enter the student ID in the Student ID field
+4. Optionally enter reason in Notes (e.g., "HIGH risk metrics, no response after 3 days")
+5. Click "Escalate"
+
+**Valid from:** CONTACTED, NO_RESPONSE, RETRY, RESPONDED
+
+**Effect:** Student transitions to `INTERVENTION_REQUIRED`. Audit record written. Program manager must handle the case outside the automated system.
+
+**Blocked from:** CLOSED, ELIGIBLE, QUEUED, ANALYZED, INTERVENTION_REQUIRED, RESOLVED
+
+---
+
+### 7.3 Automated Escalation
+
+The scheduler also reaches `INTERVENTION_REQUIRED` automatically from `ANALYZED` when the LLM analysis determines intervention is needed. This is distinct from the operator ESCALATE action and requires no dashboard interaction.
 
 ---
 
