@@ -8,7 +8,7 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
 
-    /* ── Header ───────────────────────────────────────────────── */
+    /* ── Header ─────────────────────────────────────────────────── */
     header {
       background: #1e293b; border-bottom: 2px solid #334155;
       padding: .85rem 2rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
@@ -17,7 +17,7 @@
     .badge { font-size: .7rem; border-radius: 999px; padding: 2px 10px; font-weight: 700; }
     .badge-shadow { background: #78350f; color: #fbbf24; }
     .badge-live   { background: #14532d; color: #4ade80; }
-    .header-right { margin-left: auto; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+    .header-right { margin-left: auto; display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
     .hp {
       font-size: .71rem; color: #94a3b8; display: flex; align-items: center; gap: .35rem;
       background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 3px 9px;
@@ -29,20 +29,48 @@
     .dot-yellow { background: #fbbf24; }
     .dot-gray   { background: #475569; }
 
-    /* ── Layout ───────────────────────────────────────────────── */
+    /* ── Layout ─────────────────────────────────────────────────── */
     main { max-width: 1300px; margin: 1.5rem auto; padding: 0 1.25rem; }
-    section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.35rem; margin-bottom: 1.2rem; }
-    section h2 { font-size: .82rem; font-weight: 700; color: #94a3b8; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .6px; }
-    .two-col   { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.2rem; }
-    @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
 
-    /* ── Health cards ─────────────────────────────────────────── */
+    /* ── Collapsible Card Sections ──────────────────────────────── */
+    .cs {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      margin-bottom: 1.2rem; overflow: hidden;
+    }
+    .ch {
+      display: flex; align-items: center; padding: .9rem 1.35rem;
+      cursor: pointer; user-select: none; gap: .75rem;
+      border-bottom: 1px solid #334155; transition: background .12s;
+    }
+    .ch:hover { background: #243044; }
+    .cs.collapsed .ch { border-bottom-color: transparent; }
+    .ch-title {
+      flex: 1; font-size: .82rem; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: .6px;
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    }
+    .chev { color: #475569; font-size: .9rem; transition: transform .2s; flex-shrink: 0; line-height: 1; }
+    .cs.collapsed .chev { transform: rotate(-90deg); }
+    .cb { padding: 1.1rem 1.35rem 1.35rem; }
+    .cs.collapsed .cb { display: none; }
+
+    /* ── Inner cards (nested two-col) ───────────────────────────── */
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+    @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
+    .inner-card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem 1.15rem; }
+    .inner-card h3 {
+      font-size: .78rem; font-weight: 700; color: #64748b;
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: .85rem;
+      display: flex; align-items: center; gap: .5rem;
+    }
+
+    /* ── Health cards ───────────────────────────────────────────── */
     .hgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: .9rem; }
     .hcard { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .9rem 1rem; }
     .hcard .hl { font-size: .62rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .35rem; }
     .hcard .hv { font-size: .88rem; font-weight: 600; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 
-    /* ── Alerts ───────────────────────────────────────────────── */
+    /* ── Alerts ─────────────────────────────────────────────────── */
     .alert-row {
       display: flex; align-items: flex-start; gap: .75rem;
       padding: .6rem .9rem; border-radius: 7px; margin-bottom: .5rem; font-size: .8rem;
@@ -59,27 +87,27 @@
     .al-act  { font-size: .73rem; color: #64748b; margin-top: .2rem; }
     .al-sid  { font-size: .68rem; color: #475569; white-space: nowrap; margin-left: auto; padding-left: .5rem; }
 
-    /* ── KPI grid ─────────────────────────────────────────────── */
+    /* ── KPI grid ───────────────────────────────────────────────── */
     .kgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
-    .card  { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.1rem; }
+    .card  { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 1.1rem; }
     .card .klabel { font-size: .64rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
     .card .kval   { font-size: 2rem; font-weight: 700; margin-top: .2rem; line-height: 1; }
-    .card .ksub   { font-size: .7rem; color: #334155; margin-top: .2rem; }
+    .card .ksub   { font-size: .7rem; color: #475569; margin-top: .2rem; }
 
-    /* ── Conversion pills ─────────────────────────────────────── */
-    .conv-row { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-    .cpill { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: .55rem 1.1rem; }
+    /* ── Conversion pills ───────────────────────────────────────── */
+    .conv-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .cpill { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .55rem 1.1rem; }
     .cpill .cpl { font-size: .62rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
     .cpill .cpv { font-size: 1.4rem; font-weight: 700; color: #38bdf8; }
 
-    /* ── Tables ───────────────────────────────────────────────── */
+    /* ── Tables ─────────────────────────────────────────────────── */
     table { width: 100%; border-collapse: collapse; font-size: .79rem; }
     th { text-align: left; padding: .42rem .65rem; color: #475569; text-transform: uppercase; font-size: .63rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
     td { padding: .48rem .65rem; border-bottom: 1px solid #0f172a; vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #1a2535; }
 
-    /* ── State pills ──────────────────────────────────────────── */
+    /* ── State pills ────────────────────────────────────────────── */
     .pill { border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; display: inline-block; }
     .s-eligible              { background: #1e293b; color: #64748b; }
     .s-queued                { background: #1e3a5f; color: #60a5fa; }
@@ -99,7 +127,7 @@
     .risk-LOW     { background: #052e16; color: #86efac; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
     .risk-UNKNOWN { background: #1e293b; color: #64748b;  border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
 
-    /* ── Controls ─────────────────────────────────────────────── */
+    /* ── Controls ───────────────────────────────────────────────── */
     .ctrls { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; margin-bottom: .7rem; }
     select, input { border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: .38rem .65rem; font-size: .8rem; }
     button {
@@ -113,14 +141,15 @@
     button.warn    { background: #d97706; border-color: #d97706; }
     button.purple  { background: #7c3aed; border-color: #7c3aed; }
     button:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-sm { padding: .2rem .55rem !important; font-size: .68rem !important; }
     .stag { font-size: .58rem; background: #78350f; color: #fbbf24; border-radius: 3px; padding: 1px 4px; font-weight: 700; }
 
-    /* ── State distribution ───────────────────────────────────── */
+    /* ── State distribution ─────────────────────────────────────── */
     .sdist { display: flex; flex-direction: column; gap: .32rem; }
-    .srow  { display: flex; justify-content: space-between; align-items: center; padding: .3rem .6rem; border-radius: 6px; background: #0f172a; }
+    .srow  { display: flex; justify-content: space-between; align-items: center; padding: .3rem .6rem; border-radius: 6px; background: #1e293b; }
     .scnt  { font-weight: 700; font-size: .87rem; }
 
-    /* ── Student profile ──────────────────────────────────────── */
+    /* ── Student profile ─────────────────────────────────────────── */
     .pcard { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem 1.15rem; margin-bottom: 1rem; }
     .pname { font-size: 1.05rem; font-weight: 700; color: #f1f5f9; margin-bottom: .5rem; }
     .pmeta { display: flex; flex-wrap: wrap; gap: .65rem; font-size: .78rem; color: #64748b; }
@@ -130,14 +159,14 @@
     .pst .psl { color: #475569; font-size: .62rem; display: block; }
     .pst .psv { color: #e2e8f0; font-weight: 600; }
 
-    /* ── Activity log ─────────────────────────────────────────── */
-    .awrap { max-height: 260px; overflow-y: auto; }
+    /* ── Activity log ───────────────────────────────────────────── */
+    .awrap { max-height: 280px; overflow-y: auto; }
 
-    /* ── Console ──────────────────────────────────────────────── */
+    /* ── Console ─────────────────────────────────────────────────── */
     #console { font-family: monospace; font-size: .71rem; background: #0a0f1a; border-radius: 6px; padding: .6rem; max-height: 110px; overflow-y: auto; color: #64748b; }
     #console p { margin: 2px 0; line-height: 1.5; }
 
-    /* ── Colors ───────────────────────────────────────────────── */
+    /* ── Colors ─────────────────────────────────────────────────── */
     .blue   { color: #38bdf8; }
     .green  { color: #4ade80; }
     .yellow { color: #fbbf24; }
@@ -158,7 +187,9 @@
     <div class="hp" id="hp-db"><span class="sd dot-gray"></span>PostgreSQL</div>
     <div class="hp" id="hp-mssql"><span class="sd dot-gray"></span>SQL Server</div>
     <div class="hp" id="hp-sched"><span class="sd dot-gray"></span>Scheduler</div>
-    <button class="neutral" style="padding:.28rem .65rem;font-size:.72rem" onclick="loadAll()">Refresh All</button>
+    <button class="neutral btn-sm" onclick="loadAll()">Refresh All</button>
+    <button class="neutral btn-sm" onclick="expandAll()">Expand All</button>
+    <button class="neutral btn-sm" onclick="collapseAll()">Collapse All</button>
     <span style="font-size:.68rem;color:#334155" id="last-refresh">—</span>
   </div>
 </header>
@@ -166,122 +197,176 @@
 <main>
 
   <!-- ── 1. System Health ──────────────────────────────────────── -->
-  <section>
-    <h2>System Health</h2>
-    <div class="hgrid">
-      <div class="hcard"><div class="hl">Execution Mode</div><div class="hv" id="h-mode">—</div></div>
-      <div class="hcard"><div class="hl">PostgreSQL</div><div class="hv" id="h-db">—</div></div>
-      <div class="hcard"><div class="hl">SQL Server</div><div class="hv" id="h-mssql">—</div></div>
-      <div class="hcard"><div class="hl">Scheduler</div><div class="hv" id="h-sched">—</div></div>
-      <div class="hcard"><div class="hl">Last Scheduler Run</div><div class="hv" id="h-lastrun" style="font-size:.78rem">—</div></div>
-      <div class="hcard"><div class="hl">Outbound Channels</div><div class="hv" id="h-channels">—</div></div>
+  <div class="cs" id="cs-health">
+    <div class="ch" onclick="toggleCard('cs-health')">
+      <div class="ch-title">System Health</div>
+      <span class="chev">▾</span>
     </div>
-  </section>
-
-  <!-- ── 2. Alerts ─────────────────────────────────────────────── -->
-  <section>
-    <h2>Operational Alerts <span id="alert-count" style="font-size:.72rem;color:#334155;font-weight:400;margin-left:.4rem;text-transform:none"></span></h2>
-    <div id="alerts-body"><p class="empty">Loading…</p></div>
-  </section>
-
-  <!-- ── 3. Funnel KPIs ────────────────────────────────────────── -->
-  <div class="kgrid">
-    <div class="card"><div class="klabel">Tracked</div><div class="kval blue"  id="f-tracked">—</div></div>
-    <div class="card"><div class="klabel">Ever Contacted</div><div class="kval blue"   id="f-contacted">—</div></div>
-    <div class="card"><div class="klabel">Responded</div><div class="kval green"  id="f-responded">—</div></div>
-    <div class="card"><div class="klabel">No Response</div><div class="kval yellow" id="f-noresp">—</div></div>
-    <div class="card"><div class="klabel">Intervention</div><div class="kval red"    id="f-intervention">—</div></div>
-    <div class="card"><div class="klabel">Resolved</div><div class="kval purple" id="f-resolved">—</div></div>
-    <div class="card"><div class="klabel">Closed</div><div class="kval slate"  id="f-closed">—</div></div>
-    <div class="card"><div class="klabel">Shadow Executions</div><div class="kval yellow" id="f-shadow">—</div><div class="ksub">no real sends</div></div>
+    <div class="cb">
+      <div class="hgrid">
+        <div class="hcard"><div class="hl">Execution Mode</div><div class="hv" id="h-mode">—</div></div>
+        <div class="hcard"><div class="hl">PostgreSQL</div><div class="hv" id="h-db">—</div></div>
+        <div class="hcard"><div class="hl">SQL Server</div><div class="hv" id="h-mssql">—</div></div>
+        <div class="hcard"><div class="hl">Scheduler</div><div class="hv" id="h-sched">—</div></div>
+        <div class="hcard"><div class="hl">Last Scheduler Run</div><div class="hv" id="h-lastrun" style="font-size:.78rem">—</div></div>
+        <div class="hcard"><div class="hl">Outbound Channels</div><div class="hv" id="h-channels">—</div></div>
+      </div>
+    </div>
   </div>
-  <div class="conv-row">
-    <div class="cpill"><div class="cpl">Contacted Rate</div><div class="cpv" id="cv-contacted">—</div></div>
-    <div class="cpill"><div class="cpl">Response Rate</div><div class="cpv" id="cv-response">—</div></div>
-    <div class="cpill"><div class="cpl">Resolution Rate</div><div class="cpv" id="cv-resolution">—</div></div>
+
+  <!-- ── 2. Operational Alerts ─────────────────────────────────── -->
+  <div class="cs" id="cs-alerts">
+    <div class="ch" onclick="toggleCard('cs-alerts')">
+      <div class="ch-title">
+        Operational Alerts
+        <span id="alert-count" style="font-size:.72rem;color:#94a3b8;font-weight:400;text-transform:none"></span>
+      </div>
+      <span class="chev">▾</span>
+    </div>
+    <div class="cb">
+      <div id="alerts-body"><p class="empty">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- ── 3. Funnel Metrics ─────────────────────────────────────── -->
+  <div class="cs" id="cs-funnel">
+    <div class="ch" onclick="toggleCard('cs-funnel')">
+      <div class="ch-title">Funnel Metrics</div>
+      <span class="chev">▾</span>
+    </div>
+    <div class="cb">
+      <div class="kgrid">
+        <div class="card"><div class="klabel">Tracked</div><div class="kval blue"   id="f-tracked">—</div></div>
+        <div class="card"><div class="klabel">Ever Contacted</div><div class="kval blue"   id="f-contacted">—</div></div>
+        <div class="card"><div class="klabel">Responded</div><div class="kval green"  id="f-responded">—</div></div>
+        <div class="card"><div class="klabel">No Response</div><div class="kval yellow" id="f-noresp">—</div></div>
+        <div class="card"><div class="klabel">Intervention</div><div class="kval red"    id="f-intervention">—</div></div>
+        <div class="card"><div class="klabel">Resolved</div><div class="kval purple" id="f-resolved">—</div></div>
+        <div class="card"><div class="klabel">Closed</div><div class="kval slate"  id="f-closed">—</div></div>
+        <div class="card"><div class="klabel">Shadow Executions</div><div class="kval yellow" id="f-shadow">—</div><div class="ksub">no real sends</div></div>
+      </div>
+      <div class="conv-row">
+        <div class="cpill"><div class="cpl">Contacted Rate</div><div class="cpv" id="cv-contacted">—</div></div>
+        <div class="cpill"><div class="cpl">Response Rate</div><div class="cpv" id="cv-response">—</div></div>
+        <div class="cpill"><div class="cpl">Resolution Rate</div><div class="cpv" id="cv-resolution">—</div></div>
+      </div>
+    </div>
   </div>
 
   <!-- ── 4. State Distribution + Channel Performance ───────────── -->
-  <div class="two-col">
-    <section style="margin-bottom:0">
-      <h2>State Distribution</h2>
-      <div class="sdist" id="state-dist"><p class="empty">Loading…</p></div>
-    </section>
-    <section style="margin-bottom:0">
-      <h2>Channel Performance <span id="chan-note" style="font-size:.65rem;color:#fbbf24;font-weight:400;text-transform:none;margin-left:.3rem"></span></h2>
-      <div id="channel-table"><p class="empty">Loading…</p></div>
-    </section>
-  </div>
-  <div style="margin-bottom:1.2rem"></div>
-
-  <!-- ── 5. Student Lookup ─────────────────────────────────────── -->
-  <section>
-    <h2>Student Lookup</h2>
-    <div class="ctrls">
-      <input id="student-id" type="number" placeholder="Student ID" style="width:150px" />
-      <button onclick="lookupStudent()">Look Up</button>
+  <div class="cs" id="cs-perf">
+    <div class="ch" onclick="toggleCard('cs-perf')">
+      <div class="ch-title">State Distribution &amp; Channel Performance</div>
+      <span class="chev">▾</span>
     </div>
-    <div id="student-result"></div>
-  </section>
+    <div class="cb">
+      <div class="two-col">
+        <div class="inner-card">
+          <h3>State Distribution</h3>
+          <div class="sdist" id="state-dist"><p class="empty">Loading…</p></div>
+        </div>
+        <div class="inner-card">
+          <h3>
+            Channel Performance
+            <span id="chan-note" style="font-size:.65rem;color:#fbbf24;font-weight:400;text-transform:none"></span>
+          </h3>
+          <div id="channel-table"><p class="empty">Loading…</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 5. Student Lookup ──────────────────────────────────────── -->
+  <div class="cs" id="cs-students">
+    <div class="ch" onclick="toggleCard('cs-students')">
+      <div class="ch-title">Student Lookup</div>
+      <span class="chev">▾</span>
+    </div>
+    <div class="cb">
+      <div class="ctrls">
+        <input id="student-id" type="number" placeholder="Student ID" style="width:150px" />
+        <button onclick="lookupStudent()">Look Up</button>
+      </div>
+      <div id="student-result"></div>
+    </div>
+  </div>
 
   <!-- ── 6. Outreach Controls ──────────────────────────────────── -->
-  <div class="two-col">
-    <section style="margin-bottom:0">
-      <h2>Trigger Outreach Batch</h2>
-      <div class="ctrls">
-        <select id="checkpoint">
-          <option value="SQL">SQL</option>
-          <option value="SSRS">SSRS</option>
-          <option value="SSIS">SSIS</option>
-          <option value="POST_COMPLETION">Post Completion</option>
-        </select>
-        <button onclick="triggerOutreach()">Run Batch</button>
+  <div class="cs" id="cs-outreach">
+    <div class="ch" onclick="toggleCard('cs-outreach')">
+      <div class="ch-title">Outreach Controls</div>
+      <span class="chev">▾</span>
+    </div>
+    <div class="cb">
+      <div class="two-col">
+        <div class="inner-card">
+          <h3>Trigger Outreach Batch</h3>
+          <div class="ctrls">
+            <select id="checkpoint">
+              <option value="SQL">SQL</option>
+              <option value="SSRS">SSRS</option>
+              <option value="SSIS">SSIS</option>
+              <option value="POST_COMPLETION">Post Completion</option>
+            </select>
+            <button onclick="triggerOutreach()">Run Batch</button>
+          </div>
+          <div id="trigger-result" style="font-size:.78rem;color:#64748b"></div>
+        </div>
+        <div class="inner-card">
+          <h3>SQL Server Sync</h3>
+          <div class="ctrls">
+            <button class="neutral" onclick="syncMssql()">Sync Now</button>
+            <span id="sync-result" style="font-size:.78rem;color:#64748b"></span>
+          </div>
+        </div>
       </div>
-      <div id="trigger-result" style="font-size:.78rem;color:#64748b"></div>
-    </section>
-    <section style="margin-bottom:0">
-      <h2>SQL Server Sync</h2>
-      <div class="ctrls">
-        <button class="neutral" onclick="syncMssql()">Sync Now</button>
-        <span id="sync-result" style="font-size:.78rem;color:#64748b"></span>
-      </div>
-    </section>
+    </div>
   </div>
-  <div style="margin-bottom:1.2rem"></div>
 
   <!-- ── 7. Manual Actions ─────────────────────────────────────── -->
-  <section>
-    <h2>Manual Actions</h2>
-    <div class="ctrls">
-      <input id="action-uid"   type="number" placeholder="Student ID"       style="width:150px" />
-      <input id="action-notes" type="text"   placeholder="Notes (optional)"  style="width:220px" />
+  <div class="cs" id="cs-actions">
+    <div class="ch" onclick="toggleCard('cs-actions')">
+      <div class="ch-title">Manual Actions</div>
+      <span class="chev">▾</span>
     </div>
-    <div class="ctrls">
-      <button class="danger"  onclick="execAction('CLOSE_CASE')">Close Case</button>
-      <button class="warn"    onclick="execAction('FORCE_RETRY')">
-        Force Retry <span class="stag" id="retry-stag">SHADOW</span>
-      </button>
-      <button class="neutral" onclick="execAction('BOOK_MEETING')">Mark Resolved</button>
-      <button class="purple"  onclick="execAction('ESCALATE')">Escalate</button>
+    <div class="cb">
+      <div class="ctrls">
+        <input id="action-uid"   type="number" placeholder="Student ID"      style="width:150px" />
+        <input id="action-notes" type="text"   placeholder="Notes (optional)" style="width:220px" />
+      </div>
+      <div class="ctrls">
+        <button class="danger"  onclick="execAction('CLOSE_CASE')">Close Case</button>
+        <button class="warn"    onclick="execAction('FORCE_RETRY')">
+          Force Retry <span class="stag" id="retry-stag">SHADOW</span>
+        </button>
+        <button class="neutral" onclick="execAction('BOOK_MEETING')">Mark Resolved</button>
+        <button class="purple"  onclick="execAction('ESCALATE')">Escalate</button>
+      </div>
+      <div id="action-result" style="font-size:.8rem;color:#64748b;margin-top:.45rem"></div>
+      <div id="console" style="margin-top:.7rem"><p class="ci">Waiting for actions…</p></div>
     </div>
-    <div id="action-result" style="font-size:.8rem;color:#64748b;margin-top:.45rem"></div>
-    <div id="console" style="margin-top:.7rem"><p class="ci">Waiting for actions…</p></div>
-  </section>
+  </div>
 
   <!-- ── 8. Recent Activity ─────────────────────────────────────── -->
-  <section>
-    <h2>Recent Activity
-      <button class="neutral" style="padding:.2rem .55rem;font-size:.68rem;margin-left:.5rem" onclick="loadActivity()">Reload</button>
-    </h2>
-    <div class="awrap">
-      <table>
-        <thead>
-          <tr><th>Time</th><th>Student</th><th>Checkpoint</th><th>Channel</th><th>Action</th><th>Mode</th><th>State Change</th></tr>
-        </thead>
-        <tbody id="activity-body"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
-      </table>
+  <div class="cs" id="cs-activity">
+    <div class="ch" onclick="toggleCard('cs-activity')">
+      <div class="ch-title">
+        Recent Activity
+        <button class="neutral btn-sm" onclick="event.stopPropagation(); loadActivity()">Reload</button>
+      </div>
+      <span class="chev">▾</span>
     </div>
-  </section>
+    <div class="cb">
+      <div class="awrap">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Student</th><th>Checkpoint</th><th>Channel</th><th>Action</th><th>Mode</th><th>State Change</th></tr>
+          </thead>
+          <tbody id="activity-body"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
 </main>
 
@@ -305,6 +390,17 @@
   function ts(s)  { return s ? new Date(s).toLocaleString() : '—'; }
   function sp(s)  { return (s || '').replace(/_/g, ' '); }
   function dot(ok, cls) { return `<span class="sd ${ok ? 'dot-green' : 'dot-red'}" style="margin-right:.35rem"></span>${cls}`; }
+
+  // ── Card toggle ────────────────────────────────────────────────
+  function toggleCard(id) {
+    document.getElementById(id).classList.toggle('collapsed');
+  }
+  function expandAll() {
+    document.querySelectorAll('.cs.collapsed').forEach(el => el.classList.remove('collapsed'));
+  }
+  function collapseAll() {
+    document.querySelectorAll('.cs:not(.collapsed)').forEach(el => el.classList.add('collapsed'));
+  }
 
   async function api(path, opts = {}) {
     const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
@@ -331,19 +427,16 @@
       badge.textContent = d.execution_mode;
       badge.className = `badge ${d.execution_mode === 'SHADOW' ? 'badge-shadow' : 'badge-live'}`;
 
-      // Shadow tag on retry button
       document.getElementById('retry-stag').style.display = d.execution_mode === 'SHADOW' ? '' : 'none';
 
-      // Header pills
       function pill(id, ok, label) {
         const el = document.getElementById(id);
         el.innerHTML = `<span class="sd ${ok ? 'dot-green' : 'dot-red'}"></span>${label}`;
       }
-      pill('hp-db',    d.db?.connected,            d.db?.connected ? 'PostgreSQL' : 'DB Error');
-      pill('hp-mssql', d.mssql?.configured,         d.mssql?.configured ? 'SQL Server' : 'SQL Server ⚠');
-      pill('hp-sched', d.scheduler?.status === 'active', d.scheduler?.status === 'active' ? 'Scheduler' : 'Scheduler ⚠');
+      pill('hp-db',    d.db?.connected,                    d.db?.connected ? 'PostgreSQL' : 'DB Error');
+      pill('hp-mssql', d.mssql?.configured,                d.mssql?.configured ? 'SQL Server' : 'SQL Server ⚠');
+      pill('hp-sched', d.scheduler?.status === 'active',   d.scheduler?.status === 'active' ? 'Scheduler' : 'Scheduler ⚠');
 
-      // Health cards
       document.getElementById('h-mode').innerHTML =
         `<span class="${d.execution_mode === 'SHADOW' ? 'm-shadow' : 'm-live'}">${d.execution_mode}</span>`;
       document.getElementById('h-db').innerHTML =
@@ -362,7 +455,7 @@
         : `CALL:${ch.call ? '<span class="green">✓</span>' : '<span class="red">✗</span>'} `
           + `SMS:${ch.sms ? '<span class="green">✓</span>' : '<span class="red">✗</span>'} `
           + `EMAIL:${ch.email ? '<span class="green">✓</span>' : '<span class="red">✗</span>'}`;
-    } catch (_) { /* silent — DB may not be up */ }
+    } catch (_) {}
   }
 
   // ── Alerts ─────────────────────────────────────────────────────
@@ -413,7 +506,6 @@
       document.getElementById('cv-response').textContent    = pct(c.response_rate);
       document.getElementById('cv-resolution').textContent  = pct(c.resolution_rate);
 
-      // State distribution
       const byState = d.by_state || {};
       const dist = document.getElementById('state-dist');
       if (!Object.keys(byState).length) {
@@ -452,7 +544,7 @@
           <td class="${ch.success_rate > 0 ? 'green' : 'slate'}">${pct(ch.success_rate)}</td>
         </tr>`).join('')}</tbody>
       </table>
-      ${shadow_mode ? '<p style="font-size:.68rem;color:#334155;margin-top:.5rem;text-align:center">All channels simulated in SHADOW mode — no real communication sent</p>' : ''}`;
+      ${shadow_mode ? '<p style="font-size:.68rem;color:#475569;margin-top:.5rem;text-align:center">All channels simulated in SHADOW mode — no real communication sent</p>' : ''}`;
     } catch (_) {}
   }
 
