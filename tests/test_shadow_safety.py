@@ -12,10 +12,15 @@ async def test_ghl_shadow_returns_simulated_no_http():
         ms.GHL_API_KEY = "fake-key"
         ms.GHL_BASE_URL = "https://rest.gohighlevel.com"
         ms.GHL_LOCATION_ID = "fake-loc"
+        ms.EXECUTION_MODE = "SHADOW"
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            from app.services.integrations.ghl import trigger_ghl_workflow
-            result = await trigger_ghl_workflow({"user_id": 1001, "channel": "CALL", "attempt": 1})
+            from app.services.integrations.ghl import trigger_ghl_workflow, build_ghl_payload
+            student = {"UserID": 1001, "FirstName": "Test", "LastName": "User",
+                       "Email": "t@example.com", "PhoneNumber": "+15550001001",
+                       "PathName": "SQL", "HWsBehind": 3, "AvgEffRating": 0.7, "LastActivityDays": 5}
+            payload = build_ghl_payload(student, "CALL", 1)
+            result = await trigger_ghl_workflow(payload)
 
             mock_post.assert_not_called()
             assert result.get("execution_mode") == "SHADOW"
@@ -29,10 +34,14 @@ async def test_synthflow_shadow_returns_simulated_no_http():
         ms.is_shadow = True
         ms.SYNTHFLOW_API_KEY = "fake-key"
         ms.SYNTHFLOW_PHONE_NUMBER = "+15550000000"
+        ms.EXECUTION_MODE = "SHADOW"
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            from app.services.integrations.synthflow import place_call
-            result = await place_call({"phone_number": "+15550001001", "user_id": 1001})
+            from app.services.integrations.synthflow import place_call, build_call_payload
+            student = {"UserID": 1001, "PhoneNumber": "+15550001001",
+                       "PathName": "SQL", "HWsBehind": 3, "AvgEffRating": 0.7}
+            payload = build_call_payload(student, 1)
+            result = await place_call(payload)
 
             mock_post.assert_not_called()
             assert result.get("execution_mode") == "SHADOW" or result.get("status") == "simulated"
@@ -46,10 +55,14 @@ async def test_sms_shadow_returns_simulated_no_http():
         ms.is_shadow = True
         ms.GHL_API_KEY = "fake-key"
         ms.GHL_BASE_URL = "https://rest.gohighlevel.com"
+        ms.EXECUTION_MODE = "SHADOW"
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            from app.services.integrations.sms import send_sms
-            result = await send_sms({"user_id": 1001, "phone": "+15550001001"})
+            from app.services.integrations.sms import send_sms, build_sms_payload
+            student = {"UserID": 1001, "FirstName": "Test",
+                       "PhoneNumber": "+15550001001", "PathName": "SQL", "HWsBehind": 3}
+            payload = build_sms_payload(student, 1)
+            result = await send_sms(payload)
 
             mock_post.assert_not_called()
 
@@ -62,10 +75,14 @@ async def test_email_shadow_returns_simulated_no_http():
         ms.is_shadow = True
         ms.GHL_API_KEY = "fake-key"
         ms.GHL_BASE_URL = "https://rest.gohighlevel.com"
+        ms.EXECUTION_MODE = "SHADOW"
 
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-            from app.services.integrations.email import send_email
-            result = await send_email({"user_id": 1001, "email": "test@example.com"})
+            from app.services.integrations.email import send_email, build_email_payload
+            student = {"UserID": 1001, "FirstName": "Test",
+                       "Email": "test@example.com", "PathName": "SQL", "HWsBehind": 3}
+            payload = build_email_payload(student, 1)
+            result = await send_email(payload)
 
             mock_post.assert_not_called()
 
