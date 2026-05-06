@@ -1,26 +1,70 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-connect_args = {"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+logger = logging.getLogger(__name__)
 
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# ── PostgreSQL async engine ────────────────────────────────────────────────────
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-def get_db():
-    db = SessionLocal()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
+async def init_db() -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables created/verified")
+
+
+# ── SQL Server sync connection (read-only) ─────────────────────────────────────
+
+def _fetch_students_sync() -> list[dict]:
+    if not settings.mssql_configured:
+        logger.warning("SQL Server not configured — MSSQL_HOST/USER/DATABASE are empty")
+        return []
     try:
-        yield db
-    finally:
-        db.close()
+        import pyodbc
+        conn = pyodbc.connect(settings.mssql_dsn, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT UserID, FirstName, LastName, Email, PhoneNumber, PathName, "
+            "HWsBehind, AvgEffRating, LastActivityDays "
+            "FROM AI_ChatBot_TriggerData"
+        )
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+    except Exception as exc:
+        logger.error("SQL Server query failed: %s", exc)
+        return []
 
 
-def init_db():
-    from app import models  # noqa: F401 — ensure models are registered
-    Base.metadata.create_all(bind=engine)
+async def fetch_students_from_mssql() -> list[dict]:
+    return await asyncio.to_thread(_fetch_students_sync)

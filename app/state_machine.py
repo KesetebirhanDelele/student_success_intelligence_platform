@@ -1,56 +1,37 @@
-from typing import Set, Dict
+from __future__ import annotations
 
-# All valid lifecycle states
-VALID_STATES: Set[str] = {
-    "ELIGIBLE",
-    "QUEUED",
-    "CONTACTED",
-    "NO_RESPONSE",
-    "RESPONDED",
-    "ANALYZED",
-    "INTERVENTION_REQUIRED",
-    "MEETING_SCHEDULED",
-    "RESOLVED",
-    "CLOSED",
-}
-
-# Terminal state — no further transitions allowed
-TERMINAL_STATE = "CLOSED"
-
-# Allowed transitions: from_state → set of valid to_states
-TRANSITIONS: Dict[str, Set[str]] = {
+TRANSITIONS: dict[str, set[str]] = {
     "ELIGIBLE":               {"QUEUED", "CLOSED"},
     "QUEUED":                 {"CONTACTED", "CLOSED"},
     "CONTACTED":              {"NO_RESPONSE", "RESPONDED", "CLOSED"},
-    "NO_RESPONSE":            {"QUEUED", "CLOSED"},         # QUEUED = retry cycle
+    "NO_RESPONSE":            {"RETRY", "CLOSED"},
+    "RETRY":                  {"CONTACTED", "CLOSED"},
     "RESPONDED":              {"ANALYZED", "RESOLVED", "CLOSED"},
     "ANALYZED":               {"INTERVENTION_REQUIRED", "RESOLVED", "CLOSED"},
-    "INTERVENTION_REQUIRED":  {"MEETING_SCHEDULED", "CLOSED"},
-    "MEETING_SCHEDULED":      {"RESOLVED", "CLOSED"},
+    "INTERVENTION_REQUIRED":  {"RESOLVED", "CLOSED"},
     "RESOLVED":               {"CLOSED"},
-    "CLOSED":                 set(),                         # terminal
+    "CLOSED":                 set(),
 }
+
+TERMINAL: set[str] = {"CLOSED"}
 
 
 class StateViolationError(Exception):
     pass
 
 
-def validate_transition(current: str, target: str) -> None:
-    """Raise StateViolationError if the transition is not permitted."""
-    if current not in VALID_STATES:
-        raise StateViolationError(f"Unknown current state: {current}")
-    if target not in VALID_STATES:
-        raise StateViolationError(f"Unknown target state: {target}")
-    if target not in TRANSITIONS.get(current, set()):
+def validate_transition(from_state: str, to_state: str, trigger: str = "") -> None:
+    allowed = TRANSITIONS.get(from_state, set())
+    if to_state not in allowed:
         raise StateViolationError(
-            f"Invalid transition: {current} → {target}"
+            f"Invalid transition {from_state} → {to_state} (trigger={trigger!r}). "
+            f"Allowed: {allowed or 'none — terminal state'}"
         )
 
 
-def can_transition(current: str, target: str) -> bool:
-    return target in TRANSITIONS.get(current, set())
+def can_transition(from_state: str, to_state: str) -> bool:
+    return to_state in TRANSITIONS.get(from_state, set())
 
 
 def is_terminal(state: str) -> bool:
-    return state == TERMINAL_STATE
+    return state in TERMINAL

@@ -7,86 +7,145 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-    header { background: #1e293b; border-bottom: 1px solid #334155; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+
+    header {
+      background: #1e293b; border-bottom: 1px solid #334155;
+      padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem;
+    }
     header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .5px; }
-    .badge { font-size: .7rem; background: #0ea5e9; color: #fff; border-radius: 999px; padding: 2px 8px; font-weight: 600; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-    .dot-green { background: #22c55e; }
-    .dot-red   { background: #ef4444; }
-    main { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .badge { font-size: .7rem; border-radius: 999px; padding: 2px 9px; font-weight: 700; }
+    .badge-shadow { background: #78350f; color: #fbbf24; }
+    .badge-live   { background: #7f1d1d; color: #f87171; }
+    .status-dot   { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+    .dot-green    { background: #22c55e; }
+    .dot-red      { background: #ef4444; }
+    .dot-yellow   { background: #fbbf24; }
+    .header-right { margin-left: auto; font-size: .8rem; color: #94a3b8; display: flex; gap: 1.5rem; align-items: center; }
+
+    main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
     .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.2rem; }
-    .card .label { font-size: .75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
+    .card .label { font-size: .72rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
     .card .value { font-size: 2rem; font-weight: 700; margin-top: .25rem; }
-    .card .sub   { font-size: .8rem; color: #64748b; margin-top: .2rem; }
-    .blue  { color: #38bdf8; }
-    .green { color: #4ade80; }
-    .yellow{ color: #fbbf24; }
-    .red   { color: #f87171; }
-    .purple{ color: #a78bfa; }
+    .card .sub   { font-size: .75rem; color: #64748b; margin-top: .2rem; }
+
+    .blue   { color: #38bdf8; }
+    .green  { color: #4ade80; }
+    .yellow { color: #fbbf24; }
+    .red    { color: #f87171; }
+    .purple { color: #a78bfa; }
+    .orange { color: #fb923c; }
+    .slate  { color: #94a3b8; }
+
     section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
     section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: #cbd5e1; }
-    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    select, input, button { border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: .45rem .75rem; font-size: .85rem; }
+    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
+    select, input, button {
+      border-radius: 6px; border: 1px solid #334155; background: #0f172a;
+      color: #e2e8f0; padding: .45rem .75rem; font-size: .85rem;
+    }
     button { background: #0ea5e9; border-color: #0ea5e9; color: #fff; cursor: pointer; font-weight: 600; transition: opacity .15s; }
     button:hover { opacity: .85; }
-    button.danger { background: #ef4444; border-color: #ef4444; }
+    button.danger  { background: #dc2626; border-color: #dc2626; }
     button.neutral { background: #475569; border-color: #475569; }
+    button.warn    { background: #d97706; border-color: #d97706; }
+
     table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-    th { text-align: left; padding: .5rem .75rem; color: #64748b; text-transform: uppercase; font-size: .7rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
-    td { padding: .55rem .75rem; border-bottom: 1px solid #1e293b; }
+    th { text-align: left; padding: .5rem .75rem; color: #64748b; text-transform: uppercase; font-size: .68rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
+    td { padding: .55rem .75rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
-    .state { border-radius: 4px; padding: 2px 7px; font-size: .7rem; font-weight: 600; text-transform: uppercase; }
-    .s-contacted   { background:#0c4a6e; color:#38bdf8; }
-    .s-responded   { background:#14532d; color:#4ade80; }
-    .s-no_response { background:#451a03; color:#fbbf24; }
-    .s-closed      { background:#1e1b4b; color:#a78bfa; }
-    .s-eligible    { background:#1e293b; color:#94a3b8; }
-    .s-queued      { background:#1e3a5f; color:#60a5fa; }
-    .s-other       { background:#1e293b; color:#94a3b8; }
-    #log { font-family: monospace; font-size: .75rem; background: #0f172a; border-radius: 6px; padding: .75rem; max-height: 180px; overflow-y: auto; color: #94a3b8; }
-    #log p { margin: 2px 0; }
+    tr:hover td { background: #1a2535; }
+
+    .pill { border-radius: 4px; padding: 2px 7px; font-size: .68rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+    .s-eligible            { background: #1e293b; color: #94a3b8; }
+    .s-queued              { background: #1e3a5f; color: #60a5fa; }
+    .s-contacted           { background: #0c4a6e; color: #38bdf8; }
+    .s-no_response         { background: #451a03; color: #fbbf24; }
+    .s-retry               { background: #3b1f00; color: #fb923c; }
+    .s-responded           { background: #14532d; color: #4ade80; }
+    .s-analyzed            { background: #1e1b4b; color: #818cf8; }
+    .s-intervention_required { background: #4c1d1d; color: #fca5a5; }
+    .s-resolved            { background: #052e16; color: #86efac; }
+    .s-closed              { background: #0f0f0f; color: #475569; }
+    .s-other               { background: #1e293b; color: #94a3b8; }
+
+    .mode-shadow { background: #78350f; color: #fbbf24; border-radius: 4px; padding: 2px 7px; font-size: .68rem; font-weight: 700; }
+    .mode-live   { background: #7f1d1d; color: #f87171; border-radius: 4px; padding: 2px 7px; font-size: .68rem; font-weight: 700; }
+
+    #log { font-family: monospace; font-size: .75rem; background: #0a0f1a; border-radius: 6px; padding: .75rem; max-height: 200px; overflow-y: auto; color: #94a3b8; }
+    #log p { margin: 2px 0; line-height: 1.5; }
     .info { color: #38bdf8; }
     .err  { color: #f87171; }
     .ok   { color: #4ade80; }
-    .empty { color: #475569; text-align: center; padding: 2rem; }
+    .warn { color: #fbbf24; }
+    .empty { color: #475569; text-align: center; padding: 2rem; font-size: .85rem; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+    .state-dist { display: flex; flex-direction: column; gap: .4rem; }
+    .state-row  { display: flex; justify-content: space-between; align-items: center; padding: .35rem .6rem; border-radius: 6px; background: #0f172a; }
+    .state-count { font-weight: 700; font-size: .9rem; }
+    .mssql-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
   </style>
 </head>
 <body>
+
 <header>
   <h1>SSIP Dashboard</h1>
-  <span class="badge">MVP</span>
-  <span style="margin-left:auto; font-size:.8rem; color:#94a3b8">
-    Scheduler: <span id="sched-status">—</span>
-  </span>
+  <span id="exec-badge" class="badge badge-shadow">SHADOW</span>
+  <div class="header-right">
+    <span>Scheduler: <span id="sched-status">—</span></span>
+    <span>SQL Server: <span id="mssql-status">—</span></span>
+    <span style="color:#475569; font-size:.75rem" id="last-refresh">—</span>
+  </div>
 </header>
 
 <main>
-  <!-- Metrics -->
+
+  <!-- KPI grid -->
   <div class="grid" id="metrics-grid">
-    <div class="card"><div class="label">Total Outreach</div><div class="value blue" id="m-total">—</div></div>
-    <div class="card"><div class="label">Contacted</div><div class="value blue" id="m-contacted">—</div></div>
+    <div class="card"><div class="label">Students Tracked</div><div class="value blue" id="m-total">—</div></div>
+    <div class="card"><div class="label">Total Attempts</div><div class="value blue" id="m-attempts">—</div></div>
+    <div class="card"><div class="label">Shadow Executions</div><div class="value yellow" id="m-shadow">—</div><div class="sub">no real sends</div></div>
     <div class="card"><div class="label">Responded</div><div class="value green" id="m-responded">—</div></div>
     <div class="card"><div class="label">No Response</div><div class="value yellow" id="m-no_response">—</div></div>
-    <div class="card"><div class="label">Meetings Booked</div><div class="value purple" id="m-meeting">—</div></div>
-    <div class="card"><div class="label">Closed</div><div class="value red" id="m-closed">—</div></div>
-    <div class="card"><div class="label">Success Rate</div><div class="value green" id="m-success">—</div><div class="sub">responded / total</div></div>
-    <div class="card"><div class="label">Meeting Rate</div><div class="value purple" id="m-mrate">—</div></div>
+    <div class="card"><div class="label">Intervention</div><div class="value red" id="m-intervention">—</div></div>
+    <div class="card"><div class="label">Resolved</div><div class="value purple" id="m-resolved">—</div></div>
+    <div class="card"><div class="label">Success Rate</div><div class="value green" id="m-success">—</div><div class="sub">responded / tracked</div></div>
   </div>
 
-  <!-- Trigger Outreach -->
-  <section>
-    <h2>Trigger Outreach Batch</h2>
-    <div class="controls">
-      <select id="checkpoint">
-        <option value="SQL">SQL</option>
-        <option value="SSRS">SSRS</option>
-        <option value="SSIS">SSIS</option>
-        <option value="POST_COMPLETION">Post Completion</option>
-      </select>
-      <button onclick="triggerOutreach()">Run Batch</button>
-    </div>
-  </section>
+  <!-- State distribution + controls row -->
+  <div class="two-col">
+
+    <!-- State distribution -->
+    <section>
+      <h2>State Distribution</h2>
+      <div class="state-dist" id="state-dist"><p class="empty">Loading…</p></div>
+    </section>
+
+    <!-- Actions -->
+    <section>
+      <h2>Trigger Outreach Batch</h2>
+      <div class="controls">
+        <select id="checkpoint">
+          <option value="SQL">SQL</option>
+          <option value="SSRS">SSRS</option>
+          <option value="SSIS">SSIS</option>
+          <option value="POST_COMPLETION">Post Completion</option>
+        </select>
+        <button onclick="triggerOutreach()">Run Batch</button>
+      </div>
+
+      <h2 style="margin-top:1.2rem">Sync SQL Server</h2>
+      <div class="controls">
+        <button class="neutral" onclick="syncMssql()">Sync Now</button>
+        <span id="sync-result" style="font-size:.8rem; color:#94a3b8"></span>
+      </div>
+    </section>
+
+  </div>
 
   <!-- Student lookup -->
   <section>
@@ -106,7 +165,9 @@
       <select id="action-type">
         <option value="CLOSE_CASE">Close Case</option>
         <option value="BOOK_MEETING">Book Meeting</option>
+        <option value="FORCE_RETRY">Force Retry</option>
       </select>
+      <input id="action-notes" type="text" placeholder="Notes (optional)" style="width:200px" />
       <button class="danger" onclick="executeAction()">Execute</button>
     </div>
   </section>
@@ -116,10 +177,26 @@
     <h2>Activity Log</h2>
     <div id="log"><p class="info">Waiting for activity…</p></div>
   </section>
+
 </main>
 
 <script>
-  const BASE = '';
+  const STATE_ORDER = [
+    'ELIGIBLE','QUEUED','CONTACTED','NO_RESPONSE','RETRY',
+    'RESPONDED','ANALYZED','INTERVENTION_REQUIRED','RESOLVED','CLOSED'
+  ];
+
+  function stateClass(s) {
+    const map = {
+      ELIGIBLE:'s-eligible', QUEUED:'s-queued', CONTACTED:'s-contacted',
+      NO_RESPONSE:'s-no_response', RETRY:'s-retry', RESPONDED:'s-responded',
+      ANALYZED:'s-analyzed', INTERVENTION_REQUIRED:'s-intervention_required',
+      RESOLVED:'s-resolved', CLOSED:'s-closed',
+    };
+    return map[s] || 's-other';
+  }
+
+  function modeClass(m) { return m === 'SHADOW' ? 'mode-shadow' : 'mode-live'; }
 
   function log(msg, cls='info') {
     const el = document.getElementById('log');
@@ -127,26 +204,37 @@
     p.className = cls;
     p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
     el.prepend(p);
-  }
-
-  function stateClass(s) {
-    const map = { CONTACTED:'s-contacted', RESPONDED:'s-responded', NO_RESPONSE:'s-no_response', CLOSED:'s-closed', ELIGIBLE:'s-eligible', QUEUED:'s-queued' };
-    return map[s] || 's-other';
+    while (el.children.length > 120) el.removeChild(el.lastChild);
   }
 
   async function apiFetch(path, opts={}) {
-    const r = await fetch(BASE + path, { headers: {'Content-Type':'application/json'}, ...opts });
+    const r = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
     return r.json();
   }
 
   async function loadHealth() {
     try {
       const res = await apiFetch('/health');
-      if (res.status === 'success') {
-        const el = document.getElementById('sched-status');
-        const active = res.data.scheduler_status === 'active';
-        el.innerHTML = `<span class="status-dot ${active ? 'dot-green' : 'dot-red'}"></span>${res.data.scheduler_status}`;
-      }
+      if (res.status !== 'success') return;
+      const d = res.data;
+
+      // Execution mode badge
+      const badge = document.getElementById('exec-badge');
+      badge.textContent = d.execution_mode;
+      badge.className = `badge ${d.execution_mode === 'SHADOW' ? 'badge-shadow' : 'badge-live'}`;
+
+      // Scheduler
+      const active = d.scheduler_status === 'active';
+      document.getElementById('sched-status').innerHTML =
+        `<span class="status-dot ${active ? 'dot-green' : 'dot-red'}"></span>${d.scheduler_status}`;
+
+      // MSSQL
+      const mssql = d.mssql_configured;
+      document.getElementById('mssql-status').innerHTML =
+        `<span class="status-dot ${mssql ? 'dot-yellow' : 'dot-red'}"></span>${mssql ? 'configured' : 'not configured'}`;
+
+      document.getElementById('last-refresh').textContent =
+        `Refreshed ${new Date().toLocaleTimeString()}`;
     } catch(e) { /* silent */ }
   }
 
@@ -155,20 +243,36 @@
       const res = await apiFetch('/metrics');
       if (res.status !== 'success') return;
       const d = res.data;
-      document.getElementById('m-total').textContent     = d.total_outreach;
-      document.getElementById('m-contacted').textContent = d.contacted;
-      document.getElementById('m-responded').textContent = d.responded;
-      document.getElementById('m-no_response').textContent = d.no_response;
-      document.getElementById('m-meeting').textContent   = d.meeting_booked;
-      document.getElementById('m-closed').textContent    = d.closed;
+
+      document.getElementById('m-total').textContent     = d.total_tracked;
+      document.getElementById('m-attempts').textContent  = d.total_attempts;
+      document.getElementById('m-shadow').textContent    = d.shadow_executions;
+      document.getElementById('m-responded').textContent = (d.by_state?.RESPONDED || 0) + (d.by_state?.ANALYZED || 0) + (d.by_state?.RESOLVED || 0);
+      document.getElementById('m-no_response').textContent = d.by_state?.NO_RESPONSE || 0;
+      document.getElementById('m-intervention').textContent = d.by_state?.INTERVENTION_REQUIRED || 0;
+      document.getElementById('m-resolved').textContent  = d.by_state?.RESOLVED || 0;
       document.getElementById('m-success').textContent   = (d.success_rate * 100).toFixed(1) + '%';
-      document.getElementById('m-mrate').textContent     = (d.meeting_rate * 100).toFixed(1) + '%';
+
+      // State distribution
+      const dist = document.getElementById('state-dist');
+      const byState = d.by_state || {};
+      if (Object.keys(byState).length === 0) {
+        dist.innerHTML = '<p class="empty">No data yet</p>';
+      } else {
+        dist.innerHTML = STATE_ORDER
+          .filter(s => byState[s] !== undefined)
+          .map(s => `
+            <div class="state-row">
+              <span class="pill ${stateClass(s)}">${s.replace('_', ' ')}</span>
+              <span class="state-count slate">${byState[s]}</span>
+            </div>`).join('');
+      }
     } catch(e) { /* silent */ }
   }
 
   async function triggerOutreach() {
     const checkpoint = document.getElementById('checkpoint').value;
-    log(`Triggering batch for checkpoint: ${checkpoint}…`);
+    log(`Triggering batch | checkpoint=${checkpoint} …`);
     try {
       const res = await apiFetch('/outreach/trigger', {
         method: 'POST',
@@ -176,7 +280,7 @@
       });
       if (res.status === 'success') {
         const s = res.data.summary;
-        log(`Batch complete — triggered:${s.triggered} skipped:${s.skipped} errors:${s.errors}`, 'ok');
+        log(`Batch done — triggered:${s.triggered} retried:${s.retried} skipped:${s.skipped} errors:${s.errors}`, 'ok');
       } else {
         log(`Error: ${res.error?.message}`, 'err');
       }
@@ -184,11 +288,34 @@
     } catch(e) { log(`Request failed: ${e}`, 'err'); }
   }
 
+  async function syncMssql() {
+    const el = document.getElementById('sync-result');
+    el.textContent = 'Syncing…';
+    log('Starting SQL Server sync…', 'warn');
+    try {
+      const res = await apiFetch('/sync/mssql', { method: 'POST' });
+      if (res.status === 'success') {
+        const d = res.data;
+        const msg = d.connected
+          ? `Sync complete — added:${d.added} updated:${d.updated}`
+          : 'SQL Server not configured (credentials pending)';
+        el.textContent = msg;
+        log(msg, d.connected ? 'ok' : 'warn');
+      } else {
+        el.textContent = res.error?.message || 'Failed';
+        log(`Sync error: ${res.error?.message}`, 'err');
+      }
+    } catch(e) {
+      el.textContent = 'Error';
+      log(`Sync failed: ${e}`, 'err');
+    }
+  }
+
   async function lookupStudent() {
     const id = document.getElementById('student-id').value;
     if (!id) return;
     const el = document.getElementById('student-result');
-    el.innerHTML = '';
+    el.innerHTML = '<p style="color:#475569;padding:.75rem 0">Loading…</p>';
     try {
       const res = await apiFetch(`/students/${id}`);
       if (res.status !== 'success') {
@@ -196,37 +323,52 @@
         return;
       }
       const d = res.data;
-      const rows = d.history.map(h => `
+      const rows = (d.history || []).map(h => `
         <tr>
-          <td>${h.outreach_id}</td>
-          <td>${h.checkpoint_type}</td>
-          <td><span class="state ${stateClass(h.state)}">${h.state}</span></td>
-          <td>${h.contact_attempt}</td>
-          <td>${h.call_connected ? 'Yes' : 'No'}</td>
-          <td>${h.meeting_booked ? 'Yes' : 'No'}</td>
-          <td>${h.contact_date ? new Date(h.contact_date).toLocaleString() : '—'}</td>
+          <td>${h.id}</td>
+          <td>${h.attempt_number}</td>
+          <td>${h.channel || '—'}</td>
+          <td>${h.action || '—'}</td>
+          <td><span class="pill ${modeClass(h.execution_mode)}">${h.execution_mode}</span></td>
+          <td><span class="pill ${stateClass(h.state_before || '')}">${h.state_before || '—'}</span></td>
+          <td><span class="pill ${stateClass(h.state_after || '')}">${h.state_after || '—'}</span></td>
+          <td style="color:#64748b">${h.created_at ? new Date(h.created_at).toLocaleString() : '—'}</td>
         </tr>`).join('');
       el.innerHTML = `
-        <p style="margin-bottom:.75rem;color:#94a3b8">Student <strong style="color:#e2e8f0">${id}</strong> — current state: <span class="state ${stateClass(d.state)}">${d.state}</span></p>
+        <p style="margin-bottom:.75rem;color:#94a3b8;font-size:.85rem">
+          Student <strong style="color:#e2e8f0">${id}</strong> &nbsp;|&nbsp;
+          Checkpoint: <strong style="color:#e2e8f0">${d.checkpoint_type}</strong> &nbsp;|&nbsp;
+          State: <span class="pill ${stateClass(d.state)}">${d.state}</span> &nbsp;|&nbsp;
+          Attempts: <strong style="color:#e2e8f0">${d.current_attempt}</strong>
+        </p>
         <table>
-          <thead><tr><th>ID</th><th>Checkpoint</th><th>State</th><th>Attempt</th><th>Connected</th><th>Meeting</th><th>Date</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="7" class="empty">No records</td></tr>'}</tbody>
+          <thead>
+            <tr>
+              <th>ID</th><th>Attempt</th><th>Channel</th><th>Action</th>
+              <th>Mode</th><th>From State</th><th>To State</th><th>Date</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="8" class="empty">No history yet</td></tr>'}</tbody>
         </table>`;
     } catch(e) { el.innerHTML = `<p class="empty">Error: ${e}</p>`; }
   }
 
   async function executeAction() {
-    const userId = document.getElementById('action-user-id').value;
-    const actionType = document.getElementById('action-type').value;
+    const userId   = document.getElementById('action-user-id').value;
+    const action   = document.getElementById('action-type').value;
+    const notes    = document.getElementById('action-notes').value;
     if (!userId) return;
-    log(`Executing ${actionType} for student ${userId}…`);
+    log(`Executing ${action} for student ${userId}…`);
     try {
+      const body = { user_id: parseInt(userId), action_type: action };
+      if (notes) body.notes = notes;
       const res = await apiFetch('/actions/manual', {
         method: 'POST',
-        body: JSON.stringify({ user_id: parseInt(userId), action_type: actionType }),
+        body: JSON.stringify(body),
       });
       if (res.status === 'success') {
-        log(`${actionType} executed for student ${userId}`, 'ok');
+        const d = res.data;
+        log(`${action} executed | ${d.from_state} → ${d.to_state}`, 'ok');
         loadMetrics();
       } else {
         log(`Error: ${res.error?.message}`, 'err');
@@ -234,7 +376,7 @@
     } catch(e) { log(`Request failed: ${e}`, 'err'); }
   }
 
-  // Initial load + auto-refresh every 30s
+  // Boot
   loadHealth();
   loadMetrics();
   setInterval(() => { loadHealth(); loadMetrics(); }, 30000);

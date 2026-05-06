@@ -1,79 +1,116 @@
-import logging
-from datetime import datetime
+"""GHL webhook handler — idempotent, full state transitions + LLM analysis."""
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+import hashlib
+import json
+import logging
+
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import StudentOutreachTracking
+from app.models import OutreachHistory, ProcessedEvents, StudentOutreachTracking
 from app.schemas import APIResponse, GHLWebhookPayload, VALID_GHL_EVENTS
-from app.state_machine import validate_transition, StateViolationError
+from app.services.integrations.llm import analyze_transcript
+from app.services.outreach import _log_transition
+from app.state_machine import can_transition
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.post("/webhook/ghl-update")
-def ghl_webhook(
-    payload: GHLWebhookPayload,
-    db: Session = Depends(get_db),
+async def ghl_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    if payload.event_type not in VALID_GHL_EVENTS:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_INPUT", "message": f"Unknown event_type: {payload.event_type}"},
-        )
+    raw = await request.json()
 
-    # Validate user exists
-    record: StudentOutreachTracking | None = (
-        db.query(StudentOutreachTracking)
-        .filter_by(UserID=payload.user_id)
-        .order_by(StudentOutreachTracking.ContactAttempt.desc())
-        .first()
+    # Idempotency check
+    event_hash = hashlib.sha256(json.dumps(raw, sort_keys=True).encode()).hexdigest()
+    existing = await db.execute(
+        select(ProcessedEvents).where(ProcessedEvents.event_hash == event_hash)
     )
-    if not record:
-        logger.warning("Webhook for unknown user %d", payload.user_id)
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "NOT_FOUND", "message": f"No outreach record for user {payload.user_id}"},
-        )
+    if existing.scalar_one_or_none():
+        logger.info("Duplicate event %s — skipped", event_hash)
+        return APIResponse.ok({"deduplicated": True})
 
-    now = datetime.utcnow()
+    db.add(ProcessedEvents(
+        event_hash=event_hash,
+        event_type=raw.get("event_type"),
+        user_id=raw.get("user_id"),
+        raw_payload=raw,
+    ))
+    await db.flush()
 
-    if payload.event_type == "CALL_COMPLETED":
-        if payload.call_connected:
-            new_state = "RESPONDED"
-        else:
-            new_state = "NO_RESPONSE"
-        record.CallConnected = payload.call_connected or False
-        record.CallDuration = payload.call_duration or 0
+    if raw.get("event_type") not in VALID_GHL_EVENTS:
+        return APIResponse.fail("INVALID_EVENT", f"Unknown event_type: {raw.get('event_type')}")
 
-    elif payload.event_type == "TRANSCRIPT_READY":
-        new_state = "ANALYZED"
-        record.Transcript = payload.transcript
+    payload = GHLWebhookPayload(**raw)
+    user_id = payload.user_id
+    if user_id is None:
+        return APIResponse.fail("MISSING_USER_ID", "Webhook payload missing user_id")
 
-    elif payload.event_type in ("SMS_RESPONSE", "EMAIL_RESPONSE"):
-        new_state = "RESPONDED"
+    tracking_row = await db.execute(
+        select(StudentOutreachTracking).where(StudentOutreachTracking.user_id == user_id)
+    )
+    tracking_obj = tracking_row.scalar_one_or_none()
+    if tracking_obj is None:
+        return APIResponse.fail("NOT_FOUND", f"No outreach record for user {user_id}")
 
-    else:
-        new_state = record.State  # no transition for other events
+    old_state = tracking_obj.state
+    llm_analysis = None
+    to_state: str | None = None
 
-    # Apply state transition
-    if new_state != record.State:
-        try:
-            validate_transition(record.State, new_state)
-            record.State = new_state
-        except StateViolationError as exc:
-            logger.error("Webhook state violation for user %d: %s", payload.user_id, exc)
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "STATE_VIOLATION", "message": str(exc)},
+    if payload.event_type in ("CALL_COMPLETED", "SMS_RESPONSE", "EMAIL_RESPONSE"):
+        outcome = (payload.outcome or "").lower()
+        to_state = "RESPONDED" if outcome in ("connected", "responded", "replied", "yes") else "NO_RESPONSE"
+        if payload.transcript:
+            llm_analysis = await analyze_transcript(
+                payload.transcript,
+                user_id,
+                tracking_obj.current_attempt,
+                tracking_obj.checkpoint_type,
             )
 
-    record.UpdatedAt = now
-    db.commit()
-    logger.info(
-        "Webhook processed for user %d: event=%s new_state=%s",
-        payload.user_id, payload.event_type, record.State,
+    elif payload.event_type == "TRANSCRIPT_READY":
+        if payload.transcript:
+            llm_analysis = await analyze_transcript(
+                payload.transcript,
+                user_id,
+                tracking_obj.current_attempt,
+                tracking_obj.checkpoint_type,
+            )
+        to_state = "ANALYZED"
+
+    if to_state and to_state != old_state and can_transition(old_state, to_state):
+        tracking_obj.state = to_state
+        await _log_transition(
+            db, tracking_obj.id, user_id, old_state, to_state,
+            f"webhook:{payload.event_type}", actor="webhook"
+        )
+
+    # Update latest history entry with response data + LLM output
+    history_row = await db.execute(
+        select(OutreachHistory)
+        .where(OutreachHistory.user_id == user_id)
+        .order_by(OutreachHistory.created_at.desc())
+        .limit(1)
     )
-    return APIResponse.ok({})
+    latest = history_row.scalar_one_or_none()
+    if latest:
+        latest.response_payload = raw
+        if llm_analysis:
+            latest.llm_analysis = llm_analysis
+
+    await db.commit()
+    logger.info(
+        "Webhook processed | user=%s event=%s state=%s→%s",
+        user_id, payload.event_type, old_state, tracking_obj.state,
+    )
+    return APIResponse.ok({
+        "processed": True,
+        "user_id": user_id,
+        "new_state": tracking_obj.state,
+    })

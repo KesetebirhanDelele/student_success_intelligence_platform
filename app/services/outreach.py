@@ -1,251 +1,344 @@
-import logging
-from datetime import datetime
-from typing import List, Optional
+"""Core outreach orchestration — full pipeline, shadow-safe."""
+from __future__ import annotations
 
-from sqlalchemy.orm import Session
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import StudentTriggerData, StudentOutreachTracking
-from app.state_machine import validate_transition, StateViolationError
-from app.services.eligibility import check_eligibility
+from app.models import (
+    OutreachHistory,
+    ProcessedEvents,
+    StateTransitionLog,
+    StudentOutreachTracking,
+    StudentTriggerData,
+)
+from app.services.channel_selector import select_channel
 from app.services.decision_engine import decide
-from app.services import ghl
+from app.services.eligibility import check_eligibility
+from app.services.integrations.email import build_email_payload, send_email
+from app.services.integrations.ghl import build_ghl_payload, trigger_ghl_workflow
+from app.services.integrations.sms import build_sms_payload, send_sms
+from app.services.integrations.synthflow import build_call_payload, place_call
+from app.services.sync import sync_from_mssql
+from app.state_machine import StateViolationError, can_transition, validate_transition
 
 logger = logging.getLogger(__name__)
 
+CONCURRENCY_LIMIT = 50
+CHECKPOINTS = {"SQL", "SSRS", "SSIS", "POST_COMPLETION"}
 
-# ── Batch outreach run ────────────────────────────────────────────────────────
 
-def run_outreach_batch(db: Session, checkpoint_type: str) -> dict:
-    """
-    Full daily outreach cycle for a given checkpoint.
-    Returns a summary dict with counts.
-    """
-    logger.info("Starting outreach batch | scope=%s | checkpoint=%s", settings.SYSTEM_SCOPE, checkpoint_type)
-    now = datetime.utcnow()
-    results = {"processed": 0, "triggered": 0, "skipped": 0, "errors": 0}
+async def run_outreach_batch(db: AsyncSession, checkpoint_type: str) -> dict:
+    """Full outreach cycle for one checkpoint. Returns summary counts."""
+    logger.info("Batch start | mode=%s checkpoint=%s", settings.EXECUTION_MODE, checkpoint_type)
 
-    students: List[StudentTriggerData] = (
-        db.query(StudentTriggerData).all()
-    )
+    # Best-effort SQL Server sync before processing
+    await sync_from_mssql(db)
 
+    result = await db.execute(select(StudentTriggerData))
+    students = result.scalars().all()
+
+    triggered = skipped = retried = errors = 0
     processed = 0
+
     for student in students:
-        if processed >= settings.concurrency_limit:
-            logger.warning("Concurrency limit (%d) reached — stopping batch", settings.concurrency_limit)
+        if processed >= CONCURRENCY_LIMIT:
             break
 
+        s = {c.key: getattr(student, c.key) for c in student.__table__.columns}
+        path = s.get("PathName", "")
+
+        if checkpoint_type == "POST_COMPLETION" and path != "POST_COMPLETION":
+            skipped += 1
+            continue
+        if checkpoint_type != "POST_COMPLETION" and path != checkpoint_type:
+            skipped += 1
+            continue
+
+        eligibility = check_eligibility(s)
+
+        tracking_row = await db.execute(
+            select(StudentOutreachTracking).where(
+                StudentOutreachTracking.user_id == s["UserID"],
+                StudentOutreachTracking.checkpoint_type == checkpoint_type,
+            )
+        )
+        tracking_obj = tracking_row.scalar_one_or_none()
+        tracking = (
+            {
+                "state": tracking_obj.state,
+                "current_attempt": tracking_obj.current_attempt,
+                "next_retry_at": tracking_obj.next_retry_at,
+            }
+            if tracking_obj
+            else None
+        )
+
+        decision = decide(s, tracking, eligibility)
+
         try:
-            _process_student(db, student, checkpoint_type, now, results)
-            processed += 1
+            if decision == "TRIGGER_OUTREACH":
+                await _execute_outreach(db, s, checkpoint_type, tracking_obj, is_retry=False)
+                triggered += 1
+            elif decision == "RETRY_OUTREACH":
+                await _execute_outreach(db, s, checkpoint_type, tracking_obj, is_retry=True)
+                retried += 1
+            elif decision == "ESCALATE":
+                await _escalate(db, s, checkpoint_type, tracking_obj)
+                triggered += 1
+            elif decision == "CLOSE":
+                await _close_case(db, s, checkpoint_type, tracking_obj, "NO_CONTACT_INFO")
+                skipped += 1
+            else:
+                skipped += 1
         except Exception as exc:
-            logger.error("Unexpected error processing student %d: %s", student.UserID, exc)
-            results["errors"] += 1
+            logger.error("Error processing student %s: %s", s["UserID"], exc, exc_info=True)
+            errors += 1
 
-    logger.info("Outreach batch complete | %s", results)
-    return results
+        processed += 1
+
+    summary = {
+        "checkpoint_type": checkpoint_type,
+        "triggered": triggered,
+        "skipped": skipped,
+        "retried": retried,
+        "errors": errors,
+    }
+    logger.info("Batch complete | %s", summary)
+    return summary
 
 
-def _process_student(
-    db: Session,
-    student: StudentTriggerData,
+async def _execute_outreach(
+    db: AsyncSession,
+    student: dict,
     checkpoint_type: str,
-    now: datetime,
-    results: dict,
+    tracking_obj: Optional[StudentOutreachTracking],
+    is_retry: bool,
 ) -> None:
-    results["processed"] += 1
+    user_id = student["UserID"]
 
-    # Load latest outreach record for this student + checkpoint
-    record: Optional[StudentOutreachTracking] = (
-        db.query(StudentOutreachTracking)
-        .filter_by(UserID=student.UserID, CheckpointType=checkpoint_type)
-        .order_by(StudentOutreachTracking.ContactAttempt.desc())
-        .first()
-    )
-
-    current_state = record.State if record else None
-    last_contact_time = record.ContactDate if record else None
-    contact_attempt = record.ContactAttempt if record else 0
-    call_connected = record.CallConnected if record else False
-    meeting_booked = record.MeetingBooked if record else False
-
-    # Eligibility check
-    eligibility = check_eligibility(
-        user_id=student.UserID,
-        checkpoint_type=checkpoint_type,
-        hws_behind=student.HWsBehind or 0,
-        avg_eff_rating=student.AvgEffRating or 0.0,
-        last_activity_days=student.LastActivityDays or 0,
-        email=student.Email,
-        phone_number=student.PhoneNumber,
-        last_contact_time=last_contact_time,
-        contact_attempt=contact_attempt,
-        state=current_state,
-        current_time=now,
-    )
-
-    if not eligibility.eligible:
-        logger.debug(
-            "Student %d ineligible: %s", student.UserID, eligibility.reason_codes
+    if tracking_obj is None:
+        tracking_obj = StudentOutreachTracking(
+            user_id=user_id,
+            checkpoint_type=checkpoint_type,
+            state="QUEUED",
+            current_attempt=0,
         )
-        results["skipped"] += 1
-        return
-
-    # Decision engine
-    decision = decide(
-        user_id=student.UserID,
-        contact_attempt=contact_attempt,
-        last_contact_time=last_contact_time,
-        call_connected=call_connected,
-        meeting_booked=meeting_booked,
-        ipbc_enrolled=False,  # sourced from IPBCInterest in future
-        hws_behind=student.HWsBehind or 0,
-        avg_eff_rating=student.AvgEffRating or 0.0,
-        last_activity_days=student.LastActivityDays or 0,
-        current_time=now,
-    )
-
-    if decision.action_type in ("NO_ACTION", "CLOSE_CASE"):
-        _upsert_state(db, record, student, checkpoint_type, "CLOSED" if decision.action_type == "CLOSE_CASE" else current_state, now)
-        results["skipped"] += 1
-        return
-
-    if decision.action_type in ("TRIGGER_OUTREACH", "RETRY_OUTREACH"):
-        _execute_outreach(db, record, student, checkpoint_type, decision, eligibility, now, results)
-
-
-def _execute_outreach(
-    db: Session,
-    record: Optional[StudentOutreachTracking],
-    student: StudentTriggerData,
-    checkpoint_type: str,
-    decision,
-    eligibility,
-    now: datetime,
-    results: dict,
-) -> None:
-    # Idempotency: ensure no duplicate trigger for same attempt
-    new_attempt = (record.ContactAttempt if record else 0) + (1 if record else 0)
-    # For first outreach (no existing record) attempt = 1
-    if record is None:
-        new_attempt = 1
-
-    existing = (
-        db.query(StudentOutreachTracking)
-        .filter_by(
-            UserID=student.UserID,
-            CheckpointType=checkpoint_type,
-            ContactAttempt=new_attempt,
-        )
-        .first()
-    )
-    if existing:
-        logger.warning(
-            "Duplicate trigger blocked for student %d attempt %d", student.UserID, new_attempt
-        )
-        results["skipped"] += 1
-        return
-
-    # GHL trigger — only when state = QUEUED (enforced by creating QUEUED record first)
-    queued = StudentOutreachTracking(
-        UserID=student.UserID,
-        CheckpointType=checkpoint_type,
-        State="QUEUED",
-        ContactDate=now,
-        ContactAttempt=new_attempt,
-        CreatedAt=now,
-        UpdatedAt=now,
-    )
-    db.add(queued)
-    db.flush()  # get OutreachID before GHL call
-
-    success = ghl.trigger_outreach(
-        user_id=student.UserID,
-        first_name=student.FirstName or "",
-        last_name=student.LastName or "",
-        email=student.Email,
-        phone_number=student.PhoneNumber,
-        checkpoint_type=checkpoint_type,
-        hws_behind=student.HWsBehind or 0,
-        avg_eff_rating=student.AvgEffRating or 0.0,
-        last_activity_days=student.LastActivityDays or 0,
-        contact_attempt=new_attempt,
-        priority=eligibility.priority,
-        reason_codes=decision.reason_codes,
-    )
-
-    if success:
-        queued.State = "CONTACTED"
-        queued.UpdatedAt = datetime.utcnow()
-        db.commit()
-        results["triggered"] += 1
-        logger.info("Student %d contacted (attempt %d)", student.UserID, new_attempt)
+        db.add(tracking_obj)
+        await db.flush()
+        await _log_transition(db, tracking_obj.id, user_id, "ELIGIBLE", "QUEUED", "batch_trigger")
     else:
-        queued.State = "ELIGIBLE"  # roll back to eligible for manual retry
-        queued.UpdatedAt = datetime.utcnow()
-        db.commit()
-        results["errors"] += 1
-        logger.error("GHL trigger failed for student %d", student.UserID)
+        old_state = tracking_obj.state
+        target = "RETRY" if is_retry else "QUEUED"
+        if not _apply_transition(tracking_obj, target, "retry_trigger" if is_retry else "batch_trigger"):
+            return
+        await _log_transition(db, tracking_obj.id, user_id, old_state, tracking_obj.state, "retry_trigger" if is_retry else "batch_trigger")
+
+    attempt = tracking_obj.current_attempt + 1
+    channel = select_channel(student, attempt)
+
+    if channel is None:
+        await _close_case(db, student, checkpoint_type, tracking_obj, "NO_CHANNEL")
+        return
+
+    payload, action_label = await _build_payload(student, channel, attempt)
+    response = await _dispatch(channel, payload)
+
+    old_state = tracking_obj.state
+    if not _apply_transition(tracking_obj, "CONTACTED", action_label):
+        return
+
+    tracking_obj.current_attempt = attempt
+    tracking_obj.last_contact_at = datetime.now(tz=timezone.utc)
+    tracking_obj.next_retry_at = datetime.now(tz=timezone.utc) + timedelta(hours=settings.RETRY_INTERVAL_HOURS)
+
+    await db.flush()
+    await _log_transition(db, tracking_obj.id, user_id, old_state, "CONTACTED", action_label)
+
+    db.add(OutreachHistory(
+        tracking_id=tracking_obj.id,
+        user_id=user_id,
+        checkpoint_type=checkpoint_type,
+        attempt_number=attempt,
+        channel=channel,
+        action=action_label,
+        execution_mode=settings.EXECUTION_MODE,
+        simulated_status="NOT_SENT" if settings.is_shadow else "SENT",
+        payload=payload,
+        response_payload=response,
+        decision="RETRY_OUTREACH" if is_retry else "TRIGGER_OUTREACH",
+        state_before=old_state,
+        state_after="CONTACTED",
+    ))
+    await db.commit()
 
 
-def _upsert_state(
-    db: Session,
-    record: Optional[StudentOutreachTracking],
-    student: StudentTriggerData,
+async def _build_payload(student: dict, channel: str, attempt: int) -> tuple[dict, str]:
+    if channel == "CALL":
+        payload = {
+            "synthflow": build_call_payload(student, attempt),
+            "ghl": build_ghl_payload(student, channel, attempt),
+        }
+        action = "CALL_SIMULATED" if settings.is_shadow else "CALL_EXECUTED"
+    elif channel == "SMS":
+        payload = build_sms_payload(student, attempt)
+        action = "SMS_SIMULATED" if settings.is_shadow else "SMS_SENT"
+    else:
+        payload = build_email_payload(student, attempt)
+        action = "EMAIL_SIMULATED" if settings.is_shadow else "EMAIL_SENT"
+    return payload, action
+
+
+async def _dispatch(channel: str, payload: dict) -> dict:
+    if channel == "CALL":
+        call_resp = await place_call(payload.get("synthflow", {}))
+        ghl_resp = await trigger_ghl_workflow(payload.get("ghl", {}))
+        return {"call": call_resp, "ghl": ghl_resp}
+    if channel == "SMS":
+        return await send_sms(payload)
+    return await send_email(payload)
+
+
+async def _escalate(
+    db: AsyncSession,
+    student: dict,
     checkpoint_type: str,
-    new_state: Optional[str],
-    now: datetime,
+    tracking_obj: Optional[StudentOutreachTracking],
 ) -> None:
-    if record and new_state and record.State != new_state:
-        try:
-            validate_transition(record.State, new_state)
-            record.State = new_state
-            record.UpdatedAt = now
-            db.commit()
-        except StateViolationError as exc:
-            logger.error("State violation for student %d: %s", student.UserID, exc)
+    if tracking_obj is None:
+        return
+    user_id = student["UserID"]
+    old_state = tracking_obj.state
+    if not _apply_transition(tracking_obj, "INTERVENTION_REQUIRED", "escalate"):
+        return
+    await _log_transition(db, tracking_obj.id, user_id, old_state, "INTERVENTION_REQUIRED", "escalate")
+    db.add(OutreachHistory(
+        tracking_id=tracking_obj.id,
+        user_id=user_id,
+        checkpoint_type=checkpoint_type,
+        attempt_number=tracking_obj.current_attempt,
+        action="ESCALATED",
+        execution_mode=settings.EXECUTION_MODE,
+        simulated_status="N/A",
+        decision="ESCALATE",
+        state_before=old_state,
+        state_after="INTERVENTION_REQUIRED",
+    ))
+    await db.commit()
 
 
-# ── Manual action ─────────────────────────────────────────────────────────────
+async def _close_case(
+    db: AsyncSession,
+    student: dict,
+    checkpoint_type: str,
+    tracking_obj: Optional[StudentOutreachTracking],
+    reason: str,
+) -> None:
+    if tracking_obj is None:
+        return
+    user_id = student["UserID"]
+    old_state = tracking_obj.state
+    if not _apply_transition(tracking_obj, "CLOSED", f"close:{reason}"):
+        return
+    await _log_transition(db, tracking_obj.id, user_id, old_state, "CLOSED", f"close:{reason}")
+    db.add(OutreachHistory(
+        tracking_id=tracking_obj.id,
+        user_id=user_id,
+        checkpoint_type=checkpoint_type,
+        attempt_number=tracking_obj.current_attempt,
+        action="CASE_CLOSED",
+        execution_mode=settings.EXECUTION_MODE,
+        simulated_status="N/A",
+        decision="CLOSE",
+        state_before=old_state,
+        state_after="CLOSED",
+    ))
+    await db.commit()
 
-def execute_manual_action(db: Session, user_id: int, action_type: str) -> bool:
-    """Executes a manual operator action. Returns True on success."""
-    record: Optional[StudentOutreachTracking] = (
-        db.query(StudentOutreachTracking)
-        .filter_by(UserID=user_id)
-        .order_by(StudentOutreachTracking.ContactAttempt.desc())
-        .first()
+
+async def execute_manual_action(
+    db: AsyncSession,
+    user_id: int,
+    action_type: str,
+    notes: Optional[str],
+) -> dict:
+    tracking_row = await db.execute(
+        select(StudentOutreachTracking).where(StudentOutreachTracking.user_id == user_id)
+    )
+    tracking_obj = tracking_row.scalar_one_or_none()
+    if tracking_obj is None:
+        return {"status": "not_found"}
+
+    action_map = {
+        "CLOSE_CASE": "CLOSED",
+        "BOOK_MEETING": "RESOLVED",
+        "FORCE_RETRY": "RETRY",
+    }
+    to_state = action_map.get(action_type)
+    if to_state is None:
+        return {"status": "invalid_action"}
+
+    old_state = tracking_obj.state
+    if not _apply_transition(tracking_obj, to_state, f"manual:{action_type}"):
+        return {"status": "invalid_transition", "from": old_state, "to": to_state}
+
+    await _log_transition(
+        db, tracking_obj.id, user_id, old_state, to_state,
+        f"manual:{action_type}", actor="manual"
     )
 
-    now = datetime.utcnow()
+    entry = OutreachHistory(
+        tracking_id=tracking_obj.id,
+        user_id=user_id,
+        checkpoint_type=tracking_obj.checkpoint_type,
+        attempt_number=tracking_obj.current_attempt,
+        action=action_type,
+        execution_mode=settings.EXECUTION_MODE,
+        simulated_status="N/A",
+        decision=action_type,
+        state_before=old_state,
+        state_after=to_state,
+    )
+    if notes:
+        entry.response_payload = {"notes": notes}
+    db.add(entry)
+    await db.commit()
+    return {"status": "ok", "from_state": old_state, "to_state": to_state}
 
-    if action_type == "CLOSE_CASE":
-        if record:
-            try:
-                validate_transition(record.State, "CLOSED")
-                record.State = "CLOSED"
-                record.UpdatedAt = now
-                db.commit()
-                return True
-            except StateViolationError as exc:
-                logger.error("Manual CLOSE_CASE violation for user %d: %s", user_id, exc)
-                return False
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _apply_transition(tracking_obj: StudentOutreachTracking, to_state: str, trigger: str) -> bool:
+    try:
+        validate_transition(tracking_obj.state, to_state, trigger)
+        tracking_obj.state = to_state
+        return True
+    except StateViolationError as exc:
+        logger.warning("State violation: %s", exc)
         return False
 
-    if action_type == "BOOK_MEETING":
-        if record:
-            try:
-                validate_transition(record.State, "MEETING_SCHEDULED")
-                record.State = "MEETING_SCHEDULED"
-                record.MeetingBooked = True
-                record.UpdatedAt = now
-                db.commit()
-                return True
-            except StateViolationError as exc:
-                logger.error("Manual BOOK_MEETING violation for user %d: %s", user_id, exc)
-                return False
-        return False
 
-    # TRIGGER_OUTREACH and RETRY handled via batch trigger (out of scope for direct manual call here)
-    logger.warning("Manual action %s not directly handled — use /outreach/trigger", action_type)
-    return False
+async def _log_transition(
+    db: AsyncSession,
+    tracking_id: int,
+    user_id: int,
+    from_state: str,
+    to_state: str,
+    trigger: str,
+    actor: str = "system",
+    meta: Optional[dict] = None,
+) -> None:
+    db.add(StateTransitionLog(
+        tracking_id=tracking_id,
+        user_id=user_id,
+        from_state=from_state,
+        to_state=to_state,
+        trigger=trigger,
+        actor=actor,
+        meta=meta,
+    ))
+    await db.flush()

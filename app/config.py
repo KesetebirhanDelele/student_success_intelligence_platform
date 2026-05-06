@@ -1,73 +1,70 @@
 from enum import Enum
-from typing import Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class SystemScope(str, Enum):
-    MVP = "MVP"
-    STANDARD = "STANDARD"
-    PRODUCTION = "PRODUCTION"
+class ExecutionMode(str, Enum):
+    SHADOW = "SHADOW"
+    LIVE = "LIVE"
 
 
 class Settings(BaseSettings):
-    SYSTEM_SCOPE: SystemScope = SystemScope.MVP
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-    DATABASE_URL: str = "sqlite:///./ssip.db"
+    EXECUTION_MODE: ExecutionMode = ExecutionMode.SHADOW
 
-    GHL_API_URL: str = "https://rest.gohighlevel.com/v1"
+    # PostgreSQL — system of record
+    DATABASE_URL: str = "postgresql+asyncpg://ssip:ssip@localhost:5432/ssip"
+
+    # SQL Server — read-only student source
+    MSSQL_HOST: str = ""
+    MSSQL_PORT: str = "1433"
+    MSSQL_USER: str = ""
+    MSSQL_PASS: str = ""
+    MSSQL_DATABASE: str = ""
+
+    # GHL
     GHL_API_KEY: str = ""
+    GHL_BASE_URL: str = "https://rest.gohighlevel.com"
     GHL_LOCATION_ID: str = ""
-    GHL_MOCK_MODE: bool = True
 
-    SCHEDULER_ENABLED: bool = True
+    # Synthflow
+    SYNTHFLOW_API_KEY: str = ""
+    SYNTHFLOW_PHONE_NUMBER: str = ""
+
+    # LLM
+    LLM_API_KEY: str = ""
+    LLM_MODEL: str = "claude-sonnet-4-6"
+
+    # Scheduler
     SCHEDULER_HOUR: int = 18
     SCHEDULER_MINUTE: int = 0
     SCHEDULER_TIMEZONE: str = "America/Chicago"
 
-    API_TOKEN: Optional[str] = None
-
-    class Config:
-        env_file = ".env"
-
-    @property
-    def max_attempts(self) -> int:
-        return {"MVP": 1, "STANDARD": 2, "PRODUCTION": 3}[self.SYSTEM_SCOPE]
+    # Retry
+    MAX_ATTEMPTS: int = 3
+    RETRY_INTERVAL_HOURS: int = 24
 
     @property
-    def concurrency_limit(self) -> int:
-        return {"MVP": 10, "STANDARD": 25, "PRODUCTION": 50}[self.SYSTEM_SCOPE]
+    def mssql_dsn(self) -> str:
+        return (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={self.MSSQL_HOST},{self.MSSQL_PORT};"
+            f"DATABASE={self.MSSQL_DATABASE};"
+            f"UID={self.MSSQL_USER};"
+            f"PWD={self.MSSQL_PASS}"
+        )
 
     @property
-    def exclusion_window_days(self) -> int:
-        return 30
+    def mssql_configured(self) -> bool:
+        return bool(self.MSSQL_HOST and self.MSSQL_USER and self.MSSQL_DATABASE)
 
     @property
-    def min_hw_threshold(self) -> int:
-        return {"MVP": 2, "STANDARD": 2, "PRODUCTION": 1}[self.SYSTEM_SCOPE]
-
-    @property
-    def min_effort_threshold(self) -> float:
-        return {"MVP": 3.0, "STANDARD": 2.8, "PRODUCTION": 2.5}[self.SYSTEM_SCOPE]
-
-    @property
-    def max_inactivity_days(self) -> int:
-        return {"MVP": 7, "STANDARD": 6, "PRODUCTION": 5}[self.SYSTEM_SCOPE]
-
-    @property
-    def enable_retry(self) -> bool:
-        return self.SYSTEM_SCOPE != SystemScope.MVP
-
-    @property
-    def enable_llm(self) -> bool:
-        return self.SYSTEM_SCOPE == SystemScope.PRODUCTION
-
-    @property
-    def enable_escalation(self) -> bool:
-        return self.SYSTEM_SCOPE != SystemScope.MVP
-
-    @property
-    def enable_channel_fallback(self) -> bool:
-        return self.SYSTEM_SCOPE == SystemScope.PRODUCTION
+    def is_shadow(self) -> bool:
+        return self.EXECUTION_MODE == ExecutionMode.SHADOW
 
 
 settings = Settings()

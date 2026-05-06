@@ -1,126 +1,78 @@
-import logging
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import List, Optional
+from __future__ import annotations
 
-from app.config import settings, SystemScope
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+
+from app.config import settings
+from app.services.eligibility import EligibilityResult
+from app.state_machine import is_terminal
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class DecisionResult:
-    action_type: str                       # NO_ACTION | TRIGGER_OUTREACH | RETRY_OUTREACH | BOOK_MEETING | CLOSE_CASE
-    priority: str = "MEDIUM"
-    channel: str = "NONE"                  # CALL | SMS | EMAIL | NONE
-    retry_allowed: bool = False
-    escalation_required: bool = False
-    reason_codes: List[str] = field(default_factory=list)
-
-
 def decide(
-    *,
-    user_id: int,
-    contact_attempt: int,
-    last_contact_time: Optional[datetime],
-    call_connected: bool,
-    meeting_booked: bool,
-    ipbc_enrolled: bool,
-    hws_behind: int,
-    avg_eff_rating: float,
-    last_activity_days: int,
-    # LLM fields (ignored in MVP)
-    llm_meeting_recommended: Optional[bool] = None,
-    current_time: Optional[datetime] = None,
-) -> DecisionResult:
+    student: dict,
+    tracking: Optional[dict],
+    eligibility: EligibilityResult,
+) -> str:
     """
-    Evaluate 7 decision rules in order. Stop at first match (except Rule 6).
-    All rules are scope-gated per meta/project_classification.md.
+    7-rule deterministic decision engine.
+    Returns: TRIGGER_OUTREACH | RETRY_OUTREACH | ESCALATE | CLOSE | NO_ACTION
     """
-    now = current_time or datetime.utcnow()
-    escalation = False
+    user_id = student.get("UserID")
 
-    # Rule 1 — Termination conditions
-    if ipbc_enrolled or meeting_booked:
-        logger.info("Student %s: CLOSE_CASE (resolved)", user_id)
-        return DecisionResult(
-            action_type="CLOSE_CASE",
-            channel="NONE",
-            retry_allowed=False,
-            reason_codes=["CASE_RESOLVED"],
-        )
+    # Rule 1: no contact info → close
+    if not eligibility.eligible and eligibility.skip_reason == "NO_CONTACT_INFO":
+        logger.info("Student %s → CLOSE (no contact info)", user_id)
+        return "CLOSE"
 
-    # Rule 2 — Max attempts reached
-    if contact_attempt >= settings.max_attempts:
-        logger.info("Student %s: max attempts reached (%d)", user_id, contact_attempt)
-        # In MVP there is no channel fallback — close the case
-        if settings.enable_channel_fallback:
-            return DecisionResult(
-                action_type="SEND_SMS_OR_EMAIL",
-                channel="SMS",
-                retry_allowed=False,
-                reason_codes=["MAX_ATTEMPTS_REACHED"],
+    # Rule 2: not eligible → no action
+    if not eligibility.eligible:
+        logger.debug("Student %s → NO_ACTION (%s)", user_id, eligibility.skip_reason)
+        return "NO_ACTION"
+
+    # Rule 3: no prior tracking → first outreach
+    if tracking is None:
+        logger.info("Student %s → TRIGGER_OUTREACH (new)", user_id)
+        return "TRIGGER_OUTREACH"
+
+    # Rule 4: terminal state → no action
+    if is_terminal(tracking["state"]):
+        return "NO_ACTION"
+
+    # Rule 5: retry states — check attempt limit and window
+    if tracking["state"] in ("NO_RESPONSE", "RETRY"):
+        if tracking["current_attempt"] >= settings.MAX_ATTEMPTS:
+            logger.info(
+                "Student %s → ESCALATE (max_attempts=%d reached)",
+                user_id,
+                settings.MAX_ATTEMPTS,
             )
-        return DecisionResult(
-            action_type="CLOSE_CASE",
-            channel="NONE",
-            retry_allowed=False,
-            reason_codes=["MAX_ATTEMPTS_REACHED"],
+            return "ESCALATE"
+        if not _retry_window_passed(tracking.get("next_retry_at")):
+            logger.debug("Student %s → NO_ACTION (retry window not passed)", user_id)
+            return "NO_ACTION"
+        logger.info(
+            "Student %s → RETRY_OUTREACH (attempt %d)",
+            user_id,
+            tracking["current_attempt"] + 1,
         )
+        return "RETRY_OUTREACH"
 
-    # Rule 3 — First outreach
-    if contact_attempt == 0:
-        logger.info("Student %s: initial outreach via CALL", user_id)
-        return DecisionResult(
-            action_type="TRIGGER_OUTREACH",
-            channel="CALL",
-            retry_allowed=settings.enable_retry,
-            reason_codes=["INITIAL_CONTACT"],
-        )
+    # Rule 6: high priority student still in CONTACTED — escalate
+    if eligibility.priority == "HIGH" and tracking["state"] == "CONTACTED":
+        logger.info("Student %s → ESCALATE (high priority, no response yet)", user_id)
+        return "ESCALATE"
 
-    # Rule 4 — Retry eligibility (STANDARD / PRODUCTION only)
-    if settings.enable_retry and not call_connected:
-        if _retry_window_passed(last_contact_time, now):
-            logger.info("Student %s: retry eligible", user_id)
-            return DecisionResult(
-                action_type="RETRY_OUTREACH",
-                channel="CALL",
-                retry_allowed=True,
-                reason_codes=["RETRY_ELIGIBLE"],
-            )
-
-    # Rule 5 — LLM-driven intervention (PRODUCTION only)
-    if settings.enable_llm and llm_meeting_recommended:
-        logger.info("Student %s: LLM recommends meeting", user_id)
-        return DecisionResult(
-            action_type="BOOK_MEETING",
-            channel="NONE",
-            retry_allowed=False,
-            reason_codes=["LLM_MEETING_TRIGGER"],
-        )
-
-    # Rule 6 — High-risk escalation (STANDARD / PRODUCTION only)
-    # Does NOT stop — continues to Rule 7 to combine with another action
-    if settings.enable_escalation:
-        if hws_behind >= 3 or avg_eff_rating < 2.5 or last_activity_days > 7:
-            logger.warning("Student %s: high-risk escalation", user_id)
-            escalation = True
-
-    # Rule 7 — Default
-    logger.info("Student %s: no eligible action", user_id)
-    return DecisionResult(
-        action_type="NO_ACTION",
-        channel="NONE",
-        retry_allowed=False,
-        escalation_required=escalation,
-        reason_codes=["NO_ELIGIBLE_ACTION"] + (["HIGH_RISK_STUDENT"] if escalation else []),
-    )
+    # Rule 7: already tracked in a non-terminal active state → no action
+    return "NO_ACTION"
 
 
-def _retry_window_passed(last_contact_time: Optional[datetime], now: datetime) -> bool:
-    if last_contact_time is None:
+def _retry_window_passed(next_retry_at: Optional[datetime]) -> bool:
+    if next_retry_at is None:
         return True
-    scope = settings.SYSTEM_SCOPE
-    if scope == SystemScope.MVP:
-        return False  # Never retry in MVP
-    return (now - last_contact_time) >= timedelta(hours=24)
+    now = datetime.now(tz=timezone.utc)
+    if next_retry_at.tzinfo is None:
+        next_retry_at = next_retry_at.replace(tzinfo=timezone.utc)
+    return now >= next_retry_at

@@ -1,99 +1,73 @@
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import List, Optional
-
-from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+HW_BEHIND_MIN = 2
+EFF_RATING_MAX = 3.0
+INACTIVITY_MIN = 5
+HIGH_RISK_HW = 3
+HIGH_RISK_EFF = 2.5
+HIGH_RISK_INACTIVITY = 7
 
 
 @dataclass
 class EligibilityResult:
     eligible: bool
-    priority: str = "MEDIUM"          # LOW | MEDIUM | HIGH
+    priority: str = "NORMAL"   # HIGH | NORMAL
     checkpoint_type: str = ""
-    reason_codes: List[str] = field(default_factory=list)
+    reason_codes: list[str] = field(default_factory=list)
+    skip_reason: str = ""
 
 
-def check_eligibility(
-    *,
-    user_id: int,
-    checkpoint_type: str,
-    hws_behind: int,
-    avg_eff_rating: float,
-    last_activity_days: int,
-    email: Optional[str],
-    phone_number: Optional[str],
-    last_contact_time: Optional[datetime],
-    contact_attempt: int,
-    state: Optional[str],
-    current_time: Optional[datetime] = None,
-) -> EligibilityResult:
-    """
-    Evaluate eligibility in rule order. Returns on first disqualifying rule.
-    Priority assignment always runs after eligibility is confirmed.
-    """
-    now = current_time or datetime.utcnow()
+def check_eligibility(student: dict) -> EligibilityResult:
+    """5 ordered rules. Returns on first disqualification."""
+    user_id = student.get("UserID")
+    path = student.get("PathName", "")
 
-    # Rule 1 — No contact info
-    if not email and not phone_number:
-        logger.debug("Student %s: no contact info", user_id)
-        return EligibilityResult(eligible=False, reason_codes=["NO_CONTACT_INFO"])
+    # Rule 1: contact info required
+    has_phone = bool(student.get("PhoneNumber"))
+    has_email = bool(student.get("Email"))
+    if not has_phone and not has_email:
+        return EligibilityResult(eligible=False, skip_reason="NO_CONTACT_INFO")
 
-    # Rule 2 — Case already closed / resolved
-    if state in ("CLOSED", "RESOLVED"):
-        logger.debug("Student %s: case already closed", user_id)
-        return EligibilityResult(eligible=False, reason_codes=["CASE_ALREADY_CLOSED"])
-
-    # Rule 3 — Contacted within exclusion window
-    if last_contact_time:
-        window = timedelta(days=settings.exclusion_window_days)
-        if (now - last_contact_time) < window:
-            logger.debug("Student %s: recently contacted", user_id)
-            return EligibilityResult(eligible=False, reason_codes=["RECENTLY_CONTACTED"])
-
-    # Rule 4 — Checkpoint-specific thresholds
-    if checkpoint_type == "POST_COMPLETION":
-        # Eligible if completed program and not enrolled in IPBC
-        # (ipbc_enrolled is tracked in outreach tracking; not in trigger data)
-        pass  # Falls through to default eligible
-    else:
-        # SQL / SSRS / SSIS — academic metric thresholds
-        meets_threshold = (
-            hws_behind >= settings.min_hw_threshold
-            or avg_eff_rating < settings.min_effort_threshold
-            or last_activity_days > settings.max_inactivity_days
+    # Rule 2: POST_COMPLETION — always eligible (no academic thresholds)
+    if path == "POST_COMPLETION":
+        return EligibilityResult(
+            eligible=True,
+            priority="NORMAL",
+            checkpoint_type=path,
+            reason_codes=["POST_COMPLETION_TRACK"],
         )
-        if not meets_threshold:
-            logger.debug("Student %s: does not meet academic thresholds", user_id)
-            return EligibilityResult(
-                eligible=False,
-                checkpoint_type=checkpoint_type,
-                reason_codes=["BELOW_THRESHOLD"],
-            )
 
-    # Rule 5 — Default eligible, assign priority
-    priority = _assign_priority(hws_behind, avg_eff_rating, last_activity_days)
+    # Rule 3: homeworks behind threshold
+    hws = student.get("HWsBehind", 0)
+    if hws < HW_BEHIND_MIN:
+        return EligibilityResult(eligible=False, skip_reason="HW_THRESHOLD_NOT_MET")
+
+    # Rule 4: effort rating threshold
+    eff = student.get("AvgEffRating", 5.0)
+    if eff >= EFF_RATING_MAX:
+        return EligibilityResult(eligible=False, skip_reason="EFFORT_THRESHOLD_NOT_MET")
+
+    # Rule 5: inactivity threshold
+    inactivity = student.get("LastActivityDays", 0)
+    if inactivity < INACTIVITY_MIN:
+        return EligibilityResult(eligible=False, skip_reason="ACTIVITY_THRESHOLD_NOT_MET")
+
+    is_high = (
+        hws >= HIGH_RISK_HW
+        or eff < HIGH_RISK_EFF
+        or inactivity > HIGH_RISK_INACTIVITY
+    )
+    priority = "HIGH" if is_high else "NORMAL"
+
+    logger.debug("Student %s eligible | priority=%s path=%s", user_id, priority, path)
     return EligibilityResult(
         eligible=True,
         priority=priority,
-        checkpoint_type=checkpoint_type,
-        reason_codes=["ELIGIBLE_DEFAULT"],
+        checkpoint_type=path,
+        reason_codes=[f"HW:{hws}", f"EFF:{eff:.1f}", f"INACTIVITY:{inactivity}d"],
     )
-
-
-def _assign_priority(hws_behind: int, avg_eff_rating: float, last_activity_days: int) -> str:
-    if (
-        hws_behind >= 3
-        or avg_eff_rating < 2.5
-        or last_activity_days > 7
-    ):
-        return "HIGH"
-    if (
-        hws_behind >= settings.min_hw_threshold
-        or avg_eff_rating < settings.min_effort_threshold
-        or last_activity_days > settings.max_inactivity_days
-    ):
-        return "MEDIUM"
-    return "LOW"

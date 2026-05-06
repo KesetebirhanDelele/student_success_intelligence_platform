@@ -1,10 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.schemas import APIResponse, TriggerOutreachRequest, VALID_CHECKPOINTS
+from app.schemas import APIResponse, TriggerOutreachRequest
 from app.services.outreach import run_outreach_batch
 
 logger = logging.getLogger(__name__)
@@ -12,15 +12,9 @@ router = APIRouter()
 
 
 @router.post("/outreach/trigger")
-def trigger_outreach(
+async def trigger_outreach(
     body: TriggerOutreachRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    if not body.validate_checkpoint():
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_INPUT", "message": f"checkpoint_type must be one of {VALID_CHECKPOINTS}"},
-        )
-
-    results = run_outreach_batch(db, body.checkpoint_type)
-    return APIResponse.ok({"triggered": True, "summary": results})
+    summary = await run_outreach_batch(db, body.checkpoint_type)
+    return APIResponse.ok({"summary": summary})

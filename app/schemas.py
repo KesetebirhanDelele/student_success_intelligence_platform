@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, Optional, List
-from pydantic import BaseModel
+from typing import Any, Optional
+from pydantic import BaseModel, field_validator
 
+VALID_CHECKPOINTS = {"SQL", "SSRS", "SSIS", "POST_COMPLETION"}
+VALID_ACTION_TYPES = {"CLOSE_CASE", "BOOK_MEETING", "FORCE_RETRY"}
+VALID_GHL_EVENTS = {"CALL_COMPLETED", "SMS_RESPONSE", "EMAIL_RESPONSE", "TRANSCRIPT_READY"}
 
-# ── Generic response wrapper ──────────────────────────────────────────────────
 
 class APIResponse(BaseModel):
-    status: str  # "success" | "error"
+    status: str
     data: Optional[Any] = None
     error: Optional[dict] = None
 
@@ -19,62 +23,51 @@ class APIResponse(BaseModel):
         return cls(status="error", data=None, error={"code": code, "message": message})
 
 
-# ── Outreach trigger ──────────────────────────────────────────────────────────
-
-class CheckpointType(str):
-    SQL = "SQL"
-    SSRS = "SSRS"
-    SSIS = "SSIS"
-    POST_COMPLETION = "POST_COMPLETION"
-
-VALID_CHECKPOINTS = {"SQL", "SSRS", "SSIS", "POST_COMPLETION"}
-
-
 class TriggerOutreachRequest(BaseModel):
     checkpoint_type: str
+    limit: int = 50
 
-    def validate_checkpoint(self) -> bool:
-        return self.checkpoint_type in VALID_CHECKPOINTS
-
-
-# ── Manual action ─────────────────────────────────────────────────────────────
-
-VALID_ACTION_TYPES = {"TRIGGER_OUTREACH", "RETRY", "CLOSE_CASE", "BOOK_MEETING"}
+    @field_validator("checkpoint_type")
+    @classmethod
+    def validate_checkpoint(cls, v: str) -> str:
+        if v not in VALID_CHECKPOINTS:
+            raise ValueError(f"checkpoint_type must be one of {VALID_CHECKPOINTS}")
+        return v
 
 
 class ManualActionRequest(BaseModel):
     user_id: int
     action_type: str
+    notes: Optional[str] = None
 
-    def validate_action(self) -> bool:
-        return self.action_type in VALID_ACTION_TYPES
-
-
-# ── GHL webhook ───────────────────────────────────────────────────────────────
-
-VALID_GHL_EVENTS = {"CALL_COMPLETED", "SMS_RESPONSE", "EMAIL_RESPONSE", "TRANSCRIPT_READY"}
+    @field_validator("action_type")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in VALID_ACTION_TYPES:
+            raise ValueError(f"action_type must be one of {VALID_ACTION_TYPES}")
+        return v
 
 
 class GHLWebhookPayload(BaseModel):
-    user_id: int
     event_type: str
-    call_connected: Optional[bool] = None
-    call_duration: Optional[int] = None
+    user_id: Optional[int] = None
+    contact_id: Optional[str] = None
+    outcome: Optional[str] = None
     transcript: Optional[str] = None
+    metadata: Optional[dict] = None
 
-
-# ── Student detail ────────────────────────────────────────────────────────────
 
 class OutreachHistoryItem(BaseModel):
-    outreach_id: int
-    checkpoint_type: str
-    state: str
-    contact_date: Optional[datetime]
-    contact_attempt: int
-    call_connected: bool
-    meeting_booked: bool
+    id: int
+    attempt_number: int
+    channel: Optional[str]
+    action: Optional[str]
+    execution_mode: str
+    simulated_status: str
+    decision: Optional[str]
+    state_before: Optional[str]
+    state_after: Optional[str]
     created_at: datetime
-    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -82,19 +75,9 @@ class OutreachHistoryItem(BaseModel):
 
 class StudentDetailData(BaseModel):
     user_id: int
-    state: Optional[str]
-    attempt_count: int
-    history: List[OutreachHistoryItem]
-
-
-# ── Metrics ───────────────────────────────────────────────────────────────────
-
-class MetricsData(BaseModel):
-    total_outreach: int
-    contacted: int
-    responded: int
-    no_response: int
-    meeting_booked: int
-    closed: int
-    success_rate: float
-    meeting_rate: float
+    checkpoint_type: str
+    state: str
+    current_attempt: int
+    last_contact_at: Optional[datetime]
+    next_retry_at: Optional[datetime]
+    history: list[OutreachHistoryItem]
