@@ -51,11 +51,13 @@ class Settings(BaseSettings):
     @property
     def mssql_dsn(self) -> str:
         return (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
             f"SERVER={self.MSSQL_HOST},{self.MSSQL_PORT};"
             f"DATABASE={self.MSSQL_DATABASE};"
             f"UID={self.MSSQL_USER};"
-            f"PWD={self.MSSQL_PASS}"
+            f"PWD={self.MSSQL_PASS};"
+            f"TrustServerCertificate=yes;"
+            f"Encrypt=yes;"
         )
 
     @property

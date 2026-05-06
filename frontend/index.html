@@ -1,431 +1,412 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SSIP Ops Dashboard</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SSIP — Student Success Intelligence Platform</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-
-    /* ── Header ─────────────────────────────────────────────────── */
-    header {
-      background: #1e293b; border-bottom: 2px solid #334155;
-      padding: .85rem 2rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-      position: sticky; top: 0; z-index: 50;
-    }
-    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; color: #f1f5f9; }
-    .badge { font-size: .7rem; border-radius: 999px; padding: 2px 10px; font-weight: 700; }
-    .badge-shadow { background: #78350f; color: #fbbf24; }
-    .badge-live   { background: #14532d; color: #4ade80; }
-    .header-right { margin-left: auto; display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
-    .hp {
-      font-size: .71rem; color: #94a3b8; display: flex; align-items: center; gap: .35rem;
-      background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 3px 9px;
-      white-space: nowrap;
-    }
-    .sd { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-    .dot-green  { background: #22c55e; }
-    .dot-red    { background: #ef4444; }
-    .dot-yellow { background: #fbbf24; }
-    .dot-gray   { background: #475569; }
-
-    /* ── Layout ─────────────────────────────────────────────────── */
-    main { max-width: 1300px; margin: 1.5rem auto; padding: 0 1.25rem; }
-
-    /* ── Card grid ──────────────────────────────────────────────── */
-    .card-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1.2rem;
-    }
-    @media (max-width: 900px) { .card-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 560px) { .card-grid { grid-template-columns: 1fr; } }
-    .sc-full { grid-column: 1 / -1; }
-
-    /* ── Summary card ───────────────────────────────────────────── */
-    .sc {
-      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
-      padding: 1.25rem; cursor: pointer;
-      transition: border-color .15s, background .15s;
-      display: flex; flex-direction: column; min-height: 140px;
-    }
-    .sc:hover { border-color: #0ea5e9; background: #1a2c42; }
-    .sc-top {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: .7rem; gap: .5rem;
-    }
-    .sc-title {
-      font-size: .78rem; font-weight: 700; color: #94a3b8;
-      text-transform: uppercase; letter-spacing: .6px;
-    }
-    .sc-body { flex: 1; }
-    .sc-sum { font-size: .81rem; color: #64748b; line-height: 1.55; }
-    .sc-met { margin-top: .4rem; line-height: 1; }
-    .sc-footer {
-      margin-top: .85rem; font-size: .71rem; color: #334155;
-      text-align: right; padding-top: .55rem; border-top: 1px solid #1e3a52;
-    }
-    .sc:hover .sc-footer { color: #0ea5e9; }
-
-    /* ── Status badges ──────────────────────────────────────────── */
-    .sbadge {
-      font-size: .62rem; font-weight: 700; border-radius: 4px;
-      padding: 2px 7px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap;
-    }
-    .sb-ok       { background: #052e16; color: #4ade80; }
-    .sb-info     { background: #0c2a4a; color: #38bdf8; }
-    .sb-warning  { background: #451a03; color: #fbbf24; }
-    .sb-critical { background: #4c1d1d; color: #f87171; }
-    .sb-shadow   { background: #78350f; color: #fbbf24; }
-    .sb-dim      { background: #1e293b; color: #475569; }
-
-    /* ── Modal ──────────────────────────────────────────────────── */
-    #modal {
-      position: fixed; inset: 0; z-index: 200;
-      display: none; align-items: flex-start; justify-content: center;
-      padding: 2rem 1rem; overflow-y: auto;
-    }
-    #modal.open { display: flex; }
-    #modal-backdrop {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,.72); backdrop-filter: blur(3px);
-    }
-    #modal-inner {
-      position: relative; z-index: 1;
-      background: #1e293b; border: 1px solid #334155; border-radius: 12px;
-      width: 100%; max-width: 900px;
-      max-height: calc(100vh - 4rem); overflow-y: auto;
-      display: flex; flex-direction: column;
-    }
-    #modal-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 1rem 1.5rem; border-bottom: 1px solid #334155;
-      position: sticky; top: 0; background: #1e293b; z-index: 2;
-    }
-    #modal-title {
-      font-size: .88rem; font-weight: 700; color: #f1f5f9;
-      text-transform: uppercase; letter-spacing: .6px;
-    }
-    #modal-close {
-      background: none; border: 1px solid #334155; color: #64748b;
-      font-size: .9rem; cursor: pointer; padding: .2rem .55rem;
-      border-radius: 6px; line-height: 1.4;
-    }
-    #modal-close:hover { color: #e2e8f0; background: #334155; }
-    #modal-body { padding: 1.5rem; flex: 1; }
-
-    /* ── Health cards ───────────────────────────────────────────── */
-    .hgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: .9rem; }
-    .hcard { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .9rem 1rem; }
-    .hcard .hl { font-size: .62rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .35rem; }
-    .hcard .hv { font-size: .88rem; font-weight: 600; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-
-    /* ── Alerts ─────────────────────────────────────────────────── */
-    .alert-row {
-      display: flex; align-items: flex-start; gap: .75rem;
-      padding: .6rem .9rem; border-radius: 7px; margin-bottom: .5rem; font-size: .8rem;
-    }
-    .al-critical { background: rgba(220,38,38,.12); border: 1px solid #dc2626; }
-    .al-warning  { background: rgba(217,119,6,.12);  border: 1px solid #d97706; }
-    .al-info     { background: rgba(14,165,233,.12);  border: 1px solid #0ea5e9; }
-    .al-sev { font-weight: 700; font-size: .65rem; min-width: 62px; padding-top: 1px; }
-    .sev-critical { color: #f87171; } .sev-warning { color: #fbbf24; } .sev-info { color: #38bdf8; }
-    .al-body { flex: 1; }
-    .al-msg  { color: #e2e8f0; }
-    .al-act  { font-size: .73rem; color: #64748b; margin-top: .2rem; }
-    .al-sid  { font-size: .68rem; color: #475569; white-space: nowrap; margin-left: auto; padding-left: .5rem; }
-
-    /* ── KPI grid ───────────────────────────────────────────────── */
-    .kgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
-    .kcard { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 1rem; }
-    .kcard .klabel { font-size: .63rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
-    .kcard .kval   { font-size: 2rem; font-weight: 700; margin-top: .2rem; line-height: 1; }
-    .kcard .ksub   { font-size: .7rem; color: #475569; margin-top: .2rem; }
-
-    /* ── Conversion pills ───────────────────────────────────────── */
-    .conv-row { display: flex; gap: .75rem; flex-wrap: wrap; }
-    .cpill { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .55rem 1.1rem; }
-    .cpill .cpl { font-size: .62rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
-    .cpill .cpv { font-size: 1.4rem; font-weight: 700; color: #38bdf8; }
-
-    /* ── Tables ─────────────────────────────────────────────────── */
-    table { width: 100%; border-collapse: collapse; font-size: .79rem; }
-    th { text-align: left; padding: .42rem .65rem; color: #475569; text-transform: uppercase; font-size: .63rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
-    td { padding: .48rem .65rem; border-bottom: 1px solid #0f172a; vertical-align: middle; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #1a2535; }
-
-    /* ── State pills ────────────────────────────────────────────── */
-    .pill { border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; display: inline-block; }
-    .s-eligible              { background: #1e293b; color: #64748b; }
-    .s-queued                { background: #1e3a5f; color: #60a5fa; }
-    .s-contacted             { background: #0c4a6e; color: #38bdf8; }
-    .s-no_response           { background: #451a03; color: #fbbf24; }
-    .s-retry                 { background: #3b1f00; color: #fb923c; }
-    .s-responded             { background: #14532d; color: #4ade80; }
-    .s-analyzed              { background: #1e1b4b; color: #818cf8; }
-    .s-intervention_required { background: #4c1d1d; color: #fca5a5; }
-    .s-resolved              { background: #052e16; color: #86efac; }
-    .s-closed                { background: #111827; color: #475569; }
-    .s-other                 { background: #1e293b; color: #64748b; }
-    .m-shadow { background: #78350f; color: #fbbf24; border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; display: inline-block; }
-    .m-live   { background: #14532d; color: #4ade80; border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; display: inline-block; }
-    .risk-HIGH    { background: #4c1d1d; color: #fca5a5; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
-    .risk-MEDIUM  { background: #451a03; color: #fbbf24; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
-    .risk-LOW     { background: #052e16; color: #86efac; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
-    .risk-UNKNOWN { background: #1e293b; color: #64748b;  border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
-
-    /* ── Controls ───────────────────────────────────────────────── */
-    .ctrls { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; margin-bottom: .7rem; }
-    select, input { border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: .38rem .65rem; font-size: .8rem; }
-    button {
-      border-radius: 6px; border: 1px solid #0ea5e9; background: #0ea5e9;
-      color: #fff; padding: .38rem .85rem; font-size: .8rem; font-weight: 600;
-      cursor: pointer; transition: opacity .15s; display: inline-flex; align-items: center; gap: .3rem;
-    }
-    button:hover { opacity: .82; }
-    button.danger  { background: #dc2626; border-color: #dc2626; }
-    button.neutral { background: #475569; border-color: #475569; }
-    button.warn    { background: #d97706; border-color: #d97706; }
-    button.purple  { background: #7c3aed; border-color: #7c3aed; }
-    button:disabled { opacity: .35; cursor: not-allowed; }
-    .btn-sm { padding: .22rem .55rem !important; font-size: .69rem !important; }
-    .stag { font-size: .58rem; background: #78350f; color: #fbbf24; border-radius: 3px; padding: 1px 4px; font-weight: 700; }
-
-    /* ── State distribution ─────────────────────────────────────── */
-    .sdist { display: flex; flex-direction: column; gap: .32rem; }
-    .srow  { display: flex; justify-content: space-between; align-items: center; padding: .3rem .6rem; border-radius: 6px; background: #0f172a; }
-    .scnt  { font-weight: 700; font-size: .87rem; }
-
-    /* ── Student profile ─────────────────────────────────────────── */
-    .pcard { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem 1.15rem; margin-bottom: 1rem; }
-    .pname { font-size: 1.05rem; font-weight: 700; color: #f1f5f9; margin-bottom: .5rem; }
-    .pmeta { display: flex; flex-wrap: wrap; gap: .65rem; font-size: .78rem; color: #64748b; }
-    .pmeta span strong { color: #e2e8f0; }
-    .pstats { display: flex; gap: .65rem; flex-wrap: wrap; margin-top: .7rem; }
-    .pst { background: #1e293b; border-radius: 6px; padding: .35rem .7rem; font-size: .77rem; }
-    .pst .psl { color: #475569; font-size: .62rem; display: block; }
-    .pst .psv { color: #e2e8f0; font-weight: 600; }
-
-    /* ── Console ─────────────────────────────────────────────────── */
-    #console { font-family: monospace; font-size: .71rem; background: #0a0f1a; border-radius: 6px; padding: .6rem; max-height: 110px; overflow-y: auto; color: #64748b; }
-    #console p { margin: 2px 0; line-height: 1.5; }
-
-    /* ── Section label ──────────────────────────────────────────── */
-    .sec-label {
-      font-size: .68rem; font-weight: 700; color: #334155;
-      text-transform: uppercase; letter-spacing: .6px;
-      margin: 1.6rem 0 .7rem; padding-left: .1rem;
+    :root {
+      --color-primary:       #1a365d;
+      --color-primary-light: #2b6cb0;
+      --color-secondary:     #e53e3e;
+      --color-accent:        #38a169;
+      --color-bg:            #ffffff;
+      --color-bg-alt:        #f7fafc;
+      --color-text:          #2d3748;
+      --color-text-light:    #718096;
+      --color-border:        #e2e8f0;
     }
 
-    /* ── Colors ─────────────────────────────────────────────────── */
-    .blue   { color: #38bdf8; } .green  { color: #4ade80; } .yellow { color: #fbbf24; }
-    .red    { color: #f87171; } .purple { color: #a78bfa; } .orange { color: #fb923c; }
-    .slate  { color: #64748b; }
-    .empty  { color: #334155; text-align: center; padding: 1.5rem; font-size: .83rem; }
-    .ci { color: #38bdf8; } .ce { color: #f87171; } .co { color: #4ade80; } .cw { color: #fbbf24; }
-    .modal-hint { font-size: .81rem; color: #475569; margin-bottom: 1.1rem; line-height: 1.5; }
-    .sub-label { font-size: .71rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .5px; margin: 1rem 0 .4rem; }
+    body { background: var(--color-bg-alt); color: var(--color-text); font-size: .875rem; }
+
+    /* ── Navbar ──────────────────────────────────────────────────── */
+    .ssip-nav { background: var(--color-primary); border-bottom: 3px solid var(--color-primary-light); min-height: 52px; }
+    .ssip-nav .navbar-brand { color: #fff !important; font-weight: 700; font-size: 1rem; letter-spacing: .3px; }
+    .nav-pill {
+      background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18);
+      border-radius: 4px; color: rgba(255,255,255,.85); font-size: .72rem;
+      padding: 3px 10px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+    .dot-ok   { background: #48bb78; }
+    .dot-err  { background: #fc8181; }
+    .dot-warn { background: #f6e05e; }
+    .dot-dim  { background: rgba(255,255,255,.3); }
+
+    /* ── Section labels ──────────────────────────────────────────── */
+    .section-label {
+      font-size: .68rem; font-weight: 700; color: var(--color-text-light);
+      text-transform: uppercase; letter-spacing: .8px;
+      border-bottom: 1px solid var(--color-border); padding-bottom: .35rem;
+    }
+
+    /* ── Summary cards ───────────────────────────────────────────── */
+    .summary-card { cursor: pointer; transition: box-shadow .15s, border-color .15s; border: 1px solid var(--color-border) !important; }
+    .summary-card:hover { box-shadow: 0 4px 14px rgba(26,54,93,.13) !important; border-color: var(--color-primary-light) !important; }
+    .summary-card .card-header {
+      background: var(--color-bg) !important; border-bottom: 1px solid var(--color-border);
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: .74rem; font-weight: 700; color: var(--color-text);
+      text-transform: uppercase; letter-spacing: .5px; padding: .6rem 1rem;
+    }
+    .summary-card .card-body { padding: .85rem 1rem; background: var(--color-bg); }
+    .card-summary { font-size: .8rem; color: var(--color-text-light); line-height: 1.5; }
+    .card-metric { font-size: 2rem; font-weight: 700; line-height: 1; color: var(--color-primary); }
+    .card-metric-sub { font-size: .72rem; color: var(--color-text-light); margin-left: .3rem; vertical-align: middle; }
+    .card-footer-link {
+      font-size: .71rem; color: var(--color-text-light); border-top: 1px solid var(--color-border);
+      padding: .5rem 1rem; text-align: right; background: var(--color-bg-alt); border-radius: 0 0 .375rem .375rem;
+    }
+    .summary-card:hover .card-footer-link { color: var(--color-primary-light); }
+
+    /* ── Expand toggle button ────────────────────────────────────── */
+    .expand-toggle {
+      background: none !important; border: none !important; padding: 0 !important;
+      color: var(--color-text-light); font-size: .72rem; line-height: 1;
+      width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 3px; cursor: pointer; flex-shrink: 0;
+      transition: transform .2s ease, color .15s;
+    }
+    .expand-toggle:hover { color: var(--color-primary-light); }
+    .expand-toggle[aria-expanded="true"] { transform: rotate(180deg); color: var(--color-primary-light); }
+
+    /* ── Inline expand panel ─────────────────────────────────────── */
+    .card-expand-panel { border-top: 1px solid var(--color-border); background: var(--color-bg-alt); }
+    .card-expand-panel .expand-inner { padding: .75rem 1rem; }
+
+    /* ── Metric color helpers ────────────────────────────────────── */
+    .metric-primary { color: var(--color-primary); }
+    .metric-success { color: var(--color-accent); }
+    .metric-warning { color: #d97706; }
+    .metric-danger  { color: var(--color-secondary); }
+    .metric-info    { color: var(--color-primary-light); }
+    .metric-purple  { color: #6b46c1; }
+
+    /* ── Mode badges ─────────────────────────────────────────────── */
+    .mode-shadow { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 3px; display: inline-block; }
+    .mode-live   { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 3px; display: inline-block; }
+
+    /* ── State pills ─────────────────────────────────────────────── */
+    .state-pill { font-size: .65rem; font-weight: 700; border-radius: 3px; padding: 2px 7px; display: inline-block; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+    .s-ELIGIBLE              { background: #edf2f7; color: #4a5568; }
+    .s-QUEUED                { background: #ebf4ff; color: #2b6cb0; }
+    .s-CONTACTED             { background: #e6f6ff; color: #2b6cb0; }
+    .s-NO_RESPONSE           { background: #fffbeb; color: #b45309; }
+    .s-RETRY                 { background: #fff7ed; color: #c05621; }
+    .s-RESPONDED             { background: #f0fff4; color: #276749; }
+    .s-ANALYZED              { background: #faf5ff; color: #6b46c1; }
+    .s-INTERVENTION_REQUIRED { background: #fff5f5; color: #c53030; }
+    .s-RESOLVED              { background: #f0fff4; color: #276749; }
+    .s-CLOSED                { background: #f7fafc; color: #718096; }
+    .s-other                 { background: #f7fafc; color: #718096; }
+
+    /* ── Alert rows ──────────────────────────────────────────────── */
+    .alert-item { border-left: 3px solid; padding: .6rem .85rem; margin-bottom: .5rem; border-radius: 0 4px 4px 0; }
+    .alert-critical { border-color: var(--color-secondary); background: #fff5f5; }
+    .alert-warning  { border-color: #d97706; background: #fffbeb; }
+    .alert-info     { border-color: var(--color-primary-light); background: #ebf8ff; }
+
+    /* ── KPI / stat boxes ────────────────────────────────────────── */
+    .kpi-box { background: var(--color-bg-alt); border: 1px solid var(--color-border); border-radius: 6px; padding: .8rem 1rem; }
+    .kpi-label { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-light); margin-bottom: .25rem; }
+    .kpi-val   { font-size: 1.75rem; font-weight: 700; line-height: 1; color: var(--color-primary); }
+    .stat-box  { background: var(--color-bg-alt); border: 1px solid var(--color-border); border-radius: 5px; padding: .35rem .7rem; }
+    .stat-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .4px; color: var(--color-text-light); display: block; }
+    .stat-val   { font-size: .95rem; font-weight: 700; color: var(--color-text); }
+
+    /* ── Action console ──────────────────────────────────────────── */
+    #action-console { font-family: monospace; font-size: .72rem; background: #1a202c; color: #e2e8f0; border-radius: 6px; padding: .6rem .85rem; max-height: 100px; overflow-y: auto; }
+    #action-console p { margin: 0; line-height: 1.65; }
+
+    /* ── Modal header ────────────────────────────────────────────── */
+    .modal-header { background: var(--color-bg-alt); border-bottom: 1px solid var(--color-border); }
+    .modal-title  { font-size: .82rem !important; font-weight: 700 !important; text-transform: uppercase; letter-spacing: .5px; color: var(--color-primary); }
+
+    /* ── Accessibility ───────────────────────────────────────────── */
+    :focus-visible { outline: 3px solid var(--color-primary-light); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+    @media (max-width: 992px) { .btn, .nav-pill, button { min-height: 44px; } }
+    @media (prefers-contrast: high) { .card, .kpi-box, .stat-box { border-width: 2px !important; } body { color: #000; } }
   </style>
 </head>
 <body>
 
-<header>
-  <h1>SSIP Ops Dashboard</h1>
-  <span id="exec-badge" class="badge badge-shadow">SHADOW</span>
-  <div class="header-right">
-    <div class="hp" id="hp-db"><span class="sd dot-gray"></span>PostgreSQL</div>
-    <div class="hp" id="hp-mssql"><span class="sd dot-gray"></span>SQL Server</div>
-    <div class="hp" id="hp-sched"><span class="sd dot-gray"></span>Scheduler</div>
-    <button class="neutral btn-sm" onclick="loadAll()">↺ Refresh</button>
-    <span style="font-size:.67rem;color:#334155" id="last-refresh">—</span>
+<!-- ── Navbar ──────────────────────────────────────────────────────── -->
+<nav class="ssip-nav navbar sticky-top py-0">
+  <div class="container-fluid px-3 gap-2 flex-wrap" style="min-height:52px">
+    <span class="navbar-brand mb-0">SSIP Ops Dashboard</span>
+    <span id="exec-badge" class="badge bg-warning text-dark">SHADOW</span>
+    <div class="ms-auto d-flex align-items-center gap-2 flex-wrap py-1">
+      <div class="nav-pill" id="hp-db"><span class="dot dot-dim"></span>PostgreSQL</div>
+      <div class="nav-pill" id="hp-mssql"><span class="dot dot-dim"></span>SQL Server</div>
+      <div class="nav-pill" id="hp-sched"><span class="dot dot-dim"></span>Scheduler</div>
+      <button class="btn btn-sm btn-outline-light" id="expand-all-btn" onclick="toggleAllCards()" style="font-size:.72rem;padding:3px 12px">⊞ Expand All</button>
+      <button class="btn btn-sm btn-outline-light" onclick="loadAll()" style="font-size:.72rem;padding:3px 12px">↺ Refresh</button>
+      <span class="text-white-50" style="font-size:.67rem" id="last-refresh">—</span>
+    </div>
   </div>
-</header>
+</nav>
 
-<main>
+<div class="container-xl py-4 px-3 px-md-4">
 
-  <div class="sec-label">System Status</div>
-  <div class="card-grid">
-
-    <!-- 1. System Health -->
-    <div class="sc" onclick="detailHealth()">
-      <div class="sc-top">
-        <span class="sc-title">System Health</span>
-        <span class="sbadge sb-dim" id="badge-health">—</span>
+  <!-- System Status -->
+  <div class="section-label mb-3 mt-1">System Status</div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailHealth()">
+        <div class="card-header">
+          <span>System Health</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-health">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-health" aria-expanded="false" onclick="event.stopPropagation();loadExpandHealth()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-health">Loading…</div>
+          <div id="met-health" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-health">
+          <div class="expand-inner" id="expand-health-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
       </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-health">Loading…</div>
-        <div class="sc-met" id="met-health" style="margin-top:.5rem"></div>
-      </div>
-      <div class="sc-footer">View details →</div>
     </div>
-
-    <!-- 2. Operational Alerts -->
-    <div class="sc" onclick="detailAlerts()">
-      <div class="sc-top">
-        <span class="sc-title">Operational Alerts</span>
-        <span class="sbadge sb-dim" id="badge-alerts">—</span>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailAlerts()">
+        <div class="card-header">
+          <span>Operational Alerts</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-alerts">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-alerts" aria-expanded="false" onclick="event.stopPropagation();loadExpandAlerts()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-alerts">Loading…</div>
+          <div id="met-alerts" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-alerts">
+          <div class="expand-inner" id="expand-alerts-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
       </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-alerts">Loading…</div>
-        <div class="sc-met" id="met-alerts" style="margin-top:.4rem"></div>
-      </div>
-      <div class="sc-footer">View details →</div>
     </div>
-
-    <!-- 3. KPI Summary -->
-    <div class="sc" onclick="detailKPI()">
-      <div class="sc-top">
-        <span class="sc-title">KPI Summary</span>
-        <span class="sbadge sb-dim" id="badge-kpi">—</span>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailKPI()">
+        <div class="card-header">
+          <span>KPI Summary</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-kpi">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-kpi" aria-expanded="false" onclick="event.stopPropagation();loadExpandKpi()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-kpi">Loading…</div>
+          <div id="met-kpi" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-kpi">
+          <div class="expand-inner" id="expand-kpi-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
       </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-kpi">Loading…</div>
-        <div class="sc-met" id="met-kpi" style="margin-top:.4rem"></div>
-      </div>
-      <div class="sc-footer">View details →</div>
     </div>
-
-  </div>
-
-  <div class="sec-label">Pipeline</div>
-  <div class="card-grid">
-
-    <!-- 4. State Distribution -->
-    <div class="sc" onclick="detailStates()">
-      <div class="sc-top">
-        <span class="sc-title">State Distribution</span>
-        <span class="sbadge sb-dim" id="badge-states">—</span>
-      </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-states">Loading…</div>
-        <div class="sc-met" id="met-states" style="margin-top:.4rem"></div>
-      </div>
-      <div class="sc-footer">View details →</div>
-    </div>
-
-    <!-- 5. Channel Performance -->
-    <div class="sc" onclick="detailChannels()">
-      <div class="sc-top">
-        <span class="sc-title">Channel Performance</span>
-        <span class="sbadge sb-shadow" id="badge-channels">SHADOW</span>
-      </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-channels">Loading…</div>
-        <div class="sc-met" id="met-channels" style="margin-top:.4rem"></div>
-      </div>
-      <div class="sc-footer">View details →</div>
-    </div>
-
-    <!-- 6. Recent Activity -->
-    <div class="sc" onclick="detailActivity()">
-      <div class="sc-top">
-        <span class="sc-title">Recent Activity</span>
-        <span class="sbadge sb-dim" id="badge-activity">—</span>
-      </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-activity">Loading…</div>
-        <div class="sc-met" id="met-activity" style="margin-top:.4rem"></div>
-      </div>
-      <div class="sc-footer">View details →</div>
-    </div>
-
   </div>
 
-  <div class="sec-label">Actions</div>
-  <div class="card-grid">
-
-    <!-- 7. Student Cases -->
-    <div class="sc" onclick="detailStudents()">
-      <div class="sc-top">
-        <span class="sc-title">Student Cases</span>
-        <span class="sbadge sb-info">INFO</span>
+  <!-- Pipeline -->
+  <div class="section-label mb-3">Pipeline</div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailStates()">
+        <div class="card-header">
+          <span>State Distribution</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-states">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-states" aria-expanded="false" onclick="event.stopPropagation();loadExpandStates()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-states">Loading…</div>
+          <div id="met-states" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-states">
+          <div class="expand-inner" id="expand-states-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
       </div>
-      <div class="sc-body">
-        <div class="sc-sum">Look up any student by ID</div>
-        <div class="sc-sum" style="margin-top:.3rem;font-size:.75rem">Outreach history · state transitions · risk level</div>
-      </div>
-      <div class="sc-footer">View details →</div>
     </div>
-
-    <!-- 8. Manual Actions -->
-    <div class="sc" onclick="detailActions()">
-      <div class="sc-top">
-        <span class="sc-title">Manual Actions</span>
-        <span class="sbadge sb-shadow">SHADOW</span>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailChannels()">
+        <div class="card-header">
+          <span>Channel Performance</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-warning text-dark" id="badge-channels">SHADOW</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-channels" aria-expanded="false" onclick="event.stopPropagation();loadExpandChannels()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-channels">Loading…</div>
+          <div id="met-channels" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-channels">
+          <div class="expand-inner" id="expand-channels-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
       </div>
-      <div class="sc-body">
-        <div class="sc-sum">Close · Retry · Escalate · Resolve</div>
-        <div class="sc-sum" style="margin-top:.3rem;font-size:.75rem">All actions validated and logged</div>
-      </div>
-      <div class="sc-footer">View details →</div>
     </div>
-
-    <!-- 9. Trigger Outreach Batch -->
-    <div class="sc" onclick="detailTrigger()">
-      <div class="sc-top">
-        <span class="sc-title">Trigger Outreach Batch</span>
-        <span class="sbadge sb-shadow">SHADOW</span>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailActivity()">
+        <div class="card-header">
+          <span>Recent Activity</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-activity">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-activity" aria-expanded="false" onclick="event.stopPropagation();loadExpandActivity()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary" id="sum-activity">Loading…</div>
+          <div id="met-activity" class="mt-2"></div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-activity">
+          <div class="expand-inner" id="expand-activity-content"><p class="text-muted small mb-0">Loading…</p></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
       </div>
-      <div class="sc-body">
-        <div class="sc-sum">SQL · SSRS · SSIS · Post Completion</div>
-        <div class="sc-sum" style="margin-top:.3rem;font-size:.75rem">No real sends in SHADOW mode</div>
-      </div>
-      <div class="sc-footer">View details →</div>
     </div>
-
-    <!-- 10. SQL Server Sync (full row) -->
-    <div class="sc sc-full" onclick="detailSync()">
-      <div class="sc-top">
-        <span class="sc-title">SQL Server Sync</span>
-        <span class="sbadge sb-dim" id="badge-sync">—</span>
-      </div>
-      <div class="sc-body">
-        <div class="sc-sum" id="sum-sync">Checking configuration…</div>
-      </div>
-      <div class="sc-footer">View details →</div>
-    </div>
-
   </div>
 
-</main>
-
-<!-- ── Modal ──────────────────────────────────────────────────────── -->
-<div id="modal">
-  <div id="modal-backdrop" onclick="closeModal()"></div>
-  <div id="modal-inner">
-    <div id="modal-header">
-      <span id="modal-title">Detail</span>
-      <button id="modal-close" onclick="closeModal()">✕ Close</button>
+  <!-- Actions -->
+  <div class="section-label mb-3">Actions</div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailStudents()">
+        <div class="card-header">
+          <span>Student Cases</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-info text-dark">INFO</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-students" aria-expanded="false" onclick="event.stopPropagation();initExpandStudents()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary">Look up any student by ID</div>
+          <div class="card-summary mt-1" style="font-size:.76rem">Outreach history · state transitions · risk level</div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-students">
+          <div class="expand-inner" id="expand-students-content"></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
+      </div>
     </div>
-    <div id="modal-body"><p class="empty">Loading…</p></div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailActions()">
+        <div class="card-header">
+          <span>Manual Actions</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-warning text-dark">SHADOW</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-actions" aria-expanded="false" onclick="event.stopPropagation();initExpandActions()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary">Close · Retry · Escalate · Resolve</div>
+          <div class="card-summary mt-1" style="font-size:.76rem">All actions validated and logged</div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-actions">
+          <div class="expand-inner" id="expand-actions-content"></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailTrigger()">
+        <div class="card-header">
+          <span>Trigger Outreach Batch</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-warning text-dark">SHADOW</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-trigger" aria-expanded="false" onclick="event.stopPropagation();initExpandTrigger()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-summary">SQL · SSRS · SSIS · Post Completion</div>
+          <div class="card-summary mt-1" style="font-size:.76rem">No real sends in SHADOW mode</div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-trigger">
+          <div class="expand-inner" id="expand-trigger-content"></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card border-0 shadow-sm summary-card" onclick="detailSync()">
+        <div class="card-header">
+          <span>SQL Server Sync</span>
+          <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary" id="badge-sync">—</span>
+            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-sync" aria-expanded="false" onclick="event.stopPropagation();initExpandSync()" title="Expand inline">▼</button>
+          </div>
+        </div>
+        <div class="card-body py-2">
+          <div class="card-summary" id="sum-sync">Checking configuration…</div>
+        </div>
+        <div class="collapse card-expand-panel" id="expand-sync">
+          <div class="expand-inner" id="expand-sync-content"></div>
+        </div>
+        <div class="card-footer-link">View details →</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Modal ───────────────────────────────────────────────────────── -->
+<div class="modal fade" id="mainModal" tabindex="-1" role="dialog" aria-modal="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-title">Detail</h5>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="modal-body" style="background:var(--color-bg)">
+        <p class="text-center text-muted py-3">Loading…</p>
+      </div>
+    </div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   const STATE_ORDER = [
     'ELIGIBLE','QUEUED','CONTACTED','NO_RESPONSE','RETRY',
     'RESPONDED','ANALYZED','INTERVENTION_REQUIRED','RESOLVED','CLOSED',
   ];
 
-  let _execMode = 'SHADOW';
+  let _execMode    = 'SHADOW';
+  let _bsModal     = null;
+  let _allExpanded = false;
+
+  // Track which static panels have been initialized
+  const _initDone = {};
+
+  function getModal() {
+    if (!_bsModal) _bsModal = new bootstrap.Modal(document.getElementById('mainModal'));
+    return _bsModal;
+  }
 
   function sc(s) {
     const m = {
-      ELIGIBLE:'s-eligible', QUEUED:'s-queued', CONTACTED:'s-contacted',
-      NO_RESPONSE:'s-no_response', RETRY:'s-retry', RESPONDED:'s-responded',
-      ANALYZED:'s-analyzed', INTERVENTION_REQUIRED:'s-intervention_required',
-      RESOLVED:'s-resolved', CLOSED:'s-closed',
+      ELIGIBLE:'s-ELIGIBLE', QUEUED:'s-QUEUED', CONTACTED:'s-CONTACTED',
+      NO_RESPONSE:'s-NO_RESPONSE', RETRY:'s-RETRY', RESPONDED:'s-RESPONDED',
+      ANALYZED:'s-ANALYZED', INTERVENTION_REQUIRED:'s-INTERVENTION_REQUIRED',
+      RESOLVED:'s-RESOLVED', CLOSED:'s-CLOSED',
     };
-    return m[s] || 's-other';
+    return (m[s] || 's-other') + ' state-pill';
   }
-  function mc(m)  { return m === 'SHADOW' ? 'm-shadow' : 'm-live'; }
-  function pct(v) { return (v != null && !isNaN(v)) ? (v * 100).toFixed(1) + '%' : '—'; }
-  function ts(s)  { return s ? new Date(s).toLocaleString() : '—'; }
-  function sp(s)  { return (s || '').replace(/_/g, ' '); }
-  function dot(ok, inner) {
-    return `<span class="sd ${ok ? 'dot-green' : 'dot-red'}" style="margin-right:.35rem"></span>${inner}`;
+  function modeSpan(m) {
+    return `<span class="${m === 'SHADOW' ? 'mode-shadow' : 'mode-live'}">${m || '—'}</span>`;
+  }
+  function pct(v)  { return (v != null && !isNaN(v)) ? (v * 100).toFixed(1) + '%' : '—'; }
+  function ts(s)   { return s ? new Date(s).toLocaleString() : '—'; }
+  function sp(s)   { return (s || '').replace(/_/g, ' '); }
+  function dotHtml(ok) {
+    return `<span class="dot ${ok ? 'dot-ok' : 'dot-err'}" style="margin-right:5px"></span>`;
   }
 
   async function api(path, opts = {}) {
@@ -433,20 +414,20 @@
     return r.json();
   }
 
-  function clog(msg, cls = 'ci') {
-    const el = document.getElementById('console');
-    if (!el) return;
-    const p = document.createElement('p');
-    p.className = cls;
-    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    el.prepend(p);
-    while (el.children.length > 60) el.removeChild(el.lastChild);
-  }
-
-  // ── Card summary helpers ───────────────────────────────────────
-  function setBadge(id, cls, text) {
+  // ── Badge / summary helpers ────────────────────────────────────
+  const BADGE_CLASS = {
+    ok:       'bg-success',
+    info:     'bg-info text-dark',
+    warning:  'bg-warning text-dark',
+    critical: 'bg-danger',
+    shadow:   'bg-warning text-dark',
+    dim:      'bg-secondary',
+  };
+  function setBadge(id, type, text) {
     const el = document.getElementById('badge-' + id);
-    if (el) { el.className = 'sbadge ' + cls; el.textContent = text; }
+    if (!el) return;
+    el.className = 'badge ' + (BADGE_CLASS[type] || BADGE_CLASS.dim);
+    el.textContent = text;
   }
   function setSummary(id, html) {
     const el = document.getElementById('sum-' + id);
@@ -457,72 +438,397 @@
     if (el) el.innerHTML = html;
   }
 
-  // ── Modal ──────────────────────────────────────────────────────
+  // ── Modal helpers ──────────────────────────────────────────────
   function openModal(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
-    document.getElementById('modal').classList.add('open');
-    document.body.style.overflow = 'hidden';
+    getModal().show();
   }
-  function closeModal() {
-    document.getElementById('modal').classList.remove('open');
-    document.body.style.overflow = '';
-  }
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
-  // ── Home card data loaders ─────────────────────────────────────
+  function kpiBox(label, val, cls) {
+    return `<div class="col-6 col-sm-3">
+      <div class="kpi-box">
+        <div class="kpi-label">${label}</div>
+        <div class="kpi-val ${cls || ''}">${val}</div>
+      </div>
+    </div>`;
+  }
+  function infoBox(label, valueHtml) {
+    return `<div class="col-sm-6 col-md-4">
+      <div class="kpi-box">
+        <div class="kpi-label">${label}</div>
+        <div style="font-size:.88rem;font-weight:600;color:var(--color-text);margin-top:.2rem">${valueHtml}</div>
+      </div>
+    </div>`;
+  }
+
+  // ── Expand All / Collapse All ──────────────────────────────────
+  function toggleAllCards() {
+    _allExpanded = !_allExpanded;
+    document.querySelectorAll('.card-expand-panel').forEach(panel => {
+      const bsc = bootstrap.Collapse.getOrCreateInstance(panel, { toggle: false });
+      if (_allExpanded) bsc.show(); else bsc.hide();
+    });
+    // sync aria-expanded on all toggle buttons
+    document.querySelectorAll('.expand-toggle').forEach(btn => {
+      btn.setAttribute('aria-expanded', _allExpanded ? 'true' : 'false');
+    });
+    if (_allExpanded) {
+      loadExpandHealth();
+      loadExpandAlerts();
+      loadExpandKpi();
+      loadExpandStates();
+      loadExpandChannels();
+      loadExpandActivity();
+      initExpandStudents();
+      initExpandActions();
+      initExpandTrigger();
+      initExpandSync();
+    }
+    const btn = document.getElementById('expand-all-btn');
+    if (btn) btn.textContent = _allExpanded ? '⊟ Collapse All' : '⊞ Expand All';
+  }
+
+  // ── Inline expand loaders (async) ─────────────────────────────
+
+  async function loadExpandHealth() {
+    const el = document.getElementById('expand-health-content');
+    if (!el) return;
+    try {
+      const res = await api('/dashboard/health');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const d = res.data;
+      el.innerHTML = `
+        <div class="d-flex flex-wrap gap-3 align-items-center small mb-2">
+          <span>${dotHtml(d.db?.connected)}<span class="${d.db?.connected ? 'text-success' : 'text-danger'} fw-semibold">PostgreSQL</span></span>
+          <span>${dotHtml(d.mssql?.configured)}<span class="${d.mssql?.configured ? 'text-success' : 'text-warning'} fw-semibold">SQL Server</span></span>
+          <span>${dotHtml(d.scheduler?.status === 'active')}<span class="fw-semibold">Scheduler: ${d.scheduler?.status || '?'}</span></span>
+          ${modeSpan(d.execution_mode)}
+        </div>
+        ${d.mssql?.host ? `<div class="text-muted" style="font-size:.72rem">Host: ${d.mssql.host}</div>` : ''}
+        ${d.scheduler?.last_run ? `<div class="text-muted" style="font-size:.72rem">Last run: ${ts(d.scheduler.last_run)}</div>` : ''}`;
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  async function loadExpandAlerts() {
+    const el = document.getElementById('expand-alerts-content');
+    if (!el) return;
+    try {
+      const res = await api('/dashboard/alerts');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const { alerts, count } = res.data;
+      if (!count) {
+        el.innerHTML = '<span class="text-success small">✓ No active alerts</span>';
+        return;
+      }
+      el.innerHTML = alerts.slice(0, 5).map(a => {
+        const sev = (a.severity || '').toLowerCase();
+        return `<div class="d-flex align-items-start gap-2 mb-1 small">
+          <span class="badge ${sev === 'critical' ? 'bg-danger' : sev === 'warning' ? 'bg-warning text-dark' : 'bg-info text-dark'} flex-shrink-0">${a.severity}</span>
+          <span>${a.message}</span>
+        </div>`;
+      }).join('') + (count > 5 ? `<div class="text-muted small mt-1">…and ${count - 5} more</div>` : '');
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  async function loadExpandKpi() {
+    const el = document.getElementById('expand-kpi-content');
+    if (!el) return;
+    try {
+      const res = await api('/dashboard/summary');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const f = res.data.funnel || {};
+      const c = res.data.conversion || {};
+      el.innerHTML = `
+        <div class="row g-2 mb-2">
+          ${[['Tracked', f.tracked ?? '—'], ['Contacted', f.contacted ?? '—'], ['Responded', f.responded ?? '—'],
+             ['No Response', f.no_response ?? '—'], ['Intervention', f.intervention_required ?? '—'], ['Resolved', f.resolved ?? '—']]
+            .map(([l, v]) => `<div class="col-4 col-sm-2 text-center">
+              <div class="fw-bold" style="font-size:1.1rem;color:var(--color-primary)">${v}</div>
+              <div style="font-size:.6rem;color:var(--color-text-light);text-transform:uppercase;letter-spacing:.3px">${l}</div>
+            </div>`).join('')}
+        </div>
+        <div class="d-flex flex-wrap gap-3 small text-muted">
+          <span>Contact rate: <strong>${pct(c.contacted_rate)}</strong></span>
+          <span>Response rate: <strong>${pct(c.response_rate)}</strong></span>
+          <span>Resolution rate: <strong>${pct(c.resolution_rate)}</strong></span>
+        </div>`;
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  async function loadExpandStates() {
+    const el = document.getElementById('expand-states-content');
+    if (!el) return;
+    try {
+      const res = await api('/dashboard/summary');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const byState = res.data.by_state || {};
+      const active = STATE_ORDER.filter(s => byState[s]);
+      if (!active.length) { el.innerHTML = '<p class="text-muted small mb-0">No data yet</p>'; return; }
+      el.innerHTML = active.map(s =>
+        `<div class="d-flex justify-content-between align-items-center py-1" style="border-bottom:1px solid var(--color-border)">
+          <span class="${sc(s)}">${sp(s)}</span>
+          <span class="fw-semibold small">${byState[s]}</span>
+        </div>`
+      ).join('');
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  async function loadExpandChannels() {
+    const el = document.getElementById('expand-channels-content');
+    if (!el) return;
+    try {
+      const res = await api('/dashboard/channel-performance');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const { channels, shadow_mode } = res.data;
+      if (!channels?.length) { el.innerHTML = '<p class="text-muted small mb-0">No outreach history yet</p>'; return; }
+      el.innerHTML = `
+        ${shadow_mode ? '<p class="text-warning small mb-2">All simulated in SHADOW mode</p>' : ''}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.8rem">
+            <thead class="table-light"><tr><th>Channel</th><th>Attempts</th><th>Responses</th><th>Success %</th></tr></thead>
+            <tbody>${channels.map(ch => `<tr>
+              <td class="fw-semibold">${ch.channel}</td>
+              <td>${ch.attempts}</td>
+              <td class="text-success">${ch.responses}</td>
+              <td class="${ch.success_rate > 0 ? 'text-success' : 'text-muted'}">${pct(ch.success_rate)}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  async function loadExpandActivity() {
+    const el = document.getElementById('expand-activity-content');
+    if (!el) return;
+    try {
+      const res = await api('/dashboard/recent-activity?limit=5');
+      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
+      const items = res.data.items || [];
+      if (!items.length) { el.innerHTML = '<p class="text-muted small mb-0">No activity yet</p>'; return; }
+      el.innerHTML = `
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
+            <thead class="table-light"><tr><th>Time</th><th>Student</th><th>Channel</th><th>State Change</th></tr></thead>
+            <tbody>${items.map(i => `<tr>
+              <td class="text-muted text-nowrap">${ts(i.created_at)}</td>
+              <td class="fw-semibold">${i.user_id}</td>
+              <td>${i.channel || '—'}</td>
+              <td>
+                <span class="${sc(i.state_before || '')}">${sp(i.state_before || '—')}</span>
+                <span class="text-muted mx-1">→</span>
+                <span class="${sc(i.state_after || '')}">${sp(i.state_after || '—')}</span>
+              </td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>`;
+    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
+  }
+
+  // ── Inline static expand panels ────────────────────────────────
+
+  function initExpandStudents() {
+    if (_initDone.students) return;
+    _initDone.students = true;
+    const el = document.getElementById('expand-students-content');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="d-flex gap-2 mb-2 flex-wrap align-items-center">
+        <input id="inline-student-id" type="number" class="form-control form-control-sm" placeholder="Student ID" style="max-width:140px"/>
+        <button class="btn btn-sm btn-primary" onclick="lookupStudentInline()">Look Up</button>
+      </div>
+      <div id="inline-student-result" class="small"></div>`;
+  }
+
+  function initExpandActions() {
+    if (_initDone.actions) return;
+    _initDone.actions = true;
+    const el = document.getElementById('expand-actions-content');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="d-flex gap-2 mb-2 flex-wrap">
+        <input id="inline-action-uid"   type="number" class="form-control form-control-sm" placeholder="Student ID"  style="max-width:130px"/>
+        <input id="inline-action-notes" type="text"   class="form-control form-control-sm" placeholder="Notes"        style="max-width:200px"/>
+      </div>
+      <div class="d-flex gap-2 flex-wrap mb-2">
+        <button class="btn btn-sm btn-danger"            onclick="execActionInline('CLOSE_CASE')">Close</button>
+        <button class="btn btn-sm btn-warning text-dark" onclick="execActionInline('FORCE_RETRY')">Retry</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="execActionInline('BOOK_MEETING')">Resolve</button>
+        <button class="btn btn-sm btn-primary"           onclick="execActionInline('ESCALATE')">Escalate</button>
+      </div>
+      <div id="inline-action-result" class="text-muted small"></div>`;
+  }
+
+  function initExpandTrigger() {
+    if (_initDone.trigger) return;
+    _initDone.trigger = true;
+    const el = document.getElementById('expand-trigger-content');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <select id="inline-checkpoint" class="form-select form-select-sm" style="max-width:180px">
+          <option value="SQL">SQL</option>
+          <option value="SSRS">SSRS</option>
+          <option value="SSIS">SSIS</option>
+          <option value="POST_COMPLETION">Post Completion</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="triggerOutreachInline()">Run Batch</button>
+        <span id="inline-trigger-result" class="text-muted small"></span>
+      </div>`;
+  }
+
+  function initExpandSync() {
+    if (_initDone.sync) return;
+    _initDone.sync = true;
+    const el = document.getElementById('expand-sync-content');
+    if (!el) return;
+    el.innerHTML = `
+      <div class="d-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-outline-secondary" onclick="syncMssqlInline()">Sync Now</button>
+        <span id="inline-sync-result" class="text-muted small"></span>
+      </div>`;
+  }
+
+  // ── Inline action handlers ─────────────────────────────────────
+
+  async function lookupStudentInline() {
+    const id = document.getElementById('inline-student-id')?.value;
+    const el = document.getElementById('inline-student-result');
+    if (!id || !el) return;
+    el.innerHTML = '<span class="text-muted">Loading…</span>';
+    try {
+      const res = await api(`/students/${id}`);
+      if (res.status !== 'success') {
+        el.innerHTML = `<span class="text-danger">Not found: ${res.error?.message || 'ID ' + id}</span>`;
+        return;
+      }
+      const d = res.data;
+      const p = d.profile || {};
+      const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || `Student ${id}`;
+      el.innerHTML = `
+        <div class="d-flex flex-wrap gap-3 align-items-start mt-1">
+          <div>
+            <span class="fw-semibold">${name}</span>
+            <span class="badge ${p.risk_level === 'HIGH' ? 'bg-danger' : p.risk_level === 'MEDIUM' ? 'bg-warning text-dark' : p.risk_level === 'LOW' ? 'bg-success' : 'bg-secondary'} ms-2" style="font-size:.6rem">${p.risk_level || 'UNKNOWN'} RISK</span>
+            <div class="text-muted" style="font-size:.72rem">Path: ${p.path || '—'} · Email: ${p.email || '—'}</div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <div class="stat-box"><span class="stat-label">HWs Behind</span><span class="stat-val">${p.hws_behind ?? '—'}</span></div>
+            <div class="stat-box"><span class="stat-label">Avg Effort</span><span class="stat-val">${p.avg_eff_rating != null ? p.avg_eff_rating.toFixed(1) : '—'}</span></div>
+            <div class="stat-box"><span class="stat-label">Inactive Days</span><span class="stat-val">${p.last_activity_days ?? '—'}</span></div>
+          </div>
+          <div><span class="${sc(d.state)}">${sp(d.state)}</span> <span class="text-muted ms-2" style="font-size:.72rem">Attempt #${d.current_attempt}</span></div>
+        </div>`;
+    } catch (e) { el.innerHTML = `<span class="text-danger">Error: ${e}</span>`; }
+  }
+
+  async function execActionInline(actionType) {
+    const uid    = document.getElementById('inline-action-uid')?.value;
+    const notes  = document.getElementById('inline-action-notes')?.value;
+    const resultEl = document.getElementById('inline-action-result');
+    if (!uid) { if (resultEl) resultEl.textContent = 'Enter a Student ID first.'; return; }
+    if (resultEl) resultEl.textContent = `Running ${actionType}…`;
+    try {
+      const body = { user_id: parseInt(uid), action_type: actionType };
+      if (notes) body.notes = notes;
+      const res = await api('/actions/manual', { method: 'POST', body: JSON.stringify(body) });
+      if (res.status === 'success') {
+        const d = res.data;
+        if (resultEl) resultEl.innerHTML = `<span class="text-success">${actionType}: ${sp(d.from_state)} → ${sp(d.to_state)}</span>`;
+        loadSummary(); loadAlerts(); loadActivity();
+        if (document.getElementById('expand-activity')?.classList.contains('show')) loadExpandActivity();
+      } else {
+        if (resultEl) resultEl.innerHTML = `<span class="text-danger">Error: ${res.error?.message || res.error?.code || 'Unknown'}</span>`;
+      }
+    } catch (e) { if (resultEl) resultEl.innerHTML = `<span class="text-danger">Request failed</span>`; }
+  }
+
+  async function triggerOutreachInline() {
+    const cp    = document.getElementById('inline-checkpoint')?.value;
+    const resEl = document.getElementById('inline-trigger-result');
+    if (!cp) return;
+    if (resEl) resEl.textContent = 'Running…';
+    try {
+      const res = await api('/outreach/trigger', { method: 'POST', body: JSON.stringify({ checkpoint_type: cp }) });
+      if (res.status === 'success') {
+        const s = res.data.summary;
+        if (resEl) resEl.textContent = `triggered: ${s.triggered}  retried: ${s.retried}  skipped: ${s.skipped}  errors: ${s.errors}`;
+        loadSummary(); loadAlerts(); loadActivity();
+      } else {
+        if (resEl) resEl.textContent = res.error?.message || 'Error';
+      }
+    } catch (e) { if (resEl) resEl.textContent = 'Request failed'; }
+  }
+
+  async function syncMssqlInline() {
+    const el = document.getElementById('inline-sync-result');
+    if (el) el.textContent = 'Syncing…';
+    try {
+      const res = await api('/sync/mssql', { method: 'POST' });
+      if (res.status === 'success') {
+        const d = res.data;
+        const msg = d.connected
+          ? `Done — added: ${d.added}  updated: ${d.updated}`
+          : (d.error === 'not_configured' ? 'SQL Server not configured' : `Error: ${d.error}`);
+        if (el) el.textContent = msg;
+        loadHealth();
+      } else {
+        if (el) el.textContent = res.error?.message || 'Error';
+      }
+    } catch (e) { if (el) el.textContent = 'Error'; }
+  }
+
+  // ── Home card loaders ──────────────────────────────────────────
 
   async function loadHealth() {
     try {
       const res = await api('/dashboard/health');
       if (res.status !== 'success') {
-        setBadge('health', 'sb-critical', 'ERROR');
-        setSummary('health', '<span class="red">Failed to load health data</span>');
+        setBadge('health', 'critical', 'ERROR');
+        setSummary('health', '<span class="text-danger">Failed to load health data</span>');
         return;
       }
       const d = res.data;
       _execMode = d.execution_mode || 'SHADOW';
 
-      // Header badge + pills
-      const badge = document.getElementById('exec-badge');
-      if (badge) {
-        badge.textContent = d.execution_mode;
-        badge.className = `badge ${d.execution_mode === 'SHADOW' ? 'badge-shadow' : 'badge-live'}`;
+      const nb = document.getElementById('exec-badge');
+      if (nb) {
+        nb.textContent = d.execution_mode;
+        nb.className = `badge ${d.execution_mode === 'SHADOW' ? 'bg-warning text-dark' : 'bg-success'}`;
       }
       function pill(id, ok, label) {
         const el = document.getElementById(id);
-        if (el) el.innerHTML = `<span class="sd ${ok ? 'dot-green' : 'dot-red'}"></span>${label}`;
+        if (el) el.innerHTML = `<span class="dot ${ok ? 'dot-ok' : 'dot-err'}"></span>${label}`;
       }
-      pill('hp-db',    d.db?.connected,                  d.db?.connected ? 'PostgreSQL' : 'DB Error');
-      pill('hp-mssql', d.mssql?.configured,               d.mssql?.configured ? 'SQL Server' : 'SQL Server ⚠');
-      pill('hp-sched', d.scheduler?.status === 'active',  d.scheduler?.status === 'active' ? 'Scheduler' : 'Scheduler ⚠');
+      pill('hp-db',    d.db?.connected,               d.db?.connected ? 'PostgreSQL' : 'DB Error');
+      pill('hp-mssql', d.mssql?.configured,            d.mssql?.configured ? 'SQL Server' : 'SQL Server ⚠');
+      pill('hp-sched', d.scheduler?.status === 'active', d.scheduler?.status === 'active' ? 'Scheduler' : 'Scheduler ⚠');
 
-      // Card summary
       const dbOk    = d.db?.connected;
       const schedOk = d.scheduler?.status === 'active';
       const mssqlOk = d.mssql?.configured;
-      if (!dbOk) {
-        setBadge('health', 'sb-critical', 'CRITICAL');
-        setSummary('health', '<span class="red">PostgreSQL disconnected</span>');
-      } else if (!mssqlOk) {
-        setBadge('health', 'sb-warning', 'WARNING');
-        setSummary('health', `DB connected · ${schedOk ? 'Scheduler active' : '<span class="yellow">Scheduler ⚠</span>'} · <span class="yellow">SQL Server not configured</span>`);
-      } else {
-        setBadge('health', 'sb-ok', 'OK');
-        setSummary('health', `DB connected · ${schedOk ? 'Scheduler active' : '<span class="yellow">Scheduler ⚠</span>'}  · ${d.execution_mode}`);
-      }
-      setMetric('health', `<span class="${d.execution_mode === 'SHADOW' ? 'm-shadow' : 'm-live'}">${d.execution_mode}</span>`);
 
-      // Update SQL Sync card badge from health data
-      if (!mssqlOk) {
-        setBadge('sync', 'sb-warning', 'WARNING');
-        setSummary('sync', '<span class="yellow">Not configured</span> · Credentials pending');
+      if (!dbOk) {
+        setBadge('health', 'critical', 'CRITICAL');
+        setSummary('health', '<span class="text-danger">PostgreSQL disconnected</span>');
+      } else if (!mssqlOk) {
+        setBadge('health', 'warning', 'WARNING');
+        setSummary('health', `DB connected · ${schedOk ? 'Scheduler active' : '<span class="text-warning">Scheduler ⚠</span>'} · <span class="text-warning">SQL Server not configured</span>`);
       } else {
-        setBadge('sync', 'sb-ok', 'OK');
+        setBadge('health', 'ok', 'OK');
+        setSummary('health', `DB connected · ${schedOk ? 'Scheduler active' : '<span class="text-warning">Scheduler ⚠</span>'} · ${d.execution_mode}`);
+      }
+      setMetric('health', modeSpan(d.execution_mode));
+
+      if (!mssqlOk) {
+        setBadge('sync', 'warning', 'WARNING');
+        setSummary('sync', '<span class="text-warning">Not configured</span> · Credentials pending');
+      } else {
+        setBadge('sync', 'ok', 'OK');
         setSummary('sync', `Connected · Host: ${d.mssql?.host || '—'}`);
       }
     } catch (_) {
-      setBadge('health', 'sb-critical', 'CRITICAL');
+      setBadge('health', 'critical', 'CRITICAL');
       setSummary('health', 'Connection error');
     }
   }
@@ -532,16 +838,16 @@
       const res = await api('/dashboard/alerts');
       if (res.status !== 'success') return;
       const { alerts, count } = res.data;
-      if (!count || count === 0) {
-        setBadge('alerts', 'sb-ok', 'OK');
+      if (!count) {
+        setBadge('alerts', 'ok', 'OK');
         setSummary('alerts', 'No active alerts');
-        setMetric('alerts', '<span class="green" style="font-size:1.8rem;font-weight:700;line-height:1">✓</span>');
+        setMetric('alerts', '<span class="text-success fw-bold" style="font-size:1.6rem">✓</span>');
       } else {
         const hasC = alerts.some(a => a.severity === 'CRITICAL');
         const hasW = alerts.some(a => a.severity === 'WARNING');
-        setBadge('alerts', hasC ? 'sb-critical' : hasW ? 'sb-warning' : 'sb-info', hasC ? 'CRITICAL' : hasW ? 'WARNING' : 'INFO');
+        setBadge('alerts', hasC ? 'critical' : hasW ? 'warning' : 'info', hasC ? 'CRITICAL' : hasW ? 'WARNING' : 'INFO');
         setSummary('alerts', `${count} active alert${count !== 1 ? 's' : ''}`);
-        setMetric('alerts', `<span style="font-size:1.8rem;font-weight:700;line-height:1;color:${hasC ? '#f87171' : '#fbbf24'}">${count}</span>`);
+        setMetric('alerts', `<span class="card-metric ${hasC ? 'metric-danger' : 'metric-warning'}">${count}</span>`);
       }
     } catch (_) {}
   }
@@ -552,24 +858,23 @@
       if (res.status !== 'success') return;
       const d = res.data;
       const f = d.funnel || {};
-      const c = d.conversion || {};
       const byState = d.by_state || {};
-
       const tracked   = f.tracked ?? d.total_tracked ?? 0;
       const contacted = f.contacted ?? 0;
       const responded = f.responded ?? 0;
 
-      setBadge('kpi', 'sb-info', 'INFO');
+      setBadge('kpi', 'info', 'INFO');
       setSummary('kpi', `${tracked} tracked · ${contacted} contacted · ${responded} responded`);
-      setMetric('kpi', `<span class="blue" style="font-size:1.8rem;font-weight:700;line-height:1">${tracked}</span><span style="font-size:.72rem;color:#475569;margin-left:.4rem">tracked</span>`);
+      setMetric('kpi', `<span class="card-metric metric-primary">${tracked}</span><span class="card-metric-sub">tracked</span>`);
 
       const activeStates = STATE_ORDER.filter(s => (byState[s] || 0) > 0);
-      setBadge('states', 'sb-info', 'INFO');
+      setBadge('states', 'info', 'INFO');
       setSummary('states',
-        activeStates.slice(0, 3).map(s => `<span class="pill ${sc(s)}" style="margin-right:.25rem">${sp(s)}</span><span class="slate">${byState[s]}</span>`).join('  ') ||
-        'No data yet'
+        activeStates.slice(0, 3).map(s =>
+          `<span class="${sc(s)}" style="margin-right:3px">${sp(s)}</span><span class="text-muted small">${byState[s]}</span>`
+        ).join('  ') || 'No data yet'
       );
-      setMetric('states', `<span style="font-size:1.8rem;font-weight:700;line-height:1;color:#a78bfa">${activeStates.length}</span><span style="font-size:.72rem;color:#475569;margin-left:.4rem">active states</span>`);
+      setMetric('states', `<span class="card-metric metric-purple">${activeStates.length}</span><span class="card-metric-sub">active states</span>`);
     } catch (_) {}
   }
 
@@ -580,7 +885,7 @@
       const { channels, shadow_mode } = res.data;
       const total = (channels || []).reduce((s, c) => s + (c.attempts || 0), 0);
       setSummary('channels', shadow_mode ? 'All simulated · No real sends' : `${total} total attempts`);
-      setMetric('channels', `<span style="font-size:1.8rem;font-weight:700;line-height:1;color:#fbbf24">${total}</span><span style="font-size:.72rem;color:#475569;margin-left:.4rem">attempts</span>`);
+      setMetric('channels', `<span class="card-metric metric-warning">${total}</span><span class="card-metric-sub">attempts</span>`);
     } catch (_) {}
   }
 
@@ -589,259 +894,246 @@
       const res = await api('/dashboard/recent-activity?limit=20');
       if (res.status !== 'success') return;
       const items = res.data.items || [];
-      setBadge('activity', 'sb-info', 'INFO');
+      setBadge('activity', 'info', 'INFO');
       setSummary('activity', `${items.length} event${items.length !== 1 ? 's' : ''} in recent log`);
-      setMetric('activity', `<span style="font-size:1.8rem;font-weight:700;line-height:1;color:#38bdf8">${items.length}</span>`);
+      setMetric('activity', `<span class="card-metric metric-info">${items.length}</span>`);
     } catch (_) {}
   }
 
-  // ── Detail view loaders ────────────────────────────────────────
+  // ── Detail modal views ─────────────────────────────────────────
 
   async function detailHealth() {
-    openModal('System Health', '<p class="empty">Loading…</p>');
+    openModal('System Health', '<p class="text-center text-muted py-4">Loading…</p>');
     try {
       const res = await api('/dashboard/health');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="empty">Failed to load</p>'; return; }
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
       const d = res.data;
       const ch = d.channels || {};
       const allOff = !ch.call && !ch.sms && !ch.email;
-      document.getElementById('modal-body').innerHTML = `
-        <div class="hgrid">
-          <div class="hcard">
-            <div class="hl">Execution Mode</div>
-            <div class="hv"><span class="${d.execution_mode === 'SHADOW' ? 'm-shadow' : 'm-live'}">${d.execution_mode}</span></div>
-          </div>
-          <div class="hcard">
-            <div class="hl">PostgreSQL</div>
-            <div class="hv">${dot(d.db?.connected, d.db?.connected ? '<span class="green">Connected</span>' : '<span class="red">Disconnected</span>')}</div>
-          </div>
-          <div class="hcard">
-            <div class="hl">SQL Server</div>
-            <div class="hv">${d.mssql?.configured
-              ? dot(true, `<span class="green">Configured</span> <span class="slate" style="font-size:.75rem">${d.mssql.host || ''}</span>`)
-              : dot(false, '<span class="red">Not configured</span>')}</div>
-          </div>
-          <div class="hcard">
-            <div class="hl">Scheduler</div>
-            <div class="hv">${dot(d.scheduler?.status === 'active', d.scheduler?.status || '—')}</div>
-          </div>
-          <div class="hcard">
-            <div class="hl">Last Scheduler Run</div>
-            <div class="hv" style="font-size:.78rem">${d.scheduler?.last_run ? ts(d.scheduler.last_run) : '<span class="yellow">Never ran</span>'}</div>
-          </div>
-          <div class="hcard">
-            <div class="hl">Outbound Channels</div>
-            <div class="hv">${allOff
-              ? '<span class="yellow">All disabled (SHADOW)</span>'
-              : `CALL:${ch.call ? '<span class="green">✓</span>' : '<span class="red">✗</span>'} SMS:${ch.sms ? '<span class="green">✓</span>' : '<span class="red">✗</span>'} EMAIL:${ch.email ? '<span class="green">✓</span>' : '<span class="red">✗</span>'}`}</div>
-          </div>
-        </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="empty">Error: ${e}</p>`; }
+      document.getElementById('modal-body').innerHTML = `<div class="row g-3">
+        ${infoBox('Execution Mode', modeSpan(d.execution_mode))}
+        ${infoBox('PostgreSQL', `${dotHtml(d.db?.connected)}<span class="${d.db?.connected ? 'text-success' : 'text-danger'} fw-semibold">${d.db?.connected ? 'Connected' : 'Disconnected'}</span>`)}
+        ${infoBox('SQL Server', d.mssql?.configured
+          ? `${dotHtml(true)}<span class="text-success fw-semibold">Configured</span> <span class="text-muted small">${d.mssql?.host || ''}</span>`
+          : `${dotHtml(false)}<span class="text-danger fw-semibold">Not configured</span>`)}
+        ${infoBox('Scheduler', `${dotHtml(d.scheduler?.status === 'active')}<span class="fw-semibold">${d.scheduler?.status || '—'}</span>`)}
+        ${infoBox('Last Scheduler Run', d.scheduler?.last_run ? `<span class="small">${ts(d.scheduler.last_run)}</span>` : '<span class="text-warning">Never ran</span>')}
+        ${infoBox('Outbound Channels', allOff
+          ? '<span class="text-warning">All disabled (SHADOW)</span>'
+          : `CALL: ${ch.call ? '<span class="text-success">✓</span>' : '<span class="text-danger">✗</span>'} &nbsp; SMS: ${ch.sms ? '<span class="text-success">✓</span>' : '<span class="text-danger">✗</span>'} &nbsp; EMAIL: ${ch.email ? '<span class="text-success">✓</span>' : '<span class="text-danger">✗</span>'}`)}
+      </div>`;
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
   async function detailAlerts() {
-    openModal('Operational Alerts', '<p class="empty">Loading…</p>');
+    openModal('Operational Alerts', '<p class="text-center text-muted py-4">Loading…</p>');
     try {
       const res = await api('/dashboard/alerts');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="empty">Failed to load</p>'; return; }
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
       const { alerts } = res.data;
-      if (!alerts || !alerts.length) {
-        document.getElementById('modal-body').innerHTML = '<p class="empty">No active alerts</p>';
+      if (!alerts?.length) {
+        document.getElementById('modal-body').innerHTML = '<div class="text-center text-success py-4"><div style="font-size:2.5rem">✓</div><div class="mt-2 fw-semibold">No active alerts</div></div>';
         return;
       }
       document.getElementById('modal-body').innerHTML = alerts.map(a => {
-        const sev = a.severity.toLowerCase();
-        const sid = a.student_id ? `<span class="al-sid">Student #${a.student_id}</span>` : '';
-        return `<div class="alert-row al-${sev}">
-          <span class="al-sev sev-${sev}">${a.severity}</span>
-          <div class="al-body">
-            <div class="al-msg">${a.message}</div>
-            <div class="al-act">→ ${a.recommended_action}</div>
-          </div>${sid}
+        const sev = (a.severity || '').toLowerCase();
+        return `<div class="alert-item alert-${sev} mb-2">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div>
+              <span class="badge ${sev === 'critical' ? 'bg-danger' : sev === 'warning' ? 'bg-warning text-dark' : 'bg-info text-dark'} me-2">${a.severity}</span>
+              <span class="fw-semibold">${a.message}</span>
+            </div>
+            ${a.student_id ? `<span class="text-muted small text-nowrap">Student #${a.student_id}</span>` : ''}
+          </div>
+          <div class="text-muted small mt-1">→ ${a.recommended_action}</div>
         </div>`;
       }).join('');
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="empty">Error: ${e}</p>`; }
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
   async function detailKPI() {
-    openModal('KPI Summary', '<p class="empty">Loading…</p>');
+    openModal('KPI Summary', '<p class="text-center text-muted py-4">Loading…</p>');
     try {
       const res = await api('/dashboard/summary');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="empty">Failed to load</p>'; return; }
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
       const d = res.data;
       const f = d.funnel || {};
       const c = d.conversion || {};
       document.getElementById('modal-body').innerHTML = `
-        <div class="kgrid">
-          <div class="kcard"><div class="klabel">Tracked</div><div class="kval blue">${f.tracked ?? d.total_tracked ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">Ever Contacted</div><div class="kval blue">${f.contacted ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">Responded</div><div class="kval green">${f.responded ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">No Response</div><div class="kval yellow">${f.no_response ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">Intervention</div><div class="kval red">${f.intervention_required ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">Resolved</div><div class="kval purple">${f.resolved ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">Closed</div><div class="kval slate">${f.closed ?? '—'}</div></div>
-          <div class="kcard"><div class="klabel">Shadow Executions</div><div class="kval yellow">${f.shadow_executions ?? d.shadow_executions ?? '—'}</div><div class="ksub">no real sends</div></div>
+        <div class="row g-2 mb-3">
+          ${kpiBox('Tracked',          f.tracked ?? d.total_tracked ?? '—', 'metric-primary')}
+          ${kpiBox('Ever Contacted',   f.contacted ?? '—',               'metric-info')}
+          ${kpiBox('Responded',        f.responded ?? '—',               'metric-success')}
+          ${kpiBox('No Response',      f.no_response ?? '—',             'metric-warning')}
+          ${kpiBox('Intervention',     f.intervention_required ?? '—',   'metric-danger')}
+          ${kpiBox('Resolved',         f.resolved ?? '—',                'metric-success')}
+          ${kpiBox('Closed',           f.closed ?? '—',                  '')}
+          ${kpiBox('Shadow Executions',f.shadow_executions ?? d.shadow_executions ?? '—', 'metric-warning')}
         </div>
-        <div class="conv-row" style="margin-top:1rem">
-          <div class="cpill"><div class="cpl">Contacted Rate</div><div class="cpv">${pct(c.contacted_rate)}</div></div>
-          <div class="cpill"><div class="cpl">Response Rate</div><div class="cpv">${pct(c.response_rate)}</div></div>
-          <div class="cpill"><div class="cpl">Resolution Rate</div><div class="cpv">${pct(c.resolution_rate)}</div></div>
+        <div class="row g-2">
+          ${[['Contacted Rate', pct(c.contacted_rate)], ['Response Rate', pct(c.response_rate)], ['Resolution Rate', pct(c.resolution_rate)]].map(([l, v]) => `
+            <div class="col-4">
+              <div class="kpi-box text-center">
+                <div class="kpi-label">${l}</div>
+                <div style="font-size:1.5rem;font-weight:700;color:var(--color-primary-light)">${v}</div>
+              </div>
+            </div>`).join('')}
         </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="empty">Error: ${e}</p>`; }
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
   async function detailStates() {
-    openModal('State Distribution', '<p class="empty">Loading…</p>');
+    openModal('State Distribution', '<p class="text-center text-muted py-4">Loading…</p>');
     try {
       const res = await api('/dashboard/summary');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="empty">Failed to load</p>'; return; }
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
       const byState = res.data.by_state || {};
       if (!Object.keys(byState).length) {
-        document.getElementById('modal-body').innerHTML = '<p class="empty">No data yet</p>';
+        document.getElementById('modal-body').innerHTML = '<p class="text-center text-muted py-4">No data yet</p>';
         return;
       }
-      document.getElementById('modal-body').innerHTML = `<div class="sdist">${
-        STATE_ORDER.filter(s => byState[s] !== undefined).map(s => `
-          <div class="srow">
-            <span class="pill ${sc(s)}">${sp(s)}</span>
-            <span class="scnt slate">${byState[s]}</span>
-          </div>`).join('')
-      }</div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="empty">Error: ${e}</p>`; }
+      document.getElementById('modal-body').innerHTML = `
+        <div class="list-group list-group-flush">
+          ${STATE_ORDER.filter(s => byState[s] !== undefined).map(s => `
+            <div class="list-group-item d-flex justify-content-between align-items-center px-2 py-2" style="border-color:var(--color-border)">
+              <span class="${sc(s)}">${sp(s)}</span>
+              <span class="fw-semibold" style="color:var(--color-text)">${byState[s]}</span>
+            </div>`).join('')}
+        </div>`;
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
   async function detailChannels() {
-    openModal('Channel Performance', '<p class="empty">Loading…</p>');
+    openModal('Channel Performance', '<p class="text-center text-muted py-4">Loading…</p>');
     try {
       const res = await api('/dashboard/channel-performance');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="empty">Failed to load</p>'; return; }
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
       const { channels, shadow_mode, note } = res.data;
-      if (!channels || !channels.length) {
-        document.getElementById('modal-body').innerHTML = '<p class="empty">No outreach history yet</p>';
+      if (!channels?.length) {
+        document.getElementById('modal-body').innerHTML = '<p class="text-center text-muted py-4">No outreach history yet</p>';
         return;
       }
       document.getElementById('modal-body').innerHTML = `
-        <div style="overflow-x:auto">
-          <table>
-            <thead><tr><th>Channel</th><th>Attempts</th><th>Shadow</th><th>Responses</th><th>No Response</th><th>Success %</th></tr></thead>
+        ${shadow_mode ? '<div class="alert alert-warning py-2 mb-3 small">All channels are simulated in SHADOW mode — no real communication sent.</div>' : ''}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr>
+              <th>Channel</th><th>Attempts</th><th>Shadow</th><th>Responses</th><th>No Response</th><th>Success %</th>
+            </tr></thead>
             <tbody>${channels.map(ch => `<tr>
-              <td><strong>${ch.channel}</strong></td>
+              <td class="fw-semibold">${ch.channel}</td>
               <td>${ch.attempts}</td>
-              <td class="yellow">${ch.shadow_count}</td>
-              <td class="green">${ch.responses}</td>
-              <td class="yellow">${ch.no_response}</td>
-              <td class="${ch.success_rate > 0 ? 'green' : 'slate'}">${pct(ch.success_rate)}</td>
+              <td class="text-warning">${ch.shadow_count}</td>
+              <td class="text-success">${ch.responses}</td>
+              <td class="text-warning">${ch.no_response}</td>
+              <td class="${ch.success_rate > 0 ? 'text-success' : 'text-muted'}">${pct(ch.success_rate)}</td>
             </tr>`).join('')}</tbody>
           </table>
         </div>
-        ${shadow_mode ? '<p style="font-size:.68rem;color:#475569;margin-top:.75rem;text-align:center">All channels simulated in SHADOW mode — no real communication sent</p>' : ''}
-        ${note ? `<p style="font-size:.68rem;color:#fbbf24;margin-top:.5rem">${note}</p>` : ''}`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="empty">Error: ${e}</p>`; }
+        ${note ? `<p class="text-warning small mt-2">${note}</p>` : ''}`;
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
   async function detailActivity() {
-    openModal('Recent Activity', '<p class="empty">Loading…</p>');
+    openModal('Recent Activity', '<p class="text-center text-muted py-4">Loading…</p>');
     try {
       const res = await api('/dashboard/recent-activity?limit=20');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="empty">Failed to load</p>'; return; }
+      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
       const items = res.data.items || [];
       if (!items.length) {
-        document.getElementById('modal-body').innerHTML = '<p class="empty">No activity yet</p>';
+        document.getElementById('modal-body').innerHTML = '<p class="text-center text-muted py-4">No activity yet</p>';
         return;
       }
       document.getElementById('modal-body').innerHTML = `
-        <div style="display:flex;justify-content:flex-end;margin-bottom:.75rem">
-          <button class="neutral btn-sm" onclick="detailActivity()">↺ Reload</button>
+        <div class="d-flex justify-content-end mb-2">
+          <button class="btn btn-sm btn-outline-secondary" onclick="detailActivity()">↺ Reload</button>
         </div>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr><th>Time</th><th>Student</th><th>Checkpoint</th><th>Channel</th><th>Action</th><th>Mode</th><th>State Change</th></tr>
-            </thead>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr>
+              <th>Time</th><th>Student</th><th>Checkpoint</th><th>Channel</th><th>Action</th><th>Mode</th><th>State Change</th>
+            </tr></thead>
             <tbody>${items.map(i => `<tr>
-              <td class="slate" style="white-space:nowrap;font-size:.73rem">${ts(i.created_at)}</td>
-              <td><strong>${i.user_id}</strong></td>
-              <td class="slate">${i.checkpoint_type || '—'}</td>
+              <td class="text-muted small text-nowrap">${ts(i.created_at)}</td>
+              <td class="fw-semibold">${i.user_id}</td>
+              <td class="text-muted">${i.checkpoint_type || '—'}</td>
               <td>${i.channel || '—'}</td>
-              <td style="color:#e2e8f0">${i.action || '—'}</td>
-              <td><span class="${mc(i.execution_mode)}">${i.execution_mode}</span></td>
+              <td>${i.action || '—'}</td>
+              <td>${modeSpan(i.execution_mode)}</td>
               <td>
-                <span class="pill ${sc(i.state_before || '')}">${sp(i.state_before || '—')}</span>
-                <span class="slate" style="margin:0 .25rem">→</span>
-                <span class="pill ${sc(i.state_after || '')}">${sp(i.state_after || '—')}</span>
+                <span class="${sc(i.state_before || '')}">${sp(i.state_before || '—')}</span>
+                <span class="text-muted mx-1">→</span>
+                <span class="${sc(i.state_after || '')}">${sp(i.state_after || '—')}</span>
               </td>
             </tr>`).join('')}</tbody>
           </table>
         </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="empty">Error: ${e}</p>`; }
+    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
   }
 
   function detailStudents() {
     openModal('Student Cases', `
-      <p class="modal-hint">Enter a student ID to view their profile, outreach history, and state transitions.</p>
-      <div class="ctrls">
-        <input id="student-id" type="number" placeholder="Student ID" style="width:160px" />
-        <button onclick="lookupStudent()">Look Up</button>
+      <p class="text-muted mb-3">Enter a student ID to view their profile, outreach history, and state transitions.</p>
+      <div class="d-flex gap-2 mb-3 flex-wrap">
+        <input id="student-id" type="number" class="form-control form-control-sm" placeholder="Student ID" style="max-width:160px"/>
+        <button class="btn btn-sm btn-primary" onclick="lookupStudent()">Look Up</button>
       </div>
       <div id="student-result"></div>`);
   }
 
   function detailTrigger() {
     openModal('Trigger Outreach Batch', `
-      <p class="modal-hint">Select a checkpoint and run the outreach batch. All outreach is simulated in SHADOW mode — no real communication will be sent.</p>
-      <div class="ctrls">
-        <select id="checkpoint">
+      <p class="text-muted mb-3">Select a checkpoint and run the outreach batch. All outreach is simulated in SHADOW mode — no real communication will be sent.</p>
+      <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
+        <select id="checkpoint" class="form-select form-select-sm" style="max-width:220px">
           <option value="SQL">SQL</option>
           <option value="SSRS">SSRS</option>
           <option value="SSIS">SSIS</option>
           <option value="POST_COMPLETION">Post Completion</option>
         </select>
-        <button onclick="triggerOutreach()">Run Batch</button>
+        <button class="btn btn-sm btn-primary" onclick="triggerOutreach()">Run Batch</button>
       </div>
-      <div id="trigger-result" style="font-size:.82rem;color:#64748b;margin-top:.5rem"></div>`);
+      <div id="trigger-result" class="text-muted small"></div>`);
   }
 
   function detailSync() {
     openModal('SQL Server Sync', `
-      <p class="modal-hint">Sync student data from SQL Server into PostgreSQL. SQL Server is read-only — no writes are made upstream.</p>
-      <div class="ctrls">
-        <button class="neutral" onclick="syncMssql()">Sync Now</button>
-        <span id="sync-result" style="font-size:.82rem;color:#64748b"></span>
+      <p class="text-muted mb-3">Sync student data from SQL Server into PostgreSQL. SQL Server is read-only — no writes are made upstream.</p>
+      <div class="d-flex gap-2 align-items-center">
+        <button class="btn btn-sm btn-outline-secondary" onclick="syncMssql()">Sync Now</button>
+        <span id="sync-result" class="text-muted small"></span>
       </div>`);
   }
 
   function detailActions() {
     openModal('Manual Actions', `
-      <p class="modal-hint">All actions are validated against the state machine and recorded in the audit log. System remains in SHADOW mode — no real outbound sends.</p>
-      <div class="ctrls">
-        <input id="action-uid"   type="number" placeholder="Student ID"      style="width:155px" />
-        <input id="action-notes" type="text"   placeholder="Notes (optional)" style="width:230px" />
+      <p class="text-muted mb-3">All actions are validated against the state machine and recorded in the audit log. System remains in SHADOW mode — no real outbound sends.</p>
+      <div class="d-flex gap-2 mb-3 flex-wrap">
+        <input id="action-uid"   type="number" class="form-control form-control-sm" placeholder="Student ID"       style="max-width:155px"/>
+        <input id="action-notes" type="text"   class="form-control form-control-sm" placeholder="Notes (optional)" style="max-width:230px"/>
       </div>
-      <div class="ctrls">
-        <button class="danger"  onclick="execAction('CLOSE_CASE')">Close Case</button>
-        <button class="warn"    onclick="execAction('FORCE_RETRY')">Force Retry <span class="stag" id="retry-stag">SHADOW</span></button>
-        <button class="neutral" onclick="execAction('BOOK_MEETING')">Mark Resolved</button>
-        <button class="purple"  onclick="execAction('ESCALATE')">Escalate</button>
+      <div class="d-flex gap-2 flex-wrap mb-3">
+        <button class="btn btn-sm btn-danger"           onclick="execAction('CLOSE_CASE')">Close Case</button>
+        <button class="btn btn-sm btn-warning text-dark" onclick="execAction('FORCE_RETRY')">Force Retry ${_execMode === 'SHADOW' ? '<span class="badge bg-secondary ms-1" style="font-size:.6rem">SHADOW</span>' : ''}</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="execAction('BOOK_MEETING')">Mark Resolved</button>
+        <button class="btn btn-sm btn-primary"           onclick="execAction('ESCALATE')">Escalate</button>
       </div>
-      <div id="action-result" style="font-size:.8rem;color:#64748b;margin-top:.45rem"></div>
-      <div class="sub-label" style="margin-top:1rem">Action Log</div>
-      <div id="console"><p class="ci">Waiting for actions…</p></div>`);
-    document.getElementById('retry-stag').style.display = _execMode === 'SHADOW' ? '' : 'none';
+      <div id="action-result" class="text-muted small mb-3"></div>
+      <div class="text-uppercase fw-semibold small text-muted mb-1" style="letter-spacing:.5px;font-size:.62rem">Action Log</div>
+      <div id="action-console"><p class="text-info">Waiting for actions…</p></div>`);
   }
 
-  // ── Student lookup ─────────────────────────────────────────────
+  // ── Student lookup (modal) ─────────────────────────────────────
   async function lookupStudent() {
     const id = document.getElementById('student-id')?.value;
     if (!id) return;
     const el = document.getElementById('student-result');
     if (!el) return;
-    el.innerHTML = '<p style="color:#334155;padding:.6rem 0;font-size:.82rem">Loading…</p>';
+    el.innerHTML = '<p class="text-muted small">Loading…</p>';
     try {
       const res = await api(`/students/${id}`);
       if (res.status !== 'success') {
-        el.innerHTML = `<div style="background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.4);border-radius:8px;padding:.7rem 1rem;color:#fca5a5;font-size:.83rem">
-          Student not found: ${res.error?.message || 'No record for ID ' + id}
-        </div>`;
+        el.innerHTML = `<div class="alert alert-danger py-2 small">Student not found: ${res.error?.message || 'No record for ID ' + id}</div>`;
         return;
       }
       const d = res.data;
@@ -852,63 +1144,70 @@
       const acBad = (p.last_activity_days || 0) >= 5;
 
       const histRows = (d.history || []).map(h => `<tr>
-        <td class="slate" style="font-size:.72rem;white-space:nowrap">${ts(h.created_at)}</td>
+        <td class="text-muted small text-nowrap">${ts(h.created_at)}</td>
         <td>${h.attempt_number}</td><td>${h.channel || '—'}</td><td>${h.action || '—'}</td>
-        <td><span class="${mc(h.execution_mode)}">${h.execution_mode}</span></td>
-        <td><span class="pill ${sc(h.state_before || '')}">${sp(h.state_before || '—')}</span></td>
-        <td><span class="pill ${sc(h.state_after  || '')}">${sp(h.state_after  || '—')}</span></td>
-      </tr>`).join('') || '<tr><td colspan="7" class="empty">No outreach history</td></tr>';
+        <td>${modeSpan(h.execution_mode)}</td>
+        <td><span class="${sc(h.state_before || '')}">${sp(h.state_before || '—')}</span></td>
+        <td><span class="${sc(h.state_after  || '')}">${sp(h.state_after  || '—')}</span></td>
+      </tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-3">No outreach history</td></tr>';
 
       const transRows = (d.transitions || []).map(t => `<tr>
-        <td class="slate" style="font-size:.72rem;white-space:nowrap">${ts(t.created_at)}</td>
-        <td><span class="pill ${sc(t.from_state)}">${sp(t.from_state)}</span></td>
-        <td><span class="pill ${sc(t.to_state)}">${sp(t.to_state)}</span></td>
-        <td class="slate">${t.trigger || '—'}</td>
-        <td style="font-size:.7rem;color:#475569">${t.actor}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="empty">No transitions recorded</td></tr>';
+        <td class="text-muted small text-nowrap">${ts(t.created_at)}</td>
+        <td><span class="${sc(t.from_state)}">${sp(t.from_state)}</span></td>
+        <td><span class="${sc(t.to_state)}">${sp(t.to_state)}</span></td>
+        <td class="text-muted">${t.trigger || '—'}</td>
+        <td class="text-muted small">${t.actor}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-3">No transitions recorded</td></tr>';
 
       el.innerHTML = `
-        <div class="pcard" style="margin-top:.75rem">
-          <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
-            <div style="flex:1;min-width:200px">
-              <div class="pname">${name}
-                <span class="risk-${p.risk_level || 'UNKNOWN'}" style="margin-left:.5rem;font-size:.68rem">${p.risk_level || 'UNKNOWN'} RISK</span>
+        <div class="card border shadow-sm mb-3" style="border-color:var(--color-border)!important">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+              <div>
+                <div class="fw-bold mb-1" style="font-size:1.05rem;color:var(--color-primary)">
+                  ${name}
+                  <span class="badge ${p.risk_level === 'HIGH' ? 'bg-danger' : p.risk_level === 'MEDIUM' ? 'bg-warning text-dark' : p.risk_level === 'LOW' ? 'bg-success' : 'bg-secondary'} ms-2" style="font-size:.62rem">${p.risk_level || 'UNKNOWN'} RISK</span>
+                </div>
+                <div class="text-muted small d-flex flex-wrap gap-3 mb-2">
+                  <span><strong>ID:</strong> ${d.user_id}</span>
+                  <span><strong>Path:</strong> ${p.path || '—'}</span>
+                  <span><strong>Email:</strong> ${p.email || '—'}</span>
+                  <span><strong>Phone:</strong> ${p.phone || '—'}</span>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                  <div class="stat-box"><span class="stat-label">HWs Behind</span><span class="stat-val ${hwBad ? 'text-danger' : 'text-success'}">${p.hws_behind ?? '—'}</span></div>
+                  <div class="stat-box"><span class="stat-label">Avg Effort</span><span class="stat-val ${efBad ? 'text-warning' : 'text-success'}">${p.avg_eff_rating != null ? p.avg_eff_rating.toFixed(1) : '—'}</span></div>
+                  <div class="stat-box"><span class="stat-label">Inactive Days</span><span class="stat-val ${acBad ? 'text-warning' : 'text-success'}">${p.last_activity_days ?? '—'}</span></div>
+                </div>
               </div>
-              <div class="pmeta">
-                <span><strong>ID:</strong> ${d.user_id}</span>
-                <span><strong>Path:</strong> ${p.path || '—'}</span>
-                <span><strong>Email:</strong> ${p.email || '—'}</span>
-                <span><strong>Phone:</strong> ${p.phone || '—'}</span>
+              <div class="text-end flex-shrink-0">
+                <div class="mb-1"><span class="${sc(d.state)}">${sp(d.state)}</span></div>
+                <div class="text-muted small">Checkpoint: <strong>${d.checkpoint_type}</strong></div>
+                <div class="text-muted small">Attempts: <strong>${d.current_attempt}</strong></div>
+                ${d.last_contact_at ? `<div class="text-muted" style="font-size:.7rem">Last contact: ${ts(d.last_contact_at)}</div>` : ''}
+                ${d.next_retry_at   ? `<div class="text-muted" style="font-size:.7rem">Next retry: ${ts(d.next_retry_at)}</div>` : ''}
               </div>
-              <div class="pstats">
-                <div class="pst"><span class="psl">HWs Behind</span><span class="psv ${hwBad ? 'red' : 'green'}">${p.hws_behind ?? '—'}</span></div>
-                <div class="pst"><span class="psl">Avg Effort</span><span class="psv ${efBad ? 'yellow' : 'green'}">${p.avg_eff_rating != null ? p.avg_eff_rating.toFixed(1) : '—'}</span></div>
-                <div class="pst"><span class="psl">Inactive Days</span><span class="psv ${acBad ? 'yellow' : 'green'}">${p.last_activity_days ?? '—'}</span></div>
-              </div>
-            </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="margin-bottom:.35rem"><span class="pill ${sc(d.state)}">${sp(d.state)}</span></div>
-              <div style="font-size:.74rem;color:#64748b">Checkpoint: <strong style="color:#e2e8f0">${d.checkpoint_type}</strong></div>
-              <div style="font-size:.74rem;color:#64748b">Attempts: <strong style="color:#e2e8f0">${d.current_attempt}</strong></div>
-              ${d.last_contact_at ? `<div style="font-size:.69rem;color:#334155;margin-top:.2rem">Last contact: ${ts(d.last_contact_at)}</div>` : ''}
-              ${d.next_retry_at   ? `<div style="font-size:.69rem;color:#334155">Next retry: ${ts(d.next_retry_at)}</div>` : ''}
             </div>
           </div>
         </div>
-        <div class="sub-label">Outreach History</div>
-        <div style="overflow-x:auto;margin-bottom:.9rem">
-          <table><thead><tr><th>Date</th><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>From</th><th>To</th></tr></thead>
-          <tbody>${histRows}</tbody></table>
+        <div class="text-uppercase fw-semibold small text-muted mb-2" style="letter-spacing:.5px;font-size:.62rem">Outreach History</div>
+        <div class="table-responsive mb-3">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>Date</th><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>From</th><th>To</th></tr></thead>
+            <tbody>${histRows}</tbody>
+          </table>
         </div>
-        <div class="sub-label">State Transitions</div>
-        <div style="overflow-x:auto">
-          <table><thead><tr><th>Date</th><th>From</th><th>To</th><th>Trigger</th><th>Actor</th></tr></thead>
-          <tbody>${transRows}</tbody></table>
+        <div class="text-uppercase fw-semibold small text-muted mb-2" style="letter-spacing:.5px;font-size:.62rem">State Transitions</div>
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>Date</th><th>From</th><th>To</th><th>Trigger</th><th>Actor</th></tr></thead>
+            <tbody>${transRows}</tbody>
+          </table>
         </div>`;
-    } catch (e) { el.innerHTML = `<p class="empty">Error: ${e}</p>`; }
+    } catch (e) { el.innerHTML = `<p class="text-danger small">Error: ${e}</p>`; }
   }
 
-  // ── Trigger outreach ───────────────────────────────────────────
+  // ── Trigger outreach (modal) ───────────────────────────────────
   async function triggerOutreach() {
     const cp    = document.getElementById('checkpoint')?.value;
     const resEl = document.getElementById('trigger-result');
@@ -920,17 +1219,15 @@
       });
       if (res.status === 'success') {
         const s = res.data.summary;
-        const msg = `Done — triggered:${s.triggered} retried:${s.retried} skipped:${s.skipped} errors:${s.errors}`;
-        if (resEl) resEl.textContent = msg;
+        if (resEl) resEl.textContent = `Done — triggered: ${s.triggered}  retried: ${s.retried}  skipped: ${s.skipped}  errors: ${s.errors}`;
         loadSummary(); loadAlerts(); loadActivity();
       } else {
-        const msg = res.error?.message || 'Error';
-        if (resEl) resEl.textContent = msg;
+        if (resEl) resEl.textContent = res.error?.message || 'Error';
       }
     } catch (e) { if (resEl) resEl.textContent = 'Request failed'; }
   }
 
-  // ── SQL sync ───────────────────────────────────────────────────
+  // ── SQL sync (modal) ───────────────────────────────────────────
   async function syncMssql() {
     const el = document.getElementById('sync-result');
     if (el) el.textContent = 'Syncing…';
@@ -938,7 +1235,9 @@
       const res = await api('/sync/mssql', { method: 'POST' });
       if (res.status === 'success') {
         const d = res.data;
-        const msg = d.connected ? `Sync done — added:${d.added} updated:${d.updated}` : 'SQL Server not configured';
+        const msg = d.connected
+          ? `Sync done — added: ${d.added}  updated: ${d.updated}`
+          : (d.error === 'not_configured' ? 'SQL Server not configured' : `Error: ${d.error}`);
         if (el) el.textContent = msg;
       } else {
         if (el) el.textContent = res.error?.message || 'Error';
@@ -946,7 +1245,17 @@
     } catch (e) { if (el) el.textContent = 'Error'; }
   }
 
-  // ── Manual actions ─────────────────────────────────────────────
+  // ── Manual actions (modal) ─────────────────────────────────────
+  function clog(msg, type) {
+    const el = document.getElementById('action-console');
+    if (!el) return;
+    const p = document.createElement('p');
+    p.className = type === 'ok' ? 'text-success' : type === 'err' ? 'text-danger' : 'text-info';
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    el.prepend(p);
+    while (el.children.length > 60) el.removeChild(el.lastChild);
+  }
+
   async function execAction(actionType) {
     const uid     = document.getElementById('action-uid')?.value;
     const notes   = document.getElementById('action-notes')?.value;
@@ -962,29 +1271,32 @@
         const d = res.data;
         const msg = `${actionType} executed: ${sp(d.from_state)} → ${sp(d.to_state)}`;
         if (resultEl) resultEl.textContent = msg;
-        clog(msg, 'co');
+        clog(msg, 'ok');
         loadSummary(); loadAlerts(); loadActivity();
       } else {
         const msg = res.error?.message || res.error?.code || 'Error';
         if (resultEl) resultEl.textContent = `Error: ${msg}`;
-        clog(`Error: ${msg}`, 'ce');
+        clog(`Error: ${msg}`, 'err');
       }
     } catch (e) {
       if (resultEl) resultEl.textContent = 'Request failed';
-      clog(`Request failed: ${e}`, 'ce');
+      clog(`Request failed: ${e}`, 'err');
     }
   }
 
   // ── Boot ───────────────────────────────────────────────────────
   async function loadAll() {
     await Promise.allSettled([
-      loadHealth(),
-      loadAlerts(),
-      loadSummary(),
-      loadChannelPerf(),
-      loadActivity(),
+      loadHealth(), loadAlerts(), loadSummary(), loadChannelPerf(), loadActivity(),
     ]);
     document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+    // Refresh any open expand panels
+    if (document.getElementById('expand-health')?.classList.contains('show'))   loadExpandHealth();
+    if (document.getElementById('expand-alerts')?.classList.contains('show'))   loadExpandAlerts();
+    if (document.getElementById('expand-kpi')?.classList.contains('show'))      loadExpandKpi();
+    if (document.getElementById('expand-states')?.classList.contains('show'))   loadExpandStates();
+    if (document.getElementById('expand-channels')?.classList.contains('show')) loadExpandChannels();
+    if (document.getElementById('expand-activity')?.classList.contains('show')) loadExpandActivity();
   }
 
   loadAll();

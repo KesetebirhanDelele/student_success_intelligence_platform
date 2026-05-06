@@ -44,10 +44,10 @@ async def init_db() -> None:
 
 # ── SQL Server sync connection (read-only) ─────────────────────────────────────
 
-def _fetch_students_sync() -> list[dict]:
+def _fetch_students_sync() -> tuple[list[dict], str | None]:
     if not settings.mssql_configured:
         logger.warning("SQL Server not configured — MSSQL_HOST/USER/DATABASE are empty")
-        return []
+        return [], "not_configured"
     try:
         import pyodbc
         conn = pyodbc.connect(settings.mssql_dsn, timeout=10)
@@ -60,11 +60,11 @@ def _fetch_students_sync() -> list[dict]:
         cols = [c[0] for c in cursor.description]
         rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
         conn.close()
-        return rows
+        return rows, None
     except Exception as exc:
         logger.error("SQL Server query failed: %s", exc)
-        return []
+        return [], str(exc)
 
 
-async def fetch_students_from_mssql() -> list[dict]:
+async def fetch_students_from_mssql() -> tuple[list[dict], str | None]:
     return await asyncio.to_thread(_fetch_students_sync)

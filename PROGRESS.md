@@ -77,14 +77,25 @@
 
 ## Pending / Blockers
 
-- [ ] SQL Server credentials — provide `MSSQL_USER` and `MSSQL_PASS` in `.env`
-  - Blocker: `mssql_configured` guard returns `False`; sync returns `{"connected": false}`; entire student data pipeline is inert until credentials are set
-  - Host and database already set: `hypv8669.hostedbyappliedi.net:1433`, DB=`CCPP`, table=`AI_ChatBot_TriggerData`
+- [x] SQL Server credentials set and deployment running in SHADOW mode
+  - Date: 2026-05-06
+  - What changed: MSSQL_USER + MSSQL_PASS filled in .env; Dockerfile fixed (apt-key → gpg --dearmor, msodbcsql17 → msodbcsql18, python:3.11 → python:3.12 for CVE fix); config.py DSN updated to ODBC Driver 18 + TrustServerCertificate=yes; containers running at localhost:8080
+  - Verification: `docker compose logs api` shows all dashboard endpoints returning 200 OK; mode=SHADOW confirmed in startup log
 
 - [x] Switch LLM integration from Anthropic to OpenAI GPT-4o
   - Date: 2026-05-06
   - What changed: app/services/integrations/llm.py rewritten to use `openai.AsyncOpenAI` + `chat.completions.create`; requirements.txt swapped `anthropic>=0.34.0` → `openai>=1.0.0`; config.py default model updated to `gpt-4o`; .env.example updated
   - Verification: pytest tests/ → 19 passed, 0 failed
+
+- [x] Fix sync error messaging — show real SQL Server error instead of generic "not configured"
+  - Date: 2026-05-06
+  - What changed: database.py _fetch_students_sync now returns (rows, error) tuple; sync.py propagates error field in response; frontend displays actual error string (e.g. permission denied) instead of hardcoded "SQL Server not configured"
+  - Verification: container rebuilt and running; error message now reflects actual SQL Server exception
+
+- [x] Bootstrap 5 enterprise UX redesign
+  - Date: 2026-05-06
+  - What changed: frontend/index.html rewritten from custom dark theme to Bootstrap 5 CDN + navy/white enterprise design matching CLAUDE.md spec — CSS custom properties, card border-0 shadow-sm pattern, table-hover, Bootstrap modal, WCAG 2.1 AA focus indicators, reduced-motion and high-contrast media queries; all API calls and interactions preserved
+  - Verification: docker compose up -d --build api succeeded; container running at localhost:8080
 
 - [ ] GHL, Synthflow, LLM (OpenAI) API keys — fill in `.env`
   - Blocker: all outbound integrations are stubbed in shadow mode; real execution requires credentials and `EXECUTION_MODE=LIVE` (strategic decision — requires explicit approval before flip)
@@ -93,6 +104,11 @@
   - Date: 2026-05-06
   - What changed: tests/test_shadow_safety.py had 4 tests passing wrong flat payloads to integration functions that expect builder-constructed nested payloads; fixed tests to use `build_ghl_payload`, `build_call_payload`, `build_sms_payload`, `build_email_payload` helpers
   - Verification: `pytest tests/ -v` → 19 passed, 0 failed (test_shadow_safety.py 6/6, test_actions.py 8/8, test_dashboard.py 5/5)
+
+- [x] Expand All cards feature
+  - Date: 2026-05-06
+  - What changed: frontend/index.html — each card gains a ▼ chevron toggle button (stops propagation, doesn't open modal); inline Bootstrap collapse panel renders compact live data below card body; "⊞ Expand All / ⊟ Collapse All" button added to navbar; auto-refreshes open panels every 60 s; static panels (Student Cases, Manual Actions, Trigger, Sync) render interactive forms inline; async panels (Health, Alerts, KPI, States, Channels, Activity) fetch and render on expand
+  - Verification: user confirmed
 
 - [ ] PROGRESS.md created
   - Date: 2026-05-06

@@ -16,10 +16,10 @@ async def sync_from_mssql(db: AsyncSession) -> dict:
     Pull all rows from AI_ChatBot_TriggerData (SQL Server) and upsert
     into the local PostgreSQL mirror table.
     """
-    students = await fetch_students_from_mssql()
+    students, error = await fetch_students_from_mssql()
     if not students:
-        logger.warning("No students returned from SQL Server — check MSSQL config")
-        return {"added": 0, "updated": 0, "connected": False}
+        logger.warning("No students returned from SQL Server — %s", error or "unknown reason")
+        return {"added": 0, "updated": 0, "connected": False, "error": error}
 
     added = updated = 0
     for row in students:
