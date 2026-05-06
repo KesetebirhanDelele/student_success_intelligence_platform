@@ -3,132 +3,232 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SSIP Dashboard</title>
+  <title>SSIP Ops Dashboard</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
 
+    /* ── Header ───────────────────────────────────────────────── */
     header {
-      background: #1e293b; border-bottom: 1px solid #334155;
-      padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem;
+      background: #1e293b; border-bottom: 2px solid #334155;
+      padding: .85rem 2rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
     }
-    header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .5px; }
-    .badge { font-size: .7rem; border-radius: 999px; padding: 2px 9px; font-weight: 700; }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; color: #f1f5f9; }
+    .badge { font-size: .7rem; border-radius: 999px; padding: 2px 10px; font-weight: 700; }
     .badge-shadow { background: #78350f; color: #fbbf24; }
-    .badge-live   { background: #7f1d1d; color: #f87171; }
-    .status-dot   { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-    .dot-green    { background: #22c55e; }
-    .dot-red      { background: #ef4444; }
-    .dot-yellow   { background: #fbbf24; }
-    .header-right { margin-left: auto; font-size: .8rem; color: #94a3b8; display: flex; gap: 1.5rem; align-items: center; }
+    .badge-live   { background: #14532d; color: #4ade80; }
+    .header-right { margin-left: auto; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+    .hp {
+      font-size: .71rem; color: #94a3b8; display: flex; align-items: center; gap: .35rem;
+      background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 3px 9px;
+      white-space: nowrap;
+    }
+    .sd { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot-green  { background: #22c55e; }
+    .dot-red    { background: #ef4444; }
+    .dot-yellow { background: #fbbf24; }
+    .dot-gray   { background: #475569; }
 
-    main { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+    /* ── Layout ───────────────────────────────────────────────── */
+    main { max-width: 1300px; margin: 1.5rem auto; padding: 0 1.25rem; }
+    section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.35rem; margin-bottom: 1.2rem; }
+    section h2 { font-size: .82rem; font-weight: 700; color: #94a3b8; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .6px; }
+    .two-col   { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.2rem; }
+    @media (max-width: 860px) { .two-col { grid-template-columns: 1fr; } }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.2rem; }
-    .card .label { font-size: .72rem; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; }
-    .card .value { font-size: 2rem; font-weight: 700; margin-top: .25rem; }
-    .card .sub   { font-size: .75rem; color: #64748b; margin-top: .2rem; }
+    /* ── Health cards ─────────────────────────────────────────── */
+    .hgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: .9rem; }
+    .hcard { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: .9rem 1rem; }
+    .hcard .hl { font-size: .62rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; margin-bottom: .35rem; }
+    .hcard .hv { font-size: .88rem; font-weight: 600; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 
+    /* ── Alerts ───────────────────────────────────────────────── */
+    .alert-row {
+      display: flex; align-items: flex-start; gap: .75rem;
+      padding: .6rem .9rem; border-radius: 7px; margin-bottom: .5rem; font-size: .8rem;
+    }
+    .al-critical { background: rgba(220,38,38,.12); border: 1px solid #dc2626; }
+    .al-warning  { background: rgba(217,119,6,.12);  border: 1px solid #d97706; }
+    .al-info     { background: rgba(14,165,233,.12);  border: 1px solid #0ea5e9; }
+    .al-sev { font-weight: 700; font-size: .65rem; min-width: 60px; padding-top: 1px; }
+    .sev-critical { color: #f87171; }
+    .sev-warning  { color: #fbbf24; }
+    .sev-info     { color: #38bdf8; }
+    .al-body { flex: 1; }
+    .al-msg  { color: #e2e8f0; }
+    .al-act  { font-size: .73rem; color: #64748b; margin-top: .2rem; }
+    .al-sid  { font-size: .68rem; color: #475569; white-space: nowrap; margin-left: auto; padding-left: .5rem; }
+
+    /* ── KPI grid ─────────────────────────────────────────────── */
+    .kgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .card  { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.1rem; }
+    .card .klabel { font-size: .64rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
+    .card .kval   { font-size: 2rem; font-weight: 700; margin-top: .2rem; line-height: 1; }
+    .card .ksub   { font-size: .7rem; color: #334155; margin-top: .2rem; }
+
+    /* ── Conversion pills ─────────────────────────────────────── */
+    .conv-row { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+    .cpill { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: .55rem 1.1rem; }
+    .cpill .cpl { font-size: .62rem; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
+    .cpill .cpv { font-size: 1.4rem; font-weight: 700; color: #38bdf8; }
+
+    /* ── Tables ───────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: .79rem; }
+    th { text-align: left; padding: .42rem .65rem; color: #475569; text-transform: uppercase; font-size: .63rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
+    td { padding: .48rem .65rem; border-bottom: 1px solid #0f172a; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1a2535; }
+
+    /* ── State pills ──────────────────────────────────────────── */
+    .pill { border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; display: inline-block; }
+    .s-eligible              { background: #1e293b; color: #64748b; }
+    .s-queued                { background: #1e3a5f; color: #60a5fa; }
+    .s-contacted             { background: #0c4a6e; color: #38bdf8; }
+    .s-no_response           { background: #451a03; color: #fbbf24; }
+    .s-retry                 { background: #3b1f00; color: #fb923c; }
+    .s-responded             { background: #14532d; color: #4ade80; }
+    .s-analyzed              { background: #1e1b4b; color: #818cf8; }
+    .s-intervention_required { background: #4c1d1d; color: #fca5a5; }
+    .s-resolved              { background: #052e16; color: #86efac; }
+    .s-closed                { background: #111827; color: #475569; }
+    .s-other                 { background: #1e293b; color: #64748b; }
+    .m-shadow { background: #78350f; color: #fbbf24; border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; display: inline-block; }
+    .m-live   { background: #14532d; color: #4ade80; border-radius: 4px; padding: 2px 6px; font-size: .64rem; font-weight: 700; display: inline-block; }
+    .risk-HIGH    { background: #4c1d1d; color: #fca5a5; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+    .risk-MEDIUM  { background: #451a03; color: #fbbf24; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+    .risk-LOW     { background: #052e16; color: #86efac; border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+    .risk-UNKNOWN { background: #1e293b; color: #64748b;  border-radius: 4px; padding: 1px 7px; font-size: .68rem; font-weight: 700; }
+
+    /* ── Controls ─────────────────────────────────────────────── */
+    .ctrls { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; margin-bottom: .7rem; }
+    select, input { border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; padding: .38rem .65rem; font-size: .8rem; }
+    button {
+      border-radius: 6px; border: 1px solid #0ea5e9; background: #0ea5e9;
+      color: #fff; padding: .38rem .85rem; font-size: .8rem; font-weight: 600;
+      cursor: pointer; transition: opacity .15s; display: inline-flex; align-items: center; gap: .3rem;
+    }
+    button:hover   { opacity: .82; }
+    button.danger  { background: #dc2626; border-color: #dc2626; }
+    button.neutral { background: #475569; border-color: #475569; }
+    button.warn    { background: #d97706; border-color: #d97706; }
+    button.purple  { background: #7c3aed; border-color: #7c3aed; }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    .stag { font-size: .58rem; background: #78350f; color: #fbbf24; border-radius: 3px; padding: 1px 4px; font-weight: 700; }
+
+    /* ── State distribution ───────────────────────────────────── */
+    .sdist { display: flex; flex-direction: column; gap: .32rem; }
+    .srow  { display: flex; justify-content: space-between; align-items: center; padding: .3rem .6rem; border-radius: 6px; background: #0f172a; }
+    .scnt  { font-weight: 700; font-size: .87rem; }
+
+    /* ── Student profile ──────────────────────────────────────── */
+    .pcard { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 1rem 1.15rem; margin-bottom: 1rem; }
+    .pname { font-size: 1.05rem; font-weight: 700; color: #f1f5f9; margin-bottom: .5rem; }
+    .pmeta { display: flex; flex-wrap: wrap; gap: .65rem; font-size: .78rem; color: #64748b; }
+    .pmeta span strong { color: #e2e8f0; }
+    .pstats { display: flex; gap: .65rem; flex-wrap: wrap; margin-top: .7rem; }
+    .pst { background: #1e293b; border-radius: 6px; padding: .35rem .7rem; font-size: .77rem; }
+    .pst .psl { color: #475569; font-size: .62rem; display: block; }
+    .pst .psv { color: #e2e8f0; font-weight: 600; }
+
+    /* ── Activity log ─────────────────────────────────────────── */
+    .awrap { max-height: 260px; overflow-y: auto; }
+
+    /* ── Console ──────────────────────────────────────────────── */
+    #console { font-family: monospace; font-size: .71rem; background: #0a0f1a; border-radius: 6px; padding: .6rem; max-height: 110px; overflow-y: auto; color: #64748b; }
+    #console p { margin: 2px 0; line-height: 1.5; }
+
+    /* ── Colors ───────────────────────────────────────────────── */
     .blue   { color: #38bdf8; }
     .green  { color: #4ade80; }
     .yellow { color: #fbbf24; }
     .red    { color: #f87171; }
     .purple { color: #a78bfa; }
     .orange { color: #fb923c; }
-    .slate  { color: #94a3b8; }
-
-    section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.5rem; }
-    section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: #cbd5e1; }
-    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; align-items: center; }
-    select, input, button {
-      border-radius: 6px; border: 1px solid #334155; background: #0f172a;
-      color: #e2e8f0; padding: .45rem .75rem; font-size: .85rem;
-    }
-    button { background: #0ea5e9; border-color: #0ea5e9; color: #fff; cursor: pointer; font-weight: 600; transition: opacity .15s; }
-    button:hover { opacity: .85; }
-    button.danger  { background: #dc2626; border-color: #dc2626; }
-    button.neutral { background: #475569; border-color: #475569; }
-    button.warn    { background: #d97706; border-color: #d97706; }
-
-    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-    th { text-align: left; padding: .5rem .75rem; color: #64748b; text-transform: uppercase; font-size: .68rem; letter-spacing: .5px; border-bottom: 1px solid #334155; }
-    td { padding: .55rem .75rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #1a2535; }
-
-    .pill { border-radius: 4px; padding: 2px 7px; font-size: .68rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
-    .s-eligible            { background: #1e293b; color: #94a3b8; }
-    .s-queued              { background: #1e3a5f; color: #60a5fa; }
-    .s-contacted           { background: #0c4a6e; color: #38bdf8; }
-    .s-no_response         { background: #451a03; color: #fbbf24; }
-    .s-retry               { background: #3b1f00; color: #fb923c; }
-    .s-responded           { background: #14532d; color: #4ade80; }
-    .s-analyzed            { background: #1e1b4b; color: #818cf8; }
-    .s-intervention_required { background: #4c1d1d; color: #fca5a5; }
-    .s-resolved            { background: #052e16; color: #86efac; }
-    .s-closed              { background: #0f0f0f; color: #475569; }
-    .s-other               { background: #1e293b; color: #94a3b8; }
-
-    .mode-shadow { background: #78350f; color: #fbbf24; border-radius: 4px; padding: 2px 7px; font-size: .68rem; font-weight: 700; }
-    .mode-live   { background: #7f1d1d; color: #f87171; border-radius: 4px; padding: 2px 7px; font-size: .68rem; font-weight: 700; }
-
-    #log { font-family: monospace; font-size: .75rem; background: #0a0f1a; border-radius: 6px; padding: .75rem; max-height: 200px; overflow-y: auto; color: #94a3b8; }
-    #log p { margin: 2px 0; line-height: 1.5; }
-    .info { color: #38bdf8; }
-    .err  { color: #f87171; }
-    .ok   { color: #4ade80; }
-    .warn { color: #fbbf24; }
-    .empty { color: #475569; text-align: center; padding: 2rem; font-size: .85rem; }
-
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-    @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
-
-    .state-dist { display: flex; flex-direction: column; gap: .4rem; }
-    .state-row  { display: flex; justify-content: space-between; align-items: center; padding: .35rem .6rem; border-radius: 6px; background: #0f172a; }
-    .state-count { font-weight: 700; font-size: .9rem; }
-    .mssql-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+    .slate  { color: #64748b; }
+    .empty  { color: #334155; text-align: center; padding: 1.5rem; font-size: .83rem; }
+    .ci { color: #38bdf8; } .ce { color: #f87171; } .co { color: #4ade80; } .cw { color: #fbbf24; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>SSIP Dashboard</h1>
+  <h1>SSIP Ops Dashboard</h1>
   <span id="exec-badge" class="badge badge-shadow">SHADOW</span>
   <div class="header-right">
-    <span>Scheduler: <span id="sched-status">—</span></span>
-    <span>SQL Server: <span id="mssql-status">—</span></span>
-    <span style="color:#475569; font-size:.75rem" id="last-refresh">—</span>
+    <div class="hp" id="hp-db"><span class="sd dot-gray"></span>PostgreSQL</div>
+    <div class="hp" id="hp-mssql"><span class="sd dot-gray"></span>SQL Server</div>
+    <div class="hp" id="hp-sched"><span class="sd dot-gray"></span>Scheduler</div>
+    <button class="neutral" style="padding:.28rem .65rem;font-size:.72rem" onclick="loadAll()">Refresh All</button>
+    <span style="font-size:.68rem;color:#334155" id="last-refresh">—</span>
   </div>
 </header>
 
 <main>
 
-  <!-- KPI grid -->
-  <div class="grid" id="metrics-grid">
-    <div class="card"><div class="label">Students Tracked</div><div class="value blue" id="m-total">—</div></div>
-    <div class="card"><div class="label">Total Attempts</div><div class="value blue" id="m-attempts">—</div></div>
-    <div class="card"><div class="label">Shadow Executions</div><div class="value yellow" id="m-shadow">—</div><div class="sub">no real sends</div></div>
-    <div class="card"><div class="label">Responded</div><div class="value green" id="m-responded">—</div></div>
-    <div class="card"><div class="label">No Response</div><div class="value yellow" id="m-no_response">—</div></div>
-    <div class="card"><div class="label">Intervention</div><div class="value red" id="m-intervention">—</div></div>
-    <div class="card"><div class="label">Resolved</div><div class="value purple" id="m-resolved">—</div></div>
-    <div class="card"><div class="label">Success Rate</div><div class="value green" id="m-success">—</div><div class="sub">responded / tracked</div></div>
+  <!-- ── 1. System Health ──────────────────────────────────────── -->
+  <section>
+    <h2>System Health</h2>
+    <div class="hgrid">
+      <div class="hcard"><div class="hl">Execution Mode</div><div class="hv" id="h-mode">—</div></div>
+      <div class="hcard"><div class="hl">PostgreSQL</div><div class="hv" id="h-db">—</div></div>
+      <div class="hcard"><div class="hl">SQL Server</div><div class="hv" id="h-mssql">—</div></div>
+      <div class="hcard"><div class="hl">Scheduler</div><div class="hv" id="h-sched">—</div></div>
+      <div class="hcard"><div class="hl">Last Scheduler Run</div><div class="hv" id="h-lastrun" style="font-size:.78rem">—</div></div>
+      <div class="hcard"><div class="hl">Outbound Channels</div><div class="hv" id="h-channels">—</div></div>
+    </div>
+  </section>
+
+  <!-- ── 2. Alerts ─────────────────────────────────────────────── -->
+  <section>
+    <h2>Operational Alerts <span id="alert-count" style="font-size:.72rem;color:#334155;font-weight:400;margin-left:.4rem;text-transform:none"></span></h2>
+    <div id="alerts-body"><p class="empty">Loading…</p></div>
+  </section>
+
+  <!-- ── 3. Funnel KPIs ────────────────────────────────────────── -->
+  <div class="kgrid">
+    <div class="card"><div class="klabel">Tracked</div><div class="kval blue"  id="f-tracked">—</div></div>
+    <div class="card"><div class="klabel">Ever Contacted</div><div class="kval blue"   id="f-contacted">—</div></div>
+    <div class="card"><div class="klabel">Responded</div><div class="kval green"  id="f-responded">—</div></div>
+    <div class="card"><div class="klabel">No Response</div><div class="kval yellow" id="f-noresp">—</div></div>
+    <div class="card"><div class="klabel">Intervention</div><div class="kval red"    id="f-intervention">—</div></div>
+    <div class="card"><div class="klabel">Resolved</div><div class="kval purple" id="f-resolved">—</div></div>
+    <div class="card"><div class="klabel">Closed</div><div class="kval slate"  id="f-closed">—</div></div>
+    <div class="card"><div class="klabel">Shadow Executions</div><div class="kval yellow" id="f-shadow">—</div><div class="ksub">no real sends</div></div>
+  </div>
+  <div class="conv-row">
+    <div class="cpill"><div class="cpl">Contacted Rate</div><div class="cpv" id="cv-contacted">—</div></div>
+    <div class="cpill"><div class="cpl">Response Rate</div><div class="cpv" id="cv-response">—</div></div>
+    <div class="cpill"><div class="cpl">Resolution Rate</div><div class="cpv" id="cv-resolution">—</div></div>
   </div>
 
-  <!-- State distribution + controls row -->
+  <!-- ── 4. State Distribution + Channel Performance ───────────── -->
   <div class="two-col">
-
-    <!-- State distribution -->
-    <section>
+    <section style="margin-bottom:0">
       <h2>State Distribution</h2>
-      <div class="state-dist" id="state-dist"><p class="empty">Loading…</p></div>
+      <div class="sdist" id="state-dist"><p class="empty">Loading…</p></div>
     </section>
+    <section style="margin-bottom:0">
+      <h2>Channel Performance <span id="chan-note" style="font-size:.65rem;color:#fbbf24;font-weight:400;text-transform:none;margin-left:.3rem"></span></h2>
+      <div id="channel-table"><p class="empty">Loading…</p></div>
+    </section>
+  </div>
+  <div style="margin-bottom:1.2rem"></div>
 
-    <!-- Actions -->
-    <section>
+  <!-- ── 5. Student Lookup ─────────────────────────────────────── -->
+  <section>
+    <h2>Student Lookup</h2>
+    <div class="ctrls">
+      <input id="student-id" type="number" placeholder="Student ID" style="width:150px" />
+      <button onclick="lookupStudent()">Look Up</button>
+    </div>
+    <div id="student-result"></div>
+  </section>
+
+  <!-- ── 6. Outreach Controls ──────────────────────────────────── -->
+  <div class="two-col">
+    <section style="margin-bottom:0">
       <h2>Trigger Outreach Batch</h2>
-      <div class="controls">
+      <div class="ctrls">
         <select id="checkpoint">
           <option value="SQL">SQL</option>
           <option value="SSRS">SSRS</option>
@@ -137,45 +237,50 @@
         </select>
         <button onclick="triggerOutreach()">Run Batch</button>
       </div>
-
-      <h2 style="margin-top:1.2rem">Sync SQL Server</h2>
-      <div class="controls">
+      <div id="trigger-result" style="font-size:.78rem;color:#64748b"></div>
+    </section>
+    <section style="margin-bottom:0">
+      <h2>SQL Server Sync</h2>
+      <div class="ctrls">
         <button class="neutral" onclick="syncMssql()">Sync Now</button>
-        <span id="sync-result" style="font-size:.8rem; color:#94a3b8"></span>
+        <span id="sync-result" style="font-size:.78rem;color:#64748b"></span>
       </div>
     </section>
-
   </div>
+  <div style="margin-bottom:1.2rem"></div>
 
-  <!-- Student lookup -->
+  <!-- ── 7. Manual Actions ─────────────────────────────────────── -->
   <section>
-    <h2>Student Lookup</h2>
-    <div class="controls">
-      <input id="student-id" type="number" placeholder="Student ID" style="width:140px" />
-      <button onclick="lookupStudent()">Look Up</button>
+    <h2>Manual Actions</h2>
+    <div class="ctrls">
+      <input id="action-uid"   type="number" placeholder="Student ID"       style="width:150px" />
+      <input id="action-notes" type="text"   placeholder="Notes (optional)"  style="width:220px" />
     </div>
-    <div id="student-result"></div>
+    <div class="ctrls">
+      <button class="danger"  onclick="execAction('CLOSE_CASE')">Close Case</button>
+      <button class="warn"    onclick="execAction('FORCE_RETRY')">
+        Force Retry <span class="stag" id="retry-stag">SHADOW</span>
+      </button>
+      <button class="neutral" onclick="execAction('BOOK_MEETING')">Mark Resolved</button>
+      <button class="purple"  onclick="execAction('ESCALATE')">Escalate</button>
+    </div>
+    <div id="action-result" style="font-size:.8rem;color:#64748b;margin-top:.45rem"></div>
+    <div id="console" style="margin-top:.7rem"><p class="ci">Waiting for actions…</p></div>
   </section>
 
-  <!-- Manual action -->
+  <!-- ── 8. Recent Activity ─────────────────────────────────────── -->
   <section>
-    <h2>Manual Action</h2>
-    <div class="controls">
-      <input id="action-user-id" type="number" placeholder="Student ID" style="width:140px" />
-      <select id="action-type">
-        <option value="CLOSE_CASE">Close Case</option>
-        <option value="BOOK_MEETING">Book Meeting</option>
-        <option value="FORCE_RETRY">Force Retry</option>
-      </select>
-      <input id="action-notes" type="text" placeholder="Notes (optional)" style="width:200px" />
-      <button class="danger" onclick="executeAction()">Execute</button>
+    <h2>Recent Activity
+      <button class="neutral" style="padding:.2rem .55rem;font-size:.68rem;margin-left:.5rem" onclick="loadActivity()">Reload</button>
+    </h2>
+    <div class="awrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Student</th><th>Checkpoint</th><th>Channel</th><th>Action</th><th>Mode</th><th>State Change</th></tr>
+        </thead>
+        <tbody id="activity-body"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      </table>
     </div>
-  </section>
-
-  <!-- Activity log -->
-  <section>
-    <h2>Activity Log</h2>
-    <div id="log"><p class="info">Waiting for activity…</p></div>
   </section>
 
 </main>
@@ -183,203 +288,377 @@
 <script>
   const STATE_ORDER = [
     'ELIGIBLE','QUEUED','CONTACTED','NO_RESPONSE','RETRY',
-    'RESPONDED','ANALYZED','INTERVENTION_REQUIRED','RESOLVED','CLOSED'
+    'RESPONDED','ANALYZED','INTERVENTION_REQUIRED','RESOLVED','CLOSED',
   ];
 
-  function stateClass(s) {
-    const map = {
+  function sc(s) {
+    const m = {
       ELIGIBLE:'s-eligible', QUEUED:'s-queued', CONTACTED:'s-contacted',
       NO_RESPONSE:'s-no_response', RETRY:'s-retry', RESPONDED:'s-responded',
       ANALYZED:'s-analyzed', INTERVENTION_REQUIRED:'s-intervention_required',
       RESOLVED:'s-resolved', CLOSED:'s-closed',
     };
-    return map[s] || 's-other';
+    return m[s] || 's-other';
+  }
+  function mc(m)  { return m === 'SHADOW' ? 'm-shadow' : 'm-live'; }
+  function pct(v) { return (v != null && !isNaN(v)) ? (v * 100).toFixed(1) + '%' : '—'; }
+  function ts(s)  { return s ? new Date(s).toLocaleString() : '—'; }
+  function sp(s)  { return (s || '').replace(/_/g, ' '); }
+  function dot(ok, cls) { return `<span class="sd ${ok ? 'dot-green' : 'dot-red'}" style="margin-right:.35rem"></span>${cls}`; }
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    return r.json();
   }
 
-  function modeClass(m) { return m === 'SHADOW' ? 'mode-shadow' : 'mode-live'; }
-
-  function log(msg, cls='info') {
-    const el = document.getElementById('log');
+  function clog(msg, cls = 'ci') {
+    const el = document.getElementById('console');
     const p = document.createElement('p');
     p.className = cls;
     p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
     el.prepend(p);
-    while (el.children.length > 120) el.removeChild(el.lastChild);
+    while (el.children.length > 60) el.removeChild(el.lastChild);
   }
 
-  async function apiFetch(path, opts={}) {
-    const r = await fetch(path, { headers: {'Content-Type':'application/json'}, ...opts });
-    return r.json();
-  }
-
+  // ── Health ─────────────────────────────────────────────────────
   async function loadHealth() {
     try {
-      const res = await apiFetch('/health');
+      const res = await api('/dashboard/health');
       if (res.status !== 'success') return;
       const d = res.data;
 
-      // Execution mode badge
       const badge = document.getElementById('exec-badge');
       badge.textContent = d.execution_mode;
       badge.className = `badge ${d.execution_mode === 'SHADOW' ? 'badge-shadow' : 'badge-live'}`;
 
-      // Scheduler
-      const active = d.scheduler_status === 'active';
-      document.getElementById('sched-status').innerHTML =
-        `<span class="status-dot ${active ? 'dot-green' : 'dot-red'}"></span>${d.scheduler_status}`;
+      // Shadow tag on retry button
+      document.getElementById('retry-stag').style.display = d.execution_mode === 'SHADOW' ? '' : 'none';
 
-      // MSSQL
-      const mssql = d.mssql_configured;
-      document.getElementById('mssql-status').innerHTML =
-        `<span class="status-dot ${mssql ? 'dot-yellow' : 'dot-red'}"></span>${mssql ? 'configured' : 'not configured'}`;
+      // Header pills
+      function pill(id, ok, label) {
+        const el = document.getElementById(id);
+        el.innerHTML = `<span class="sd ${ok ? 'dot-green' : 'dot-red'}"></span>${label}`;
+      }
+      pill('hp-db',    d.db?.connected,            d.db?.connected ? 'PostgreSQL' : 'DB Error');
+      pill('hp-mssql', d.mssql?.configured,         d.mssql?.configured ? 'SQL Server' : 'SQL Server ⚠');
+      pill('hp-sched', d.scheduler?.status === 'active', d.scheduler?.status === 'active' ? 'Scheduler' : 'Scheduler ⚠');
 
-      document.getElementById('last-refresh').textContent =
-        `Refreshed ${new Date().toLocaleTimeString()}`;
-    } catch(e) { /* silent */ }
+      // Health cards
+      document.getElementById('h-mode').innerHTML =
+        `<span class="${d.execution_mode === 'SHADOW' ? 'm-shadow' : 'm-live'}">${d.execution_mode}</span>`;
+      document.getElementById('h-db').innerHTML =
+        dot(d.db?.connected, d.db?.connected ? '<span class="green">Connected</span>' : '<span class="red">Disconnected</span>');
+      document.getElementById('h-mssql').innerHTML = d.mssql?.configured
+        ? dot(true,  `<span class="green">Configured</span> <span class="slate" style="font-size:.75rem">${d.mssql.host || ''}</span>`)
+        : dot(false, '<span class="red">Not configured</span>');
+      document.getElementById('h-sched').innerHTML =
+        dot(d.scheduler?.status === 'active', d.scheduler?.status || '—');
+      document.getElementById('h-lastrun').textContent = d.scheduler?.last_run
+        ? ts(d.scheduler.last_run) : 'Never ran';
+      const ch = d.channels || {};
+      const allOff = !ch.call && !ch.sms && !ch.email;
+      document.getElementById('h-channels').innerHTML = allOff
+        ? '<span class="yellow">All disabled (SHADOW)</span>'
+        : `CALL:${ch.call ? '<span class="green">✓</span>' : '<span class="red">✗</span>'} `
+          + `SMS:${ch.sms ? '<span class="green">✓</span>' : '<span class="red">✗</span>'} `
+          + `EMAIL:${ch.email ? '<span class="green">✓</span>' : '<span class="red">✗</span>'}`;
+    } catch (_) { /* silent — DB may not be up */ }
   }
 
-  async function loadMetrics() {
+  // ── Alerts ─────────────────────────────────────────────────────
+  async function loadAlerts() {
     try {
-      const res = await apiFetch('/metrics');
+      const res = await api('/dashboard/alerts');
+      if (res.status !== 'success') return;
+      const { alerts, count } = res.data;
+      document.getElementById('alert-count').textContent = count > 0 ? `(${count})` : '';
+      const el = document.getElementById('alerts-body');
+      if (!alerts || !alerts.length) {
+        el.innerHTML = '<p class="empty" style="padding:.75rem 0">No active alerts</p>';
+        return;
+      }
+      el.innerHTML = alerts.map(a => {
+        const sev = a.severity.toLowerCase();
+        const sid = a.student_id ? `<span class="al-sid">Student #${a.student_id}</span>` : '';
+        return `<div class="alert-row al-${sev}">
+          <span class="al-sev sev-${sev}">${a.severity}</span>
+          <div class="al-body">
+            <div class="al-msg">${a.message}</div>
+            <div class="al-act">→ ${a.recommended_action}</div>
+          </div>${sid}
+        </div>`;
+      }).join('');
+    } catch (_) {}
+  }
+
+  // ── Summary / Funnel ───────────────────────────────────────────
+  async function loadSummary() {
+    try {
+      const res = await api('/dashboard/summary');
       if (res.status !== 'success') return;
       const d = res.data;
+      const f = d.funnel || {};
+      const c = d.conversion || {};
 
-      document.getElementById('m-total').textContent     = d.total_tracked;
-      document.getElementById('m-attempts').textContent  = d.total_attempts;
-      document.getElementById('m-shadow').textContent    = d.shadow_executions;
-      document.getElementById('m-responded').textContent = (d.by_state?.RESPONDED || 0) + (d.by_state?.ANALYZED || 0) + (d.by_state?.RESOLVED || 0);
-      document.getElementById('m-no_response').textContent = d.by_state?.NO_RESPONSE || 0;
-      document.getElementById('m-intervention').textContent = d.by_state?.INTERVENTION_REQUIRED || 0;
-      document.getElementById('m-resolved').textContent  = d.by_state?.RESOLVED || 0;
-      document.getElementById('m-success').textContent   = (d.success_rate * 100).toFixed(1) + '%';
+      document.getElementById('f-tracked').textContent      = f.tracked ?? d.total_tracked ?? '—';
+      document.getElementById('f-contacted').textContent    = f.contacted ?? '—';
+      document.getElementById('f-responded').textContent    = f.responded ?? '—';
+      document.getElementById('f-noresp').textContent       = f.no_response ?? '—';
+      document.getElementById('f-intervention').textContent = f.intervention_required ?? '—';
+      document.getElementById('f-resolved').textContent     = f.resolved ?? '—';
+      document.getElementById('f-closed').textContent       = f.closed ?? '—';
+      document.getElementById('f-shadow').textContent       = f.shadow_executions ?? d.shadow_executions ?? '—';
+
+      document.getElementById('cv-contacted').textContent   = pct(c.contacted_rate);
+      document.getElementById('cv-response').textContent    = pct(c.response_rate);
+      document.getElementById('cv-resolution').textContent  = pct(c.resolution_rate);
 
       // State distribution
-      const dist = document.getElementById('state-dist');
       const byState = d.by_state || {};
-      if (Object.keys(byState).length === 0) {
+      const dist = document.getElementById('state-dist');
+      if (!Object.keys(byState).length) {
         dist.innerHTML = '<p class="empty">No data yet</p>';
       } else {
         dist.innerHTML = STATE_ORDER
           .filter(s => byState[s] !== undefined)
-          .map(s => `
-            <div class="state-row">
-              <span class="pill ${stateClass(s)}">${s.replace('_', ' ')}</span>
-              <span class="state-count slate">${byState[s]}</span>
-            </div>`).join('');
+          .map(s => `<div class="srow">
+            <span class="pill ${sc(s)}">${sp(s)}</span>
+            <span class="scnt slate">${byState[s]}</span>
+          </div>`).join('');
       }
-    } catch(e) { /* silent */ }
+    } catch (_) {}
   }
 
-  async function triggerOutreach() {
-    const checkpoint = document.getElementById('checkpoint').value;
-    log(`Triggering batch | checkpoint=${checkpoint} …`);
+  // ── Channel Performance ────────────────────────────────────────
+  async function loadChannelPerf() {
     try {
-      const res = await apiFetch('/outreach/trigger', {
-        method: 'POST',
-        body: JSON.stringify({ checkpoint_type: checkpoint }),
-      });
-      if (res.status === 'success') {
-        const s = res.data.summary;
-        log(`Batch done — triggered:${s.triggered} retried:${s.retried} skipped:${s.skipped} errors:${s.errors}`, 'ok');
-      } else {
-        log(`Error: ${res.error?.message}`, 'err');
+      const res = await api('/dashboard/channel-performance');
+      if (res.status !== 'success') return;
+      const { channels, shadow_mode, note } = res.data;
+      if (note) document.getElementById('chan-note').textContent = note;
+      const el = document.getElementById('channel-table');
+      if (!channels || !channels.length) {
+        el.innerHTML = '<p class="empty">No outreach history yet</p>';
+        return;
       }
-      loadMetrics();
-    } catch(e) { log(`Request failed: ${e}`, 'err'); }
+      el.innerHTML = `<table>
+        <thead><tr><th>Channel</th><th>Attempts</th><th>Shadow</th><th>Responses</th><th>No Response</th><th>Success %</th></tr></thead>
+        <tbody>${channels.map(ch => `<tr>
+          <td><strong>${ch.channel}</strong></td>
+          <td>${ch.attempts}</td>
+          <td class="yellow">${ch.shadow_count}</td>
+          <td class="green">${ch.responses}</td>
+          <td class="yellow">${ch.no_response}</td>
+          <td class="${ch.success_rate > 0 ? 'green' : 'slate'}">${pct(ch.success_rate)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      ${shadow_mode ? '<p style="font-size:.68rem;color:#334155;margin-top:.5rem;text-align:center">All channels simulated in SHADOW mode — no real communication sent</p>' : ''}`;
+    } catch (_) {}
   }
 
-  async function syncMssql() {
-    const el = document.getElementById('sync-result');
-    el.textContent = 'Syncing…';
-    log('Starting SQL Server sync…', 'warn');
+  // ── Recent Activity ────────────────────────────────────────────
+  async function loadActivity() {
     try {
-      const res = await apiFetch('/sync/mssql', { method: 'POST' });
-      if (res.status === 'success') {
-        const d = res.data;
-        const msg = d.connected
-          ? `Sync complete — added:${d.added} updated:${d.updated}`
-          : 'SQL Server not configured (credentials pending)';
-        el.textContent = msg;
-        log(msg, d.connected ? 'ok' : 'warn');
-      } else {
-        el.textContent = res.error?.message || 'Failed';
-        log(`Sync error: ${res.error?.message}`, 'err');
+      const res = await api('/dashboard/recent-activity?limit=20');
+      if (res.status !== 'success') return;
+      const items = res.data.items || [];
+      const tbody = document.getElementById('activity-body');
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">No activity yet</td></tr>';
+        return;
       }
-    } catch(e) {
-      el.textContent = 'Error';
-      log(`Sync failed: ${e}`, 'err');
-    }
+      tbody.innerHTML = items.map(i => `<tr>
+        <td class="slate" style="white-space:nowrap;font-size:.73rem">${ts(i.created_at)}</td>
+        <td><strong>${i.user_id}</strong></td>
+        <td class="slate">${i.checkpoint_type || '—'}</td>
+        <td>${i.channel || '—'}</td>
+        <td style="color:#e2e8f0">${i.action || '—'}</td>
+        <td><span class="${mc(i.execution_mode)}">${i.execution_mode}</span></td>
+        <td>
+          <span class="pill ${sc(i.state_before || '')}">${sp(i.state_before || '—')}</span>
+          <span class="slate" style="margin:0 .25rem">→</span>
+          <span class="pill ${sc(i.state_after || '')}">${sp(i.state_after || '—')}</span>
+        </td>
+      </tr>`).join('');
+    } catch (_) {}
   }
 
+  // ── Student Lookup ─────────────────────────────────────────────
   async function lookupStudent() {
     const id = document.getElementById('student-id').value;
     if (!id) return;
     const el = document.getElementById('student-result');
-    el.innerHTML = '<p style="color:#475569;padding:.75rem 0">Loading…</p>';
+    el.innerHTML = '<p style="color:#334155;padding:.6rem 0;font-size:.82rem">Loading…</p>';
     try {
-      const res = await apiFetch(`/students/${id}`);
+      const res = await api(`/students/${id}`);
       if (res.status !== 'success') {
-        el.innerHTML = `<p class="empty">${res.error?.message || 'Not found'}</p>`;
+        el.innerHTML = `<div style="background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.4);border-radius:8px;padding:.7rem 1rem;color:#fca5a5;font-size:.83rem">
+          Student not found: ${res.error?.message || 'No record for ID ' + id}
+        </div>`;
         return;
       }
       const d = res.data;
-      const rows = (d.history || []).map(h => `
-        <tr>
-          <td>${h.id}</td>
-          <td>${h.attempt_number}</td>
-          <td>${h.channel || '—'}</td>
-          <td>${h.action || '—'}</td>
-          <td><span class="pill ${modeClass(h.execution_mode)}">${h.execution_mode}</span></td>
-          <td><span class="pill ${stateClass(h.state_before || '')}">${h.state_before || '—'}</span></td>
-          <td><span class="pill ${stateClass(h.state_after || '')}">${h.state_after || '—'}</span></td>
-          <td style="color:#64748b">${h.created_at ? new Date(h.created_at).toLocaleString() : '—'}</td>
-        </tr>`).join('');
+      const p = d.profile || {};
+      const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || `Student ${id}`;
+
+      const histRows = (d.history || []).map(h => `<tr>
+        <td class="slate" style="font-size:.72rem;white-space:nowrap">${ts(h.created_at)}</td>
+        <td>${h.attempt_number}</td>
+        <td>${h.channel || '—'}</td>
+        <td>${h.action || '—'}</td>
+        <td><span class="${mc(h.execution_mode)}">${h.execution_mode}</span></td>
+        <td><span class="pill ${sc(h.state_before || '')}">${sp(h.state_before || '—')}</span></td>
+        <td><span class="pill ${sc(h.state_after  || '')}">${sp(h.state_after  || '—')}</span></td>
+      </tr>`).join('') || '<tr><td colspan="7" class="empty">No outreach history</td></tr>';
+
+      const transRows = (d.transitions || []).map(t => `<tr>
+        <td class="slate" style="font-size:.72rem;white-space:nowrap">${ts(t.created_at)}</td>
+        <td><span class="pill ${sc(t.from_state)}">${sp(t.from_state)}</span></td>
+        <td><span class="pill ${sc(t.to_state)}">${sp(t.to_state)}</span></td>
+        <td class="slate">${t.trigger || '—'}</td>
+        <td style="font-size:.7rem;color:#475569">${t.actor}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="empty">No transitions recorded</td></tr>';
+
+      const hwBad = (p.hws_behind || 0) >= 3;
+      const efBad = p.avg_eff_rating != null && p.avg_eff_rating < 3.0;
+      const acBad = (p.last_activity_days || 0) >= 5;
+
       el.innerHTML = `
-        <p style="margin-bottom:.75rem;color:#94a3b8;font-size:.85rem">
-          Student <strong style="color:#e2e8f0">${id}</strong> &nbsp;|&nbsp;
-          Checkpoint: <strong style="color:#e2e8f0">${d.checkpoint_type}</strong> &nbsp;|&nbsp;
-          State: <span class="pill ${stateClass(d.state)}">${d.state}</span> &nbsp;|&nbsp;
-          Attempts: <strong style="color:#e2e8f0">${d.current_attempt}</strong>
-        </p>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th><th>Attempt</th><th>Channel</th><th>Action</th>
-              <th>Mode</th><th>From State</th><th>To State</th><th>Date</th>
-            </tr>
-          </thead>
-          <tbody>${rows || '<tr><td colspan="8" class="empty">No history yet</td></tr>'}</tbody>
-        </table>`;
-    } catch(e) { el.innerHTML = `<p class="empty">Error: ${e}</p>`; }
+        <div class="pcard">
+          <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+            <div style="flex:1;min-width:200px">
+              <div class="pname">${name}
+                <span class="risk-${p.risk_level || 'UNKNOWN'}" style="margin-left:.5rem;font-size:.68rem">${p.risk_level || 'UNKNOWN'} RISK</span>
+              </div>
+              <div class="pmeta">
+                <span><strong>ID:</strong> ${d.user_id}</span>
+                <span><strong>Path:</strong> ${p.path || '—'}</span>
+                <span><strong>Email:</strong> ${p.email || '—'}</span>
+                <span><strong>Phone:</strong> ${p.phone || '—'}</span>
+              </div>
+              <div class="pstats">
+                <div class="pst"><span class="psl">HWs Behind</span><span class="psv ${hwBad ? 'red' : 'green'}">${p.hws_behind ?? '—'}</span></div>
+                <div class="pst"><span class="psl">Avg Effort</span><span class="psv ${efBad ? 'yellow' : 'green'}">${p.avg_eff_rating != null ? p.avg_eff_rating.toFixed(1) : '—'}</span></div>
+                <div class="pst"><span class="psl">Inactive Days</span><span class="psv ${acBad ? 'yellow' : 'green'}">${p.last_activity_days ?? '—'}</span></div>
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="margin-bottom:.35rem"><span class="pill ${sc(d.state)}">${sp(d.state)}</span></div>
+              <div style="font-size:.74rem;color:#64748b">Checkpoint: <strong style="color:#e2e8f0">${d.checkpoint_type}</strong></div>
+              <div style="font-size:.74rem;color:#64748b">Attempts: <strong style="color:#e2e8f0">${d.current_attempt}</strong></div>
+              ${d.last_contact_at ? `<div style="font-size:.69rem;color:#334155;margin-top:.2rem">Last contact: ${ts(d.last_contact_at)}</div>` : ''}
+              ${d.next_retry_at   ? `<div style="font-size:.69rem;color:#334155">Next retry: ${ts(d.next_retry_at)}</div>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:.72rem;font-weight:700;color:#475569;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.5px">Outreach History</div>
+        <div style="overflow-x:auto;margin-bottom:.9rem">
+          <table><thead><tr><th>Date</th><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>From</th><th>To</th></tr></thead>
+          <tbody>${histRows}</tbody></table>
+        </div>
+
+        <div style="font-size:.72rem;font-weight:700;color:#475569;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.5px">State Transitions</div>
+        <div style="overflow-x:auto">
+          <table><thead><tr><th>Date</th><th>From</th><th>To</th><th>Trigger</th><th>Actor</th></tr></thead>
+          <tbody>${transRows}</tbody></table>
+        </div>`;
+    } catch (e) { el.innerHTML = `<p class="empty">Error: ${e}</p>`; }
   }
 
-  async function executeAction() {
-    const userId   = document.getElementById('action-user-id').value;
-    const action   = document.getElementById('action-type').value;
-    const notes    = document.getElementById('action-notes').value;
-    if (!userId) return;
-    log(`Executing ${action} for student ${userId}…`);
+  // ── Trigger Outreach ───────────────────────────────────────────
+  async function triggerOutreach() {
+    const cp = document.getElementById('checkpoint').value;
+    clog(`Triggering batch | checkpoint=${cp}…`);
+    document.getElementById('trigger-result').textContent = 'Running…';
     try {
-      const body = { user_id: parseInt(userId), action_type: action };
-      if (notes) body.notes = notes;
-      const res = await apiFetch('/actions/manual', {
+      const res = await api('/outreach/trigger', {
         method: 'POST',
-        body: JSON.stringify(body),
+        body: JSON.stringify({ checkpoint_type: cp }),
       });
       if (res.status === 'success') {
-        const d = res.data;
-        log(`${action} executed | ${d.from_state} → ${d.to_state}`, 'ok');
-        loadMetrics();
+        const s = res.data.summary;
+        const msg = `Done — triggered:${s.triggered} retried:${s.retried} skipped:${s.skipped} errors:${s.errors}`;
+        document.getElementById('trigger-result').textContent = msg;
+        clog(msg, 'co');
+        loadSummary(); loadAlerts(); loadActivity();
       } else {
-        log(`Error: ${res.error?.message}`, 'err');
+        const msg = res.error?.message || 'Error';
+        document.getElementById('trigger-result').textContent = msg;
+        clog(`Error: ${msg}`, 'ce');
       }
-    } catch(e) { log(`Request failed: ${e}`, 'err'); }
+    } catch (e) {
+      document.getElementById('trigger-result').textContent = 'Request failed';
+      clog(`Request failed: ${e}`, 'ce');
+    }
   }
 
-  // Boot
-  loadHealth();
-  loadMetrics();
-  setInterval(() => { loadHealth(); loadMetrics(); }, 30000);
+  // ── SQL Sync ───────────────────────────────────────────────────
+  async function syncMssql() {
+    const el = document.getElementById('sync-result');
+    el.textContent = 'Syncing…';
+    clog('Starting SQL Server sync…', 'cw');
+    try {
+      const res = await api('/sync/mssql', { method: 'POST' });
+      if (res.status === 'success') {
+        const d = res.data;
+        const msg = d.connected
+          ? `Sync done — added:${d.added} updated:${d.updated}`
+          : 'SQL Server not configured (credentials pending)';
+        el.textContent = msg;
+        clog(msg, d.connected ? 'co' : 'cw');
+      } else {
+        el.textContent = res.error?.message || 'Error';
+        clog(`Sync error: ${res.error?.message}`, 'ce');
+      }
+    } catch (e) { el.textContent = 'Error'; clog(`Sync failed: ${e}`, 'ce'); }
+  }
+
+  // ── Manual Actions ─────────────────────────────────────────────
+  async function execAction(actionType) {
+    const uid   = document.getElementById('action-uid').value;
+    const notes = document.getElementById('action-notes').value;
+    if (!uid) {
+      document.getElementById('action-result').textContent = 'Enter a Student ID first.';
+      return;
+    }
+    clog(`Executing ${actionType} for student ${uid}…`);
+    document.getElementById('action-result').textContent = '';
+    try {
+      const body = { user_id: parseInt(uid), action_type: actionType };
+      if (notes) body.notes = notes;
+      const res = await api('/actions/manual', { method: 'POST', body: JSON.stringify(body) });
+      if (res.status === 'success') {
+        const d = res.data;
+        const msg = `${actionType} executed: ${sp(d.from_state)} → ${sp(d.to_state)}`;
+        document.getElementById('action-result').textContent = msg;
+        clog(msg, 'co');
+        loadSummary(); loadAlerts(); loadActivity();
+      } else {
+        const msg = res.error?.message || res.error?.code || 'Error';
+        document.getElementById('action-result').textContent = `Error: ${msg}`;
+        clog(`Error: ${msg}`, 'ce');
+      }
+    } catch (e) {
+      document.getElementById('action-result').textContent = 'Request failed';
+      clog(`Request failed: ${e}`, 'ce');
+    }
+  }
+
+  // ── Boot ───────────────────────────────────────────────────────
+  async function loadAll() {
+    await Promise.allSettled([
+      loadHealth(),
+      loadAlerts(),
+      loadSummary(),
+      loadChannelPerf(),
+      loadActivity(),
+    ]);
+    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+  }
+
+  loadAll();
+  setInterval(loadAll, 60000);
 </script>
 </body>
 </html>

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
+from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -11,14 +13,17 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler()
+_last_run_at: Optional[datetime] = None
 CHECKPOINTS = ["SQL", "SSRS", "SSIS", "POST_COMPLETION"]
 
 
 async def _run_all_checkpoints() -> None:
+    global _last_run_at
     from app.database import AsyncSessionLocal
     from app.services.outreach import run_outreach_batch
 
     logger.info("Scheduled batch starting | mode=%s", settings.EXECUTION_MODE)
+    _last_run_at = datetime.now(tz=timezone.utc)
     async with AsyncSessionLocal() as db:
         for checkpoint in CHECKPOINTS:
             try:
@@ -58,3 +63,7 @@ def stop_scheduler() -> None:
 
 def get_scheduler_status() -> str:
     return "active" if _scheduler.running else "stopped"
+
+
+def get_last_run_at() -> Optional[str]:
+    return _last_run_at.isoformat() if _last_run_at else None

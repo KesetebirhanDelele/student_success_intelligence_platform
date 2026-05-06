@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
 from app.routers import actions, health, metrics, outreach, students, webhook
+from app.routers import dashboard as dashboard_router
 from app.routers import sync as sync_router
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -55,6 +56,7 @@ app.include_router(students.router, tags=["Students"])
 app.include_router(metrics.router, tags=["Metrics"])
 app.include_router(actions.router, tags=["Actions"])
 app.include_router(webhook.router, tags=["Webhooks"])
+app.include_router(dashboard_router.router, tags=["Dashboard"])
 app.include_router(sync_router.router, tags=["Sync"])
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"

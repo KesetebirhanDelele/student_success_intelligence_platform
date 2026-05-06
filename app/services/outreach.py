@@ -277,10 +277,18 @@ async def execute_manual_action(
         "CLOSE_CASE": "CLOSED",
         "BOOK_MEETING": "RESOLVED",
         "FORCE_RETRY": "RETRY",
+        "ESCALATE": "INTERVENTION_REQUIRED",
     }
     to_state = action_map.get(action_type)
     if to_state is None:
         return {"status": "invalid_action"}
+
+    if action_type == "FORCE_RETRY" and tracking_obj.current_attempt >= settings.MAX_ATTEMPTS:
+        return {
+            "status": "max_attempts_reached",
+            "current_attempt": tracking_obj.current_attempt,
+            "max": settings.MAX_ATTEMPTS,
+        }
 
     old_state = tracking_obj.state
     if not _apply_transition(tracking_obj, to_state, f"manual:{action_type}"):

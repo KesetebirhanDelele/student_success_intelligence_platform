@@ -27,5 +27,11 @@ async def manual_action(
         )
     if result.get("status") == "invalid_action":
         return APIResponse.fail("INVALID_ACTION", f"Unknown action: {body.action_type}")
+    if result.get("status") == "max_attempts_reached":
+        return APIResponse.fail(
+            "MAX_ATTEMPTS_REACHED",
+            f"Cannot retry: student has reached the maximum of {result['max']} attempts "
+            f"(current: {result['current_attempt']}).",
+        )
 
     return APIResponse.ok(result)
