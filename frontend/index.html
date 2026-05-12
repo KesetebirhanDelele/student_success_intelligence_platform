@@ -934,22 +934,40 @@
     } catch (e) { if (resEl) resEl.textContent = 'Request failed'; }
   }
 
+  function _renderSyncResult(d) {
+    if (!d.connected) {
+      const reason = d.error === 'not_configured' ? 'SQL Server not configured' : `Connection error: ${d.error}`;
+      return `<span class="text-danger">${reason}</span>`;
+    }
+    const statusClass = d.status === 'partial_success' ? 'text-warning' : 'text-success';
+    let html = `<span class="${statusClass}">`;
+    html += `Scanned: ${d.rows_scanned} &nbsp;·&nbsp; Inserted: ${d.added} &nbsp;·&nbsp; Updated: ${d.updated}`;
+    if (d.rows_failed > 0) {
+      html += ` &nbsp;·&nbsp; <strong>Skipped: ${d.rows_failed}</strong>`;
+      html += `</span>`;
+      html += `<ul class="mb-0 mt-1 ps-3" style="font-size:.75rem;color:var(--color-secondary)">`;
+      for (const f of (d.failures || [])) {
+        html += `<li>UserID ${f.user_id ?? '?'}: ${f.reason}</li>`;
+      }
+      html += `</ul>`;
+    } else {
+      html += `</span>`;
+    }
+    return html;
+  }
+
   async function syncMssqlInline() {
     const el = document.getElementById('inline-sync-result');
-    if (el) el.textContent = 'Syncing…';
+    if (el) el.innerHTML = 'Syncing…';
     try {
       const res = await api('/sync/mssql', { method: 'POST' });
       if (res.status === 'success') {
-        const d = res.data;
-        const msg = d.connected
-          ? `Done — added: ${d.added}  updated: ${d.updated}`
-          : (d.error === 'not_configured' ? 'SQL Server not configured' : `Error: ${d.error}`);
-        if (el) el.textContent = msg;
+        if (el) el.innerHTML = _renderSyncResult(res.data);
         loadHealth();
       } else {
-        if (el) el.textContent = res.error?.message || 'Error';
+        if (el) el.innerHTML = `<span class="text-danger">${res.error?.message || 'Sync failed'}</span>`;
       }
-    } catch (e) { if (el) el.textContent = 'Error'; }
+    } catch (e) { if (el) el.innerHTML = '<span class="text-danger">Request failed</span>'; }
   }
 
   // ── Home card loaders ──────────────────────────────────────────
@@ -1417,10 +1435,11 @@
   function detailSync() {
     openModal('SQL Server Sync', `
       <p class="text-muted mb-3">Sync student data from SQL Server into PostgreSQL. SQL Server is read-only — no writes are made upstream.</p>
-      <div class="d-flex gap-2 align-items-center">
+      <div class="d-flex gap-2 align-items-center mb-2">
         <button class="btn btn-sm btn-outline-secondary" onclick="syncMssql()">Sync Now</button>
         <span id="sync-result" class="text-muted small"></span>
-      </div>`);
+      </div>
+      <div id="sync-detail-result" style="font-size:.8rem"></div>`);
   }
 
   function detailActions() {
@@ -1547,20 +1566,49 @@
 
   // ── SQL sync (modal) ───────────────────────────────────────────
   async function syncMssql() {
-    const el = document.getElementById('sync-result');
-    if (el) el.textContent = 'Syncing…';
+    const statusEl = document.getElementById('sync-result');
+    const detailEl = document.getElementById('sync-detail-result');
+    if (statusEl) statusEl.textContent = 'Syncing…';
+    if (detailEl) detailEl.innerHTML = '';
     try {
       const res = await api('/sync/mssql', { method: 'POST' });
       if (res.status === 'success') {
         const d = res.data;
-        const msg = d.connected
-          ? `Sync done — added: ${d.added}  updated: ${d.updated}`
-          : (d.error === 'not_configured' ? 'SQL Server not configured' : `Error: ${d.error}`);
-        if (el) el.textContent = msg;
+        if (!d.connected) {
+          const reason = d.error === 'not_configured' ? 'SQL Server not configured' : `Connection error: ${d.error}`;
+          if (statusEl) statusEl.innerHTML = `<span class="text-danger">${reason}</span>`;
+          return;
+        }
+        const isPartial = d.status === 'partial_success';
+        const badge = isPartial
+          ? '<span class="badge bg-warning text-dark ms-2">WARNING — partial sync</span>'
+          : '<span class="badge bg-success ms-2">OK</span>';
+        if (statusEl) statusEl.innerHTML = `Sync complete${badge}`;
+
+        let html = `<table class="table table-sm mb-0" style="font-size:.8rem">
+          <tbody>
+            <tr><td class="text-muted">Rows scanned</td><td>${d.rows_scanned}</td></tr>
+            <tr><td class="text-muted">Rows inserted</td><td>${d.added}</td></tr>
+            <tr><td class="text-muted">Rows updated</td><td>${d.updated}</td></tr>
+            <tr><td class="text-muted">Rows skipped</td><td class="${isPartial ? 'text-warning fw-semibold' : ''}">${d.rows_failed}</td></tr>
+          </tbody>
+        </table>`;
+        if (isPartial && d.failures?.length) {
+          html += `<div class="mt-2"><span class="text-muted small fw-semibold">Skipped rows</span>
+            <table class="table table-sm mt-1 mb-0" style="font-size:.75rem">
+              <thead class="table-light"><tr><th>UserID</th><th>Reason</th></tr></thead>
+              <tbody>${d.failures.map(f =>
+                `<tr><td>${f.user_id ?? '—'}</td><td class="text-danger">${f.reason}</td></tr>`
+              ).join('')}</tbody>
+            </table></div>`;
+        }
+        if (detailEl) detailEl.innerHTML = html;
       } else {
-        if (el) el.textContent = res.error?.message || 'Error';
+        if (statusEl) statusEl.innerHTML = `<span class="text-danger">${res.error?.message || 'Sync failed'}</span>`;
       }
-    } catch (e) { if (el) el.textContent = 'Error'; }
+    } catch (e) {
+      if (statusEl) statusEl.innerHTML = '<span class="text-danger">Request failed</span>';
+    }
   }
 
   // ── Manual actions (modal) ─────────────────────────────────────

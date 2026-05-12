@@ -105,6 +105,12 @@
   - What changed: tests/test_shadow_safety.py had 4 tests passing wrong flat payloads to integration functions that expect builder-constructed nested payloads; fixed tests to use `build_ghl_payload`, `build_call_payload`, `build_sms_payload`, `build_email_payload` helpers
   - Verification: `pytest tests/ -v` → 19 passed, 0 failed (test_shadow_safety.py 6/6, test_actions.py 8/8, test_dashboard.py 5/5)
 
+- [x] SQL Server sync partial-sync tolerance + structured error surfacing
+  - Date: 2026-05-12
+  - What changed: app/services/sync.py — added _validate_row() guard on UserID/HWsBehind/AvgEffRating; invalid rows are skipped with reason logged and returned in failures[]; valid rows always commit; db.commit() wrapped in try/except so a late DB-level failure returns structured error instead of 500; structured response adds status/rows_scanned/rows_successful/rows_failed/failures fields; frontend/index.html — _renderSyncResult() helper, syncMssqlInline() and syncMssql() rewritten to show scanned/inserted/updated/skipped counts, per-failure UserID+reason table, WARNING badge on partial_success; tests/test_sync.py — 12 new tests (5 unit _validate_row, 7 integration sync_from_mssql) all passing
+  - Verification: pytest tests/ → 45 passed, 0 failed (was 33)
+  - Notes: model NOT NULL constraints preserved; no silently-defaulted NULL values; shadow mode unaffected; data_quality_issues table deferred as follow-up
+
 - [x] Expand All cards feature
   - Date: 2026-05-06
   - What changed: frontend/index.html — each card gains a ▼ chevron toggle button (stops propagation, doesn't open modal); inline Bootstrap collapse panel renders compact live data below card body; "⊞ Expand All / ⊟ Collapse All" button added to navbar; auto-refreshes open panels every 60 s; static panels (Student Cases, Manual Actions, Trigger, Sync) render interactive forms inline; async panels (Health, Alerts, KPI, States, Channels, Activity) fetch and render on expand
