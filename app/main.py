@@ -8,9 +8,15 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import init_db
 from app.routers import actions, health, metrics, outreach, students, webhook
+from app.routers import ai_insights as ai_insights_router
 from app.routers import batch as batch_router
 from app.routers import dashboard as dashboard_router
+from app.routers import ghl_sync as ghl_sync_router
+from app.routers import notes as notes_router
+from app.routers import payment as payment_router
+from app.routers import segments as segments_router
 from app.routers import source as source_router
+from app.routers import student_timeline as timeline_router
 from app.routers import sync as sync_router
 from app.routers import work_queue as work_queue_router
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -24,13 +30,13 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Student Success Intelligence Platform",
     description="Production-grade automated student outreach decision engine",
-    version="1.0.0",
+    version="2.0.0",
 )
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    logger.info("Starting SSIP | mode=%s", settings.EXECUTION_MODE)
+    logger.info("Starting SSIP v2 | mode=%s", settings.EXECUTION_MODE)
     await init_db()
     start_scheduler()
 
@@ -53,6 +59,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+# ── Core system routers ────────────────────────────────────────────────────────
 app.include_router(health.router, tags=["System"])
 app.include_router(outreach.router, tags=["Outreach"])
 app.include_router(students.router, tags=["Students"])
@@ -64,6 +71,14 @@ app.include_router(sync_router.router, tags=["Sync"])
 app.include_router(source_router.router, tags=["Source"])
 app.include_router(work_queue_router.router, tags=["WorkQueue"])
 app.include_router(batch_router.router, tags=["Batch"])
+
+# ── Phase 4 operational intelligence routers ──────────────────────────────────
+app.include_router(segments_router.router, tags=["Segments"])
+app.include_router(payment_router.router, tags=["Payment"])
+app.include_router(timeline_router.router, tags=["Timeline"])
+app.include_router(ai_insights_router.router, tags=["AIInsights"])
+app.include_router(notes_router.router, tags=["Notes"])
+app.include_router(ghl_sync_router.router, tags=["GHLSync"])
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 

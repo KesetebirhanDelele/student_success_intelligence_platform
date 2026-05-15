@@ -75,6 +75,77 @@
 
 ---
 
+---
+
+## Phase 4 — Production-Grade Student Success Operations Platform
+
+- [x] Expand StudentTriggerData model — 10 new optional fields
+  - Date: 2026-05-15
+  - What changed: app/models.py — added AttendancePercentage, CurrentSection, IPBCStartDate, Past10DaysLogon, Total_Payments, Total_Credits, PaymentBalance, ClassValue, FeePaid, ClassFeesPaid to StudentTriggerData; added 4 new models: StudentInterviewPrep (JSONB stub), StudentNote, AIInsight, GHLMessage
+  - Verification: TypeScript N/A (Python); column migration runs automatically at startup via ALTER TABLE...ADD COLUMN IF NOT EXISTS in init_db()
+
+- [x] Expand SQL Server sync to include new fields + InterviewPrep table
+  - Date: 2026-05-15
+  - What changed: app/database.py — expanded SELECT to 19 columns; added _fetch_interview_prep_sync() (SELECT *); app/services/sync.py — added _coerce_row() for date→datetime conversion, _serialize_for_jsonb() for JSONB safe types, sync_interview_prep() service; app/routers/sync.py — added POST /sync/interview-prep endpoint
+  - Verification: _validate_row() unchanged (only required NOT NULL fields); new columns all Optional; shadow mode unaffected
+
+- [x] Segmentation service + router
+  - Date: 2026-05-15
+  - What changed: app/services/segmentation.py — NEWCOMERS (≤90 days), HYPER_ACTIVE (logins≥7 AND eff>90), CAP_HOPEFULS (att>30 AND IPBC), LAUNCH_HOPEFULS (att>55 AND CAP), PLACEMENT_HOPEFULS (att>70 AND Launch); filter_by_role() for frontend role filtering; app/routers/segments.py — GET /segments/summary and GET /segments/{segment_name}
+  - Verification: classify_student() pure function; no I/O
+
+- [x] GHL message sync service + router (read-only, shadow-safe)
+  - Date: 2026-05-15
+  - What changed: app/services/ghl_sync.py — phone-based lookup (E.164 normalize → GET /v1/contacts/?phone= → conversation search → message fetch); sync_by_phone(), sync_student_by_user_id(), sync_all_students(); idempotent on ghl_message_id; all calls logged with duration_ms/status/outcome; app/routers/ghl_sync.py — GET /ghl-sync/status, POST /ghl-sync/student (user_id only, phone auto-loaded), POST /ghl-sync/batch (batch all); frontend — "Sync All GHL Messages" button on Overview card; per-student "Sync GHL" button in drawer Outreach tab with live result display
+  - Notes: GHL reads are always allowed — shadow mode gates WRITES only; reads are non-destructive; contact_id is never required — phone number lookup is the only supported path
+
+- [x] AI insight generation service + router
+  - Date: 2026-05-15
+  - What changed: app/services/ai_insights.py — OUTREACH_DRAFT, INTERVENTION, RISK_EXPLANATION, INTERVIEW_COACHING; 24-hour PostgreSQL cache; OpenAI GPT-4o; app/routers/ai_insights.py — GET /ai-insights/{user_id}/{insight_type}, GET /ai-insights/{user_id}
+  - Verification: degrades gracefully if LLM_API_KEY not set; shadow mode unaffected (no outbound comm)
+
+- [x] Unified timeline service + router
+  - Date: 2026-05-15
+  - What changed: app/services/timeline.py — merges OutreachHistory, StateTransitionLog, StudentNote, AIInsight, GHLMessage into chronological event stream; app/routers/student_timeline.py — GET /timeline/{user_id}
+  - Verification: pure aggregation; no writes; no shadow gate needed
+
+- [x] Payment reconciliation router with Bundle Deal fix
+  - Date: 2026-05-15
+  - What changed: app/routers/payment.py — GET /payment/reconciliation, GET /payment/student/{user_id}; bundle detection: Total_Credits>0 AND PaymentBalance==0 AND ClassValue>0 → actual_balance = ClassValue−Total_Payments−Total_Credits; payment_risk field: HIGH/MEDIUM/CLEAR
+  - Verification: actual_balance field surfaced alongside stored PaymentBalance; is_bundle_deal flag makes fix auditable
+
+- [x] Notes router
+  - Date: 2026-05-15
+  - What changed: app/routers/notes.py — POST /notes, GET /notes/{user_id}; StudentNote model; author attribution; AI-generated flag
+  - Verification: content/author validated; shadow mode unaffected
+
+- [x] Expanded students router — drawer endpoint + interview prep
+  - Date: 2026-05-15
+  - What changed: app/routers/students.py — GET /students/{user_id}/drawer (combined profile+payment+segments+outreach+interview_prep), GET /students/{user_id}/interview-prep
+  - Verification: bundle-aware balance computed in drawer; segment classification included
+
+- [x] Extended KPI dashboard endpoint
+  - Date: 2026-05-15
+  - What changed: app/routers/dashboard.py — GET /dashboard/kpi-extended returns avg attendance, efficiency, hw_behind, engagement counts, payment risk, segment counts, section distribution
+  - Verification: gracefully returns note when no students synced
+
+- [x] Config expanded with GHL field vars
+  - Date: 2026-05-15
+  - What changed: app/config.py — GHL_TIMEOUT_SECONDS, GHL_RETRY_MAX, GHL_FIELD_MESSAGE, GHL_TASK_TITLE, GHL_TASK_DESCRIPTION, GHL_TASK_DUE_DATE, GHL_FIELD_VM_EMAIL_HTML, GHL_FIELD_VM_EMAIL_SUBJECT
+  - Verification: all have safe defaults; no breaking change to existing .env
+
+- [x] Update main.py — register 6 new routers
+  - Date: 2026-05-15
+  - What changed: app/main.py — registered segments, payment, student_timeline, ai_insights, notes, ghl_sync routers; version bumped to 2.0.0
+  - Verification: all imports verified; startup runs init_db() with column migrations
+
+- [x] Frontend complete rewrite — multi-dashboard SPA
+  - Date: 2026-05-15
+  - What changed: frontend/index.html — 11 tab navigation (Overview, KPI, Newcomers, Engagement, HW Risk, CAP Hopefuls, Launch Hopefuls, Placement Hopefuls, Payment, Outreach Activity, AI Intervention); Bootstrap 5 Offcanvas right drawer with 10 tabs (Info, Mentor, Instructor, Super Mentor, Timeline, Outreach, AI Insights, Interview Prep, Payment, Notes); Chart.js 4 charts (segments doughnut, HW risk bar, sections bar, outreach funnel); generic DataTable engine with search/sort/paginate/CSV export; role picker in navbar persisted to sessionStorage; auto-refresh every 10 min (600000ms); bundle deal payment risk visualization; conditional row formatting
+  - Verification: all API endpoints wired; SHADOW mode badge preserved; GHL read-only indicator on sync card; role picker wired to API role params; CSV export works on filtered rows
+
+---
+
 ## Pending / Blockers
 
 - [x] SQL Server credentials set and deployment running in SHADOW mode

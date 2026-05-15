@@ -26,10 +26,19 @@ class Settings(BaseSettings):
     MSSQL_PASS: str = ""
     MSSQL_DATABASE: str = ""
 
-    # GHL
+    # GHL — currently READ ONLY / SHADOW MODE
     GHL_API_KEY: str = ""
     GHL_BASE_URL: str = "https://rest.gohighlevel.com"
     GHL_LOCATION_ID: str = ""
+    GHL_TIMEOUT_SECONDS: int = 30
+    GHL_RETRY_MAX: int = 3
+    # Custom field mappings (GHL internal field IDs)
+    GHL_FIELD_MESSAGE: str = ""
+    GHL_TASK_TITLE: str = ""
+    GHL_TASK_DESCRIPTION: str = ""
+    GHL_TASK_DUE_DATE: str = ""
+    GHL_FIELD_VM_EMAIL_HTML: str = ""
+    GHL_FIELD_VM_EMAIL_SUBJECT: str = ""
 
     # Synthflow
     SYNTHFLOW_API_KEY: str = ""

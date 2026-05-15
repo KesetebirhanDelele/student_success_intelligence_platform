@@ -221,3 +221,21 @@ docker compose logs -f api
 ## Follow-up: Data Quality Issues Table (not yet implemented)
 
 A `data_quality_issues` table has been proposed as a follow-up to persist sync failure history across runs. Fields: `id`, `source_table`, `user_id`, `issue_type`, `issue_message`, `raw_payload` (JSONB), `created_at`, `resolved_at`. This would let operators query historical skipped rows without re-running the sync. Requires a Alembic migration. Not blocking current operation — the failures are already visible in the dashboard per-sync.
+
+# Rebuild the API image and restart the container
+docker compose up -d --build api
+
+# Verify it's running and healthy
+docker compose ps
+
+# Tail logs to confirm startup (Ctrl+C to exit)
+docker compose logs -f api
+
+If you want to run tests inside the freshly built container before bringing it up:
+
+
+# Build first, run tests, then start
+docker compose build api && docker compose run --rm api python -m pytest tests/ -v && docker compose up -d api
+# To restart without rebuilding (e.g. after an .env change only):
+
+docker compose up -d api

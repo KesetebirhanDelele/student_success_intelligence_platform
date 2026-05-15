@@ -233,6 +233,71 @@ async def dashboard_summary(db: AsyncSession = Depends(get_db)) -> APIResponse:
     })
 
 
+@router.get("/kpi-extended")
+async def kpi_extended(db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """
+    Extended KPI aggregates from the expanded StudentTriggerData mirror.
+    Includes attendance, engagement, payment, and segment-level metrics.
+    """
+    from sqlalchemy import func as sqlfunc
+    from app.models import StudentTriggerData
+    from app.services.segmentation import segment_summary
+
+    src_result = await db.execute(select(StudentTriggerData))
+    all_students = src_result.scalars().all()
+    total = len(all_students)
+
+    if not total:
+        return APIResponse.ok({
+            "total_students": 0,
+            "note": "No students synced yet. Run SQL Server sync first.",
+        })
+
+    # Compute field-level aggregates
+    attendance_vals = [float(s.AttendancePercentage or 0) for s in all_students]
+    eff_vals = [float(s.AvgEffRating or 0) for s in all_students]
+    hw_vals = [int(s.HWsBehind or 0) for s in all_students]
+    login_vals = [int(s.Past10DaysLogon or 0) for s in all_students]
+    balance_vals = [float(s.PaymentBalance or 0) for s in all_students]
+
+    avg_attendance = round(sum(attendance_vals) / total, 1)
+    avg_efficiency = round(sum(eff_vals) / total, 1)
+    avg_hw_behind = round(sum(hw_vals) / total, 2)
+    total_payment_risk = sum(1 for b in balance_vals if b > 0)
+
+    students_dicts = [
+        {c.key: getattr(s, c.key) for c in s.__table__.columns}
+        for s in all_students
+    ]
+    seg_counts = segment_summary(students_dicts)
+
+    section_dist: dict[str, int] = {}
+    for s in all_students:
+        sec = s.CurrentSection or s.PathName or "Unknown"
+        section_dist[sec] = section_dist.get(sec, 0) + 1
+
+    return APIResponse.ok({
+        "total_students": total,
+        "averages": {
+            "attendance_pct": avg_attendance,
+            "efficiency_rating": avg_efficiency,
+            "hws_behind": avg_hw_behind,
+        },
+        "engagement": {
+            "high_engagement": sum(1 for v in login_vals if v >= 7),
+            "low_engagement": sum(1 for v in login_vals if v < 3),
+            "hyper_active_count": seg_counts.get("HYPER_ACTIVE", 0),
+        },
+        "payment": {
+            "students_with_balance": total_payment_risk,
+            "fully_paid": sum(1 for b in balance_vals if b == 0),
+        },
+        "segments": seg_counts,
+        "sections": section_dist,
+        "execution_mode": settings.EXECUTION_MODE,
+    })
+
+
 @router.get("/recent-activity")
 async def recent_activity(
     limit: int = 20,

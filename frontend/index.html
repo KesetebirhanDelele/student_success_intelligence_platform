@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>SSIP — Student Success Intelligence Platform</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --color-primary:       #1a365d;
@@ -17,129 +18,105 @@
       --color-text-light:    #718096;
       --color-border:        #e2e8f0;
     }
-
     body { background: var(--color-bg-alt); color: var(--color-text); font-size: .875rem; }
 
-    /* ── Navbar ──────────────────────────────────────────────────── */
+    /* ── Navbar ── */
     .ssip-nav { background: var(--color-primary); border-bottom: 3px solid var(--color-primary-light); min-height: 52px; }
     .ssip-nav .navbar-brand { color: #fff !important; font-weight: 700; font-size: 1rem; letter-spacing: .3px; }
-    .nav-pill {
-      background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18);
-      border-radius: 4px; color: rgba(255,255,255,.85); font-size: .72rem;
-      padding: 3px 10px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
-    }
+    .nav-pill { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 4px; color: rgba(255,255,255,.85); font-size: .72rem; padding: 3px 10px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
     .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
-    .dot-ok   { background: #48bb78; }
-    .dot-err  { background: #fc8181; }
-    .dot-warn { background: #f6e05e; }
-    .dot-dim  { background: rgba(255,255,255,.3); }
+    .dot-ok { background: #48bb78; } .dot-err { background: #fc8181; } .dot-warn { background: #f6e05e; } .dot-dim { background: rgba(255,255,255,.3); }
 
-    /* ── Section labels ──────────────────────────────────────────── */
-    .section-label {
-      font-size: .68rem; font-weight: 700; color: var(--color-text-light);
-      text-transform: uppercase; letter-spacing: .8px;
-      border-bottom: 1px solid var(--color-border); padding-bottom: .35rem;
-    }
+    /* ── Dashboard tabs ── */
+    .dash-tabs .nav-link { font-size: .72rem; font-weight: 600; color: var(--color-text-light); padding: .45rem .9rem; border-radius: 4px 4px 0 0; text-transform: uppercase; letter-spacing: .4px; }
+    .dash-tabs .nav-link.active { color: var(--color-primary); border-bottom: 2px solid var(--color-primary); background: var(--color-bg); }
+    .dash-tabs .nav-link:hover:not(.active) { color: var(--color-primary-light); background: rgba(43,108,176,.07); }
+    .tab-pane { display: none; } .tab-pane.active { display: block; }
 
-    /* ── Summary cards ───────────────────────────────────────────── */
+    /* ── Cards ── */
     .summary-card { cursor: pointer; transition: box-shadow .15s, border-color .15s; border: 1px solid var(--color-border) !important; }
     .summary-card:hover { box-shadow: 0 4px 14px rgba(26,54,93,.13) !important; border-color: var(--color-primary-light) !important; }
-    .summary-card .card-header {
-      background: var(--color-bg) !important; border-bottom: 1px solid var(--color-border);
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: .74rem; font-weight: 700; color: var(--color-text);
-      text-transform: uppercase; letter-spacing: .5px; padding: .6rem 1rem;
-    }
+    .summary-card .card-header { background: var(--color-bg) !important; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; font-size: .74rem; font-weight: 700; color: var(--color-text); text-transform: uppercase; letter-spacing: .5px; padding: .6rem 1rem; }
     .summary-card .card-body { padding: .85rem 1rem; background: var(--color-bg); }
-    .card-summary { font-size: .8rem; color: var(--color-text-light); line-height: 1.5; }
     .card-metric { font-size: 2rem; font-weight: 700; line-height: 1; color: var(--color-primary); }
-    .card-metric-sub { font-size: .72rem; color: var(--color-text-light); margin-left: .3rem; vertical-align: middle; }
-    .card-footer-link {
-      font-size: .71rem; color: var(--color-text-light); border-top: 1px solid var(--color-border);
-      padding: .5rem 1rem; text-align: right; background: var(--color-bg-alt); border-radius: 0 0 .375rem .375rem;
-    }
-    .summary-card:hover .card-footer-link { color: var(--color-primary-light); }
+    .kpi-box { background: var(--color-bg-alt); border: 1px solid var(--color-border); border-radius: 6px; padding: .8rem 1rem; }
+    .kpi-label { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-light); margin-bottom: .25rem; }
+    .kpi-val { font-size: 1.75rem; font-weight: 700; line-height: 1; color: var(--color-primary); }
+    .section-label { font-size: .68rem; font-weight: 700; color: var(--color-text-light); text-transform: uppercase; letter-spacing: .8px; border-bottom: 1px solid var(--color-border); padding-bottom: .35rem; }
 
-    /* ── Expand toggle button ────────────────────────────────────── */
-    .expand-toggle {
-      background: none !important; border: none !important; padding: 0 !important;
-      color: var(--color-text-light); font-size: .72rem; line-height: 1;
-      width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
-      border-radius: 3px; cursor: pointer; flex-shrink: 0;
-      transition: transform .2s ease, color .15s;
-    }
-    .expand-toggle:hover { color: var(--color-primary-light); }
-    .expand-toggle[aria-expanded="true"] { transform: rotate(180deg); color: var(--color-primary-light); }
-
-    /* ── Inline expand panel ─────────────────────────────────────── */
-    .card-expand-panel { border-top: 1px solid var(--color-border); background: var(--color-bg-alt); }
-    .card-expand-panel .expand-inner { padding: .75rem 1rem; }
-
-    /* ── Metric color helpers ────────────────────────────────────── */
-    .metric-primary { color: var(--color-primary); }
-    .metric-success { color: var(--color-accent); }
-    .metric-warning { color: #d97706; }
-    .metric-danger  { color: var(--color-secondary); }
-    .metric-info    { color: var(--color-primary-light); }
-    .metric-purple  { color: #6b46c1; }
-
-    /* ── Mode badges ─────────────────────────────────────────────── */
+    /* ── Mode badges ── */
     .mode-shadow { background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 3px; display: inline-block; }
     .mode-live   { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 3px; display: inline-block; }
 
-    /* ── State pills ─────────────────────────────────────────────── */
+    /* ── State/priority pills ── */
     .state-pill { font-size: .65rem; font-weight: 700; border-radius: 3px; padding: 2px 7px; display: inline-block; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
-    .s-ELIGIBLE              { background: #edf2f7; color: #4a5568; }
-    .s-QUEUED                { background: #ebf4ff; color: #2b6cb0; }
-    .s-CONTACTED             { background: #e6f6ff; color: #2b6cb0; }
-    .s-NO_RESPONSE           { background: #fffbeb; color: #b45309; }
-    .s-RETRY                 { background: #fff7ed; color: #c05621; }
-    .s-RESPONDED             { background: #f0fff4; color: #276749; }
-    .s-ANALYZED              { background: #faf5ff; color: #6b46c1; }
-    .s-INTERVENTION_REQUIRED { background: #fff5f5; color: #c53030; }
-    .s-RESOLVED              { background: #f0fff4; color: #276749; }
-    .s-CLOSED                { background: #f7fafc; color: #718096; }
-    .s-other                 { background: #f7fafc; color: #718096; }
-
-    /* ── Priority level badges ──────────────────────────────────── */
+    .s-ELIGIBLE { background: #edf2f7; color: #4a5568; } .s-QUEUED { background: #ebf4ff; color: #2b6cb0; } .s-CONTACTED { background: #e6f6ff; color: #2b6cb0; }
+    .s-NO_RESPONSE { background: #fffbeb; color: #b45309; } .s-RETRY { background: #fff7ed; color: #c05621; } .s-RESPONDED { background: #f0fff4; color: #276749; }
+    .s-ANALYZED { background: #faf5ff; color: #6b46c1; } .s-INTERVENTION_REQUIRED { background: #fff5f5; color: #c53030; }
+    .s-RESOLVED { background: #f0fff4; color: #276749; } .s-CLOSED { background: #f7fafc; color: #718096; }
     .p-badge { font-size: .62rem; font-weight: 700; border-radius: 3px; padding: 2px 7px; display: inline-block; text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
-    .p-URGENT { background: #fff5f5; color: #c53030; border: 1px solid #fc8181; }
-    .p-HIGH   { background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; }
-    .p-MEDIUM { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; }
-    .p-LOW    { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
+    .p-URGENT { background: #fff5f5; color: #c53030; border: 1px solid #fc8181; } .p-HIGH { background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; }
+    .p-MEDIUM { background: #ebf8ff; color: #2b6cb0; border: 1px solid #90cdf4; } .p-LOW { background: #f0fff4; color: #276749; border: 1px solid #9ae6b4; }
 
-    /* ── Alert rows ──────────────────────────────────────────────── */
+    /* ── Alert rows ── */
     .alert-item { border-left: 3px solid; padding: .6rem .85rem; margin-bottom: .5rem; border-radius: 0 4px 4px 0; }
     .alert-critical { border-color: var(--color-secondary); background: #fff5f5; }
     .alert-warning  { border-color: #d97706; background: #fffbeb; }
     .alert-info     { border-color: var(--color-primary-light); background: #ebf8ff; }
 
-    /* ── KPI / stat boxes ────────────────────────────────────────── */
-    .kpi-box { background: var(--color-bg-alt); border: 1px solid var(--color-border); border-radius: 6px; padding: .8rem 1rem; }
-    .kpi-label { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-light); margin-bottom: .25rem; }
-    .kpi-val   { font-size: 1.75rem; font-weight: 700; line-height: 1; color: var(--color-primary); }
-    .stat-box  { background: var(--color-bg-alt); border: 1px solid var(--color-border); border-radius: 5px; padding: .35rem .7rem; }
-    .stat-label { font-size: .6rem; text-transform: uppercase; letter-spacing: .4px; color: var(--color-text-light); display: block; }
-    .stat-val   { font-size: .95rem; font-weight: 700; color: var(--color-text); }
+    /* ── Data table ── */
+    .dt-container { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; }
+    .dt-toolbar { padding: .6rem .85rem; border-bottom: 1px solid var(--color-border); background: var(--color-bg-alt); display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .dt-table-wrap { overflow-x: auto; max-height: 520px; }
+    .dt-table { margin: 0; font-size: .8rem; }
+    .dt-table thead th { position: sticky; top: 0; background: var(--color-bg-alt); border-bottom: 2px solid var(--color-border); font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; cursor: pointer; padding: .5rem .75rem; z-index: 1; }
+    .dt-table thead th:hover { background: #edf2f7; }
+    .dt-table tbody tr { cursor: pointer; }
+    .dt-table tbody tr:hover { background: rgba(43,108,176,.05) !important; }
+    .dt-table td { padding: .45rem .75rem; vertical-align: middle; border-color: var(--color-border); }
+    .dt-footer { padding: .5rem .85rem; border-top: 1px solid var(--color-border); background: var(--color-bg-alt); display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; font-size: .72rem; color: var(--color-text-light); }
 
-    /* ── Action console ──────────────────────────────────────────── */
+    /* ── Progress bars ── */
+    .progress { height: 10px; border-radius: 5px; }
+
+    /* ── Right drawer (offcanvas) ── */
+    .offcanvas-end { width: 560px !important; }
+    .drawer-tabs .nav-link { font-size: .7rem; padding: .35rem .7rem; }
+    .drawer-tab-pane { display: none; } .drawer-tab-pane.active { display: block; }
+
+    /* ── Timeline ── */
+    .tl-item { border-left: 2px solid var(--color-border); padding: 0 0 1rem 1rem; position: relative; }
+    .tl-item::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary-light); position: absolute; left: -5px; top: 4px; }
+    .tl-item.tl-OUTREACH::before { background: #2b6cb0; } .tl-item.tl-STATE_CHANGE::before { background: #6b46c1; }
+    .tl-item.tl-NOTE::before { background: #38a169; } .tl-item.tl-AI_INSIGHT::before { background: #d97706; }
+    .tl-item.tl-COMMUNICATION::before { background: #e53e3e; }
+    .tl-ts { font-size: .65rem; color: var(--color-text-light); }
+    .tl-label { font-size: .8rem; font-weight: 600; }
+    .tl-detail { font-size: .75rem; color: var(--color-text-light); }
+
+    /* ── Collapse panel ── */
+    .expand-toggle { background: none !important; border: none !important; padding: 0 !important; color: var(--color-text-light); font-size: .72rem; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 3px; cursor: pointer; flex-shrink: 0; transition: transform .2s ease, color .15s; }
+    .expand-toggle:hover { color: var(--color-primary-light); }
+    .expand-toggle[aria-expanded="true"] { transform: rotate(180deg); color: var(--color-primary-light); }
+    .card-expand-panel { border-top: 1px solid var(--color-border); background: var(--color-bg-alt); }
+    .card-footer-link { font-size: .71rem; color: var(--color-text-light); border-top: 1px solid var(--color-border); padding: .5rem 1rem; text-align: right; background: var(--color-bg-alt); }
+
+    /* ── Misc ── */
     #action-console { font-family: monospace; font-size: .72rem; background: #1a202c; color: #e2e8f0; border-radius: 6px; padding: .6rem .85rem; max-height: 100px; overflow-y: auto; }
     #action-console p { margin: 0; line-height: 1.65; }
-
-    /* ── Modal header ────────────────────────────────────────────── */
-    .modal-header { background: var(--color-bg-alt); border-bottom: 1px solid var(--color-border); }
-    .modal-title  { font-size: .82rem !important; font-weight: 700 !important; text-transform: uppercase; letter-spacing: .5px; color: var(--color-primary); }
-
-    /* ── Accessibility ───────────────────────────────────────────── */
     :focus-visible { outline: 3px solid var(--color-primary-light); outline-offset: 2px; }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
-    @media (max-width: 992px) { .btn, .nav-pill, button { min-height: 44px; } }
-    @media (prefers-contrast: high) { .card, .kpi-box, .stat-box { border-width: 2px !important; } body { color: #000; } }
+    @media (max-width: 992px) { .btn, button { min-height: 44px; } .offcanvas-end { width: 100% !important; } }
+    @media (prefers-contrast: high) { .card, .kpi-box { border-width: 2px !important; } body { color: #000; } }
+    .payment-risk-HIGH { color: #c53030; font-weight: 700; }
+    .payment-risk-MEDIUM { color: #b45309; font-weight: 600; }
+    .payment-risk-CLEAR { color: #276749; }
+    .bundle-badge { background: #faf5ff; color: #6b46c1; border: 1px solid #d6bcfa; font-size: .62rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
   </style>
 </head>
 <body>
 
-<!-- ── Navbar ──────────────────────────────────────────────────────── -->
+<!-- ── Navbar ── -->
 <nav class="ssip-nav navbar sticky-top py-0">
   <div class="container-fluid px-3 gap-2 flex-wrap" style="min-height:52px">
     <span class="navbar-brand mb-0">SSIP Ops Dashboard</span>
@@ -148,1594 +125,1145 @@
       <div class="nav-pill" id="hp-db"><span class="dot dot-dim"></span>PostgreSQL</div>
       <div class="nav-pill" id="hp-mssql"><span class="dot dot-dim"></span>SQL Server</div>
       <div class="nav-pill" id="hp-sched"><span class="dot dot-dim"></span>Scheduler</div>
-      <button class="btn btn-sm btn-outline-light" id="expand-all-btn" onclick="toggleAllCards()" style="font-size:.72rem;padding:3px 12px">⊞ Expand All</button>
-      <button class="btn btn-sm btn-outline-light" onclick="loadAll()" style="font-size:.72rem;padding:3px 12px">↺ Refresh</button>
+      <!-- Role Picker -->
+      <select id="role-picker" class="form-select form-select-sm" style="width:auto;font-size:.72rem;padding:3px 8px" onchange="setRole(this.value)" title="Role-based view">
+        <option value="Support">Support (All)</option>
+        <option value="Mentor">Mentor</option>
+        <option value="Instructor">Instructor</option>
+        <option value="Placement Team">Placement Team</option>
+      </select>
+      <button class="btn btn-sm btn-outline-light" onclick="refreshActiveTab()" style="font-size:.72rem;padding:3px 12px">↺ Refresh</button>
       <span class="text-white-50" style="font-size:.67rem" id="last-refresh">—</span>
     </div>
   </div>
 </nav>
 
+<!-- ── Dashboard Tabs ── -->
+<div class="container-xl py-0 px-0 px-md-0" style="max-width:100%">
+  <ul class="nav dash-tabs bg-white border-bottom px-3 gap-1 flex-nowrap overflow-x-auto" style="white-space:nowrap">
+    <li class="nav-item"><button class="nav-link active" onclick="switchTab('overview',this)">Overview</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('kpi',this)">KPI</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('newcomers',this)">Newcomers</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('engagement',this)">Engagement</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('hwrisk',this)">HW Risk</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('cap',this)">CAP Hopefuls</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('launch',this)">Launch Hopefuls</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('placement',this)">Placement Hopefuls</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('payment',this)">Payment</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('outreach',this)">Outreach</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchTab('ai',this)">AI Intervention</button></li>
+  </ul>
+</div>
+
 <div class="container-xl py-4 px-3 px-md-4">
 
-  <!-- System Status -->
+<!-- ════════════════════ TAB: OVERVIEW ════════════════════ -->
+<div id="tab-overview" class="tab-pane active">
   <div class="section-label mb-3 mt-1">System Status</div>
   <div class="row g-3 mb-4">
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailHealth()">
-        <div class="card-header">
-          <span>System Health</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-health">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-health" aria-expanded="false" onclick="event.stopPropagation();loadExpandHealth()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary" id="sum-health">Loading…</div>
-          <div id="met-health" class="mt-2"></div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-health">
-          <div class="expand-inner" id="expand-health-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
+      <div class="card border-0 shadow-sm summary-card h-100">
+        <div class="card-header"><span>System Health</span><span class="badge bg-secondary" id="badge-health">—</span></div>
+        <div class="card-body"><div id="sum-health" class="small text-muted">Loading…</div><div id="met-health" class="mt-2"></div></div>
+        <div class="card-footer-link">Mode: <span id="mode-badge-ov">—</span></div>
       </div>
     </div>
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailAlerts()">
-        <div class="card-header">
-          <span>Operational Alerts</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-alerts">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-alerts" aria-expanded="false" onclick="event.stopPropagation();loadExpandAlerts()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary" id="sum-alerts">Loading…</div>
-          <div id="met-alerts" class="mt-2"></div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-alerts">
-          <div class="expand-inner" id="expand-alerts-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
+      <div class="card border-0 shadow-sm summary-card h-100">
+        <div class="card-header"><span>Operational Alerts</span><span class="badge bg-secondary" id="badge-alerts">—</span></div>
+        <div class="card-body"><div id="sum-alerts" class="small text-muted">Loading…</div></div>
+        <div class="card-footer-link">Check alerts below ↓</div>
       </div>
     </div>
     <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailKPI()">
-        <div class="card-header">
-          <span>KPI Summary</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-kpi">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-kpi" aria-expanded="false" onclick="event.stopPropagation();loadExpandKpi()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary" id="sum-kpi">Loading…</div>
-          <div id="met-kpi" class="mt-2"></div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-kpi">
-          <div class="expand-inner" id="expand-kpi-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
+      <div class="card border-0 shadow-sm summary-card h-100">
+        <div class="card-header"><span>Pipeline Summary</span><span class="badge bg-secondary" id="badge-kpi">—</span></div>
+        <div class="card-body"><div id="sum-kpi" class="small text-muted">Loading…</div><div id="met-kpi" class="mt-2"></div></div>
+        <div class="card-footer-link">View KPI tab →</div>
       </div>
     </div>
   </div>
 
-  <!-- Pipeline -->
-  <div class="section-label mb-3">Pipeline</div>
-  <div class="row g-3 mb-4">
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailStates()">
-        <div class="card-header">
-          <span>State Distribution</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-states">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-states" aria-expanded="false" onclick="event.stopPropagation();loadExpandStates()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary" id="sum-states">Loading…</div>
-          <div id="met-states" class="mt-2"></div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-states">
-          <div class="expand-inner" id="expand-states-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailChannels()">
-        <div class="card-header">
-          <span>Channel Performance</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark" id="badge-channels">SHADOW</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-channels" aria-expanded="false" onclick="event.stopPropagation();loadExpandChannels()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary" id="sum-channels">Loading…</div>
-          <div id="met-channels" class="mt-2"></div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-channels">
-          <div class="expand-inner" id="expand-channels-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailActivity()">
-        <div class="card-header">
-          <span>Recent Activity</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-activity">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-activity" aria-expanded="false" onclick="event.stopPropagation();loadExpandActivity()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary" id="sum-activity">Loading…</div>
-          <div id="met-activity" class="mt-2"></div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-activity">
-          <div class="expand-inner" id="expand-activity-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-  </div>
+  <!-- Alerts list -->
+  <div class="section-label mb-3">Active Alerts</div>
+  <div id="alerts-list" class="mb-4"><p class="text-muted small">Loading…</p></div>
 
-  <!-- Actions -->
-  <div class="section-label mb-3">Actions</div>
-  <div class="row g-3 mb-4">
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailStudents()">
-        <div class="card-header">
-          <span>Student Cases</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-info text-dark">INFO</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-students" aria-expanded="false" onclick="event.stopPropagation();initExpandStudents()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary">Look up any student by ID</div>
-          <div class="card-summary mt-1" style="font-size:.76rem">Outreach history · state transitions · risk level</div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-students">
-          <div class="expand-inner" id="expand-students-content"></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailActions()">
-        <div class="card-header">
-          <span>Manual Actions</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark">SHADOW</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-actions" aria-expanded="false" onclick="event.stopPropagation();initExpandActions()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary">Close · Retry · Escalate · Resolve</div>
-          <div class="card-summary mt-1" style="font-size:.76rem">All actions validated and logged</div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-actions">
-          <div class="expand-inner" id="expand-actions-content"></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailTrigger()">
-        <div class="card-header">
-          <span>Trigger Outreach Batch</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-warning text-dark">SHADOW</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-trigger" aria-expanded="false" onclick="event.stopPropagation();initExpandTrigger()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="card-summary">SQL · SSRS · SSIS · Post Completion</div>
-          <div class="card-summary mt-1" style="font-size:.76rem">No real sends in SHADOW mode</div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-trigger">
-          <div class="expand-inner" id="expand-trigger-content"></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-    <div class="col-12">
-      <div class="card border-0 shadow-sm summary-card" onclick="detailSync()">
-        <div class="card-header">
-          <span>SQL Server Sync</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-sync">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-sync" aria-expanded="false" onclick="event.stopPropagation();initExpandSync()" title="Expand inline">▼</button>
-          </div>
-        </div>
-        <div class="card-body py-2">
-          <div class="card-summary" id="sum-sync">Checking configuration…</div>
-        </div>
-        <div class="collapse card-expand-panel" id="expand-sync">
-          <div class="expand-inner" id="expand-sync-content"></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
-      </div>
-    </div>
-  </div>
+  <!-- Work queue summary -->
+  <div class="section-label mb-3">Work Queues</div>
+  <div id="work-queue-summary" class="row g-2 mb-4"></div>
 
-  <!-- Operations -->
-  <div class="section-label mb-3">Operations</div>
+  <!-- GHL Sync + Manual Sync -->
+  <div class="section-label mb-3">Data Sync</div>
   <div class="row g-3 mb-4">
     <div class="col-md-6">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailSourceSummary()">
-        <div class="card-header">
-          <span>Source Analysis</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-source">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-source" aria-expanded="false" onclick="event.stopPropagation();loadExpandSource()" title="Expand inline">▼</button>
-          </div>
-        </div>
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header">SQL Server Sync</div>
         <div class="card-body">
-          <div class="card-summary" id="sum-source">Loading…</div>
-          <div id="met-source" class="mt-2"></div>
+          <button class="btn btn-sm btn-outline-primary me-2" onclick="syncMssql()">Sync Students</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="syncInterviewPrep()">Sync Interview Prep</button>
+          <div id="sync-result" class="mt-2 small"></div>
         </div>
-        <div class="collapse card-expand-panel" id="expand-source">
-          <div class="expand-inner" id="expand-source-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
       </div>
     </div>
     <div class="col-md-6">
-      <div class="card border-0 shadow-sm summary-card h-100" onclick="detailWorkQueue()">
-        <div class="card-header">
-          <span>Work Queue</span>
-          <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-secondary" id="badge-workqueue">—</span>
-            <button class="expand-toggle" data-bs-toggle="collapse" data-bs-target="#expand-workqueue" aria-expanded="false" onclick="event.stopPropagation();initExpandWorkQueue()" title="Expand inline">▼</button>
-          </div>
-        </div>
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header">GHL Sync Status <span class="mode-shadow ms-1">READ-ONLY</span></div>
         <div class="card-body">
-          <div class="card-summary" id="sum-workqueue">Loading…</div>
-          <div id="met-workqueue" class="mt-2"></div>
+          <div id="ghl-sync-status" class="small text-muted mb-2">Loading…</div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="syncGHLBatch()">Sync All GHL Messages</button>
+          <div id="ghl-sync-result" class="mt-2 small"></div>
         </div>
-        <div class="collapse card-expand-panel" id="expand-workqueue">
-          <div class="expand-inner" id="expand-workqueue-content"><p class="text-muted small mb-0">Loading…</p></div>
-        </div>
-        <div class="card-footer-link">View details →</div>
       </div>
     </div>
   </div>
 
-</div>
-
-<!-- ── Batch Preview Modal ──────────────────────────────────────── -->
-<div class="modal fade" id="batchPreviewModal" tabindex="-1" role="dialog" aria-modal="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Batch Preview <span class="mode-shadow ms-2">SHADOW</span></h5>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal" aria-label="Close"></button>
+  <!-- Manual Actions -->
+  <div class="section-label mb-3">Manual Actions <span class="mode-shadow ms-1">SHADOW</span></div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header">Student Action Console</div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-6"><input id="action-uid" type="number" class="form-control form-control-sm" placeholder="Student ID"/></div>
+            <div class="col-6">
+              <select id="action-type" class="form-select form-select-sm">
+                <option value="CLOSE_CASE">Close Case</option>
+                <option value="FORCE_RETRY">Force Retry</option>
+                <option value="ESCALATE">Escalate</option>
+                <option value="BOOK_MEETING">Book Meeting</option>
+              </select>
+            </div>
+            <div class="col-12"><input id="action-notes" type="text" class="form-control form-control-sm" placeholder="Notes (optional)"/></div>
+            <div class="col-12"><button class="btn btn-sm btn-primary" onclick="runAction()">Execute Action</button></div>
+          </div>
+          <div id="action-console" class="mt-2"><p class="text-muted">Action log…</p></div>
+        </div>
       </div>
-      <div class="modal-body" id="batch-preview-body" style="background:var(--color-bg)">
-        <p class="text-center text-muted py-3">Loading preview…</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-sm btn-primary" id="batch-run-btn" onclick="executeBatch()">Run Batch <span class="mode-shadow ms-1">SHADOW</span></button>
+    </div>
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header">Trigger Outreach</div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-8">
+              <select id="path-select" class="form-select form-select-sm"><option>Loading paths…</option></select>
+            </div>
+            <div class="col-4"><input id="outreach-limit" type="number" value="10" class="form-control form-control-sm" placeholder="Limit"/></div>
+            <div class="col-12">
+              <button class="btn btn-sm btn-outline-primary me-1" onclick="previewBatch()">Preview</button>
+              <button class="btn btn-sm btn-primary" onclick="runBatch()">Run Batch</button>
+            </div>
+          </div>
+          <div id="batch-result" class="mt-2 small"></div>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- ── Modal ───────────────────────────────────────────────────────── -->
-<div class="modal fade" id="mainModal" tabindex="-1" role="dialog" aria-modal="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modal-title">Detail</h5>
-        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="modal-body" style="background:var(--color-bg)">
-        <p class="text-center text-muted py-3">Loading…</p>
+  <!-- Recent Activity -->
+  <div class="section-label mb-3">Recent Activity</div>
+  <div class="dt-container">
+    <div class="dt-table-wrap">
+      <table class="table table-hover dt-table mb-0">
+        <thead><tr><th>Time</th><th>Student</th><th>Channel</th><th>Action</th><th>Mode</th><th>State</th></tr></thead>
+        <tbody id="activity-tbody"><tr><td colspan="6" class="text-muted text-center py-3">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div><!-- /tab-overview -->
+
+<!-- ════════════════════ TAB: KPI ════════════════════ -->
+<div id="tab-kpi" class="tab-pane">
+  <div class="section-label mb-3">Key Performance Indicators</div>
+  <div id="kpi-cards" class="row g-3 mb-4"></div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header">Segment Distribution</div>
+        <div class="card-body"><canvas id="chart-segments" height="220"></canvas></div>
       </div>
     </div>
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header">HW Risk Distribution</div>
+        <div class="card-body"><canvas id="chart-hwrisk" height="220"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header">Section Distribution</div>
+        <div class="card-body"><div id="section-chart-wrap"><canvas id="chart-sections" height="220"></canvas></div></div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header">Outreach Funnel</div>
+        <div class="card-body"><canvas id="chart-funnel" height="220"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div><!-- /tab-kpi -->
+
+<!-- ════════ SEGMENT TABS (shared table template) ════════ -->
+<div id="tab-newcomers"  class="tab-pane"><div id="dt-newcomers"></div></div>
+<div id="tab-engagement" class="tab-pane"><div id="dt-engagement"></div></div>
+<div id="tab-hwrisk"     class="tab-pane"><div id="dt-hwrisk"></div></div>
+<div id="tab-cap"        class="tab-pane"><div id="dt-cap"></div></div>
+<div id="tab-launch"     class="tab-pane"><div id="dt-launch"></div></div>
+<div id="tab-placement"  class="tab-pane"><div id="dt-placement"></div></div>
+
+<!-- ════════════════════ TAB: PAYMENT ════════════════════ -->
+<div id="tab-payment" class="tab-pane">
+  <div class="section-label mb-3">Payment Reconciliation
+    <span class="badge bg-info text-dark ms-2" style="font-size:.62rem">Bundle Deal Fix Active</span>
+  </div>
+  <div id="payment-summary-cards" class="row g-3 mb-4"></div>
+  <div id="dt-payment"></div>
+</div>
+
+<!-- ════════════════════ TAB: OUTREACH ════════════════════ -->
+<div id="tab-outreach" class="tab-pane">
+  <div class="section-label mb-3">Outreach Activity</div>
+  <div id="outreach-stats" class="row g-3 mb-3"></div>
+  <div id="dt-outreach"></div>
+</div>
+
+<!-- ════════════════════ TAB: AI INTERVENTION ════════════════════ -->
+<div id="tab-ai" class="tab-pane">
+  <div class="section-label mb-3">AI Intervention Dashboard</div>
+  <p class="text-muted small mb-3">Click any student row to generate/view AI insights in the right drawer.</p>
+  <div id="dt-ai"></div>
+</div>
+
+</div><!-- /container -->
+
+<!-- ════════════════════ RIGHT DRAWER (Offcanvas) ════════════════════ -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="studentDrawer" aria-labelledby="drawerTitle">
+  <div class="offcanvas-header border-bottom py-2">
+    <div>
+      <h6 class="offcanvas-title mb-0" id="drawerTitle" style="font-size:.85rem;font-weight:700;color:var(--color-primary)">Student Detail</h6>
+      <span class="small text-muted" id="drawer-subtitle"></span>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <!-- Drawer tabs -->
+  <ul class="nav nav-tabs drawer-tabs px-2 pt-2 bg-white border-bottom gap-1 flex-nowrap overflow-x-auto">
+    <li class="nav-item"><button class="nav-link active" onclick="switchDrawerTab('info',this)">Info</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('mentor',this)">Mentor</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('instructor',this)">Instructor</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('supermentor',this)">Super Mentor</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('timeline',this)">Timeline</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('outreach',this)">Outreach</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('insights',this)">AI Insights</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('interviewprep',this)">Interview</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('payment',this)">Payment</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('notes',this)">Notes</button></li>
+  </ul>
+  <div class="offcanvas-body p-0" style="overflow-y:auto">
+    <div id="drawer-info"        class="drawer-tab-pane active p-3"></div>
+    <div id="drawer-mentor"      class="drawer-tab-pane p-3"></div>
+    <div id="drawer-instructor"  class="drawer-tab-pane p-3"></div>
+    <div id="drawer-supermentor" class="drawer-tab-pane p-3"></div>
+    <div id="drawer-timeline"    class="drawer-tab-pane p-3"></div>
+    <div id="drawer-outreach"    class="drawer-tab-pane p-3"></div>
+    <div id="drawer-insights"    class="drawer-tab-pane p-3"></div>
+    <div id="drawer-interviewprep" class="drawer-tab-pane p-3"></div>
+    <div id="drawer-payment"     class="drawer-tab-pane p-3"></div>
+    <div id="drawer-notes"       class="drawer-tab-pane p-3"></div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  const STATE_ORDER = [
-    'ELIGIBLE','QUEUED','CONTACTED','NO_RESPONSE','RETRY',
-    'RESPONDED','ANALYZED','INTERVENTION_REQUIRED','RESOLVED','CLOSED',
-  ];
+// ════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════
+const S = {
+  activeTab: 'overview',
+  role: sessionStorage.getItem('ssip_role') || 'Support',
+  drawerUserId: null,
+  drawerData: null,
+  charts: {},
+  refreshTimer: null,
+  tabLoaded: {},
+};
 
-  let _execMode    = 'SHADOW';
-  let _bsModal     = null;
-  let _allExpanded = false;
-  let _bsBatchModal = null;
-  let _batchPreviewCheckpoint = '';
+// ════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, opts);
+  return r.json();
+};
 
-  // Track which static panels have been initialized
-  const _initDone = {};
+const fmt = v => v == null ? '—' : v;
+const fmtPct = v => v == null ? '—' : (+v).toFixed(1) + '%';
+const fmtCur = v => v == null ? '—' : '$' + (+v).toFixed(2);
+const fmtDate = v => v ? new Date(v).toLocaleDateString() : '—';
+const fmtTs = v => v ? new Date(v).toLocaleString() : '—';
 
-  function getModal() {
-    if (!_bsModal) _bsModal = new bootstrap.Modal(document.getElementById('mainModal'));
-    return _bsModal;
-  }
-  function getBatchModal() {
-    if (!_bsBatchModal) _bsBatchModal = new bootstrap.Modal(document.getElementById('batchPreviewModal'));
-    return _bsBatchModal;
-  }
-  function priorityBadge(level) {
-    const map = { URGENT: 'p-URGENT', HIGH: 'p-HIGH', MEDIUM: 'p-MEDIUM', LOW: 'p-LOW' };
-    return `<span class="p-badge ${map[level] || 'p-badge'}">${level || '—'}</span>`;
-  }
+function escH(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
-  function sc(s) {
-    const m = {
-      ELIGIBLE:'s-ELIGIBLE', QUEUED:'s-QUEUED', CONTACTED:'s-CONTACTED',
-      NO_RESPONSE:'s-NO_RESPONSE', RETRY:'s-RETRY', RESPONDED:'s-RESPONDED',
-      ANALYZED:'s-ANALYZED', INTERVENTION_REQUIRED:'s-INTERVENTION_REQUIRED',
-      RESOLVED:'s-RESOLVED', CLOSED:'s-CLOSED',
-    };
-    return (m[s] || 's-other') + ' state-pill';
-  }
-  function modeSpan(m) {
-    return `<span class="${m === 'SHADOW' ? 'mode-shadow' : 'mode-live'}">${m || '—'}</span>`;
-  }
-  function pct(v)  { return (v != null && !isNaN(v)) ? (v * 100).toFixed(1) + '%' : '—'; }
-  function ts(s)   { return s ? new Date(s).toLocaleString() : '—'; }
-  function sp(s)   { return (s || '').replace(/_/g, ' '); }
-  function dotHtml(ok) {
-    return `<span class="dot ${ok ? 'dot-ok' : 'dot-err'}" style="margin-right:5px"></span>`;
-  }
+function statePill(state) {
+  const cls = 's-' + (state||'').replace(/\s/g,'_');
+  return `<span class="state-pill ${cls}">${escH(state||'—')}</span>`;
+}
 
-  async function api(path, opts = {}) {
-    const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-    return r.json();
-  }
+function priorityBadge(level) {
+  return `<span class="p-badge p-${level||'LOW'}">${escH(level||'LOW')}</span>`;
+}
 
-  // ── Badge / summary helpers ────────────────────────────────────
-  const BADGE_CLASS = {
-    ok:       'bg-success',
-    info:     'bg-info text-dark',
-    warning:  'bg-warning text-dark',
-    critical: 'bg-danger',
-    shadow:   'bg-warning text-dark',
-    dim:      'bg-secondary',
+function progressBar(val, max, cls='bg-primary') {
+  const pct = max > 0 ? Math.min(100, Math.round(val/max*100)) : 0;
+  return `<div class="progress" style="min-width:80px"><div class="progress-bar ${cls}" style="width:${pct}%" title="${val}/${max}"></div></div>`;
+}
+
+function setRole(role) {
+  S.role = role;
+  sessionStorage.setItem('ssip_role', role);
+  S.tabLoaded = {};
+  loadTab(S.activeTab);
+}
+
+// ════════════════════════════════════════════════════════
+// TAB MANAGEMENT
+// ════════════════════════════════════════════════════════
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelectorAll('.dash-tabs .nav-link').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  S.activeTab = name;
+  loadTab(name);
+}
+
+function loadTab(name) {
+  const loaders = {
+    overview:   loadOverview,
+    kpi:        loadKpi,
+    newcomers:  () => loadSegmentTab('newcomers', 'NEWCOMERS', 'Newcomers — joined within last 90 days'),
+    engagement: () => loadEngagementTab(),
+    hwrisk:     () => loadHwRiskTab(),
+    cap:        () => loadSegmentTab('cap', 'CAP_HOPEFULS', 'CAP Hopefuls — IPBC students, attendance > 30%'),
+    launch:     () => loadSegmentTab('launch', 'LAUNCH_HOPEFULS', 'Launch Hopefuls — CAP students, attendance > 55%'),
+    placement:  () => loadSegmentTab('placement', 'PLACEMENT_HOPEFULS', 'Placement Hopefuls — Launch students, attendance > 70%'),
+    payment:    loadPaymentTab,
+    outreach:   loadOutreachTab,
+    ai:         loadAiTab,
   };
-  function setBadge(id, type, text) {
-    const el = document.getElementById('badge-' + id);
-    if (!el) return;
-    el.className = 'badge ' + (BADGE_CLASS[type] || BADGE_CLASS.dim);
-    el.textContent = text;
-  }
-  function setSummary(id, html) {
-    const el = document.getElementById('sum-' + id);
-    if (el) el.innerHTML = html;
-  }
-  function setMetric(id, html) {
-    const el = document.getElementById('met-' + id);
-    if (el) el.innerHTML = html;
-  }
+  (loaders[name] || (() => {}))();
+}
 
-  // ── Modal helpers ──────────────────────────────────────────────
-  function openModal(title, bodyHtml) {
-    document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-body').innerHTML = bodyHtml;
-    getModal().show();
-  }
+function refreshActiveTab() {
+  S.tabLoaded[S.activeTab] = false;
+  loadTab(S.activeTab);
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+}
 
-  function kpiBox(label, val, cls) {
-    return `<div class="col-6 col-sm-3">
-      <div class="kpi-box">
-        <div class="kpi-label">${label}</div>
-        <div class="kpi-val ${cls || ''}">${val}</div>
-      </div>
-    </div>`;
-  }
-  function infoBox(label, valueHtml) {
-    return `<div class="col-sm-6 col-md-4">
-      <div class="kpi-box">
-        <div class="kpi-label">${label}</div>
-        <div style="font-size:.88rem;font-weight:600;color:var(--color-text);margin-top:.2rem">${valueHtml}</div>
-      </div>
-    </div>`;
-  }
+// ════════════════════════════════════════════════════════
+// DATA TABLE ENGINE
+// ════════════════════════════════════════════════════════
+function buildTable(cfg) {
+  // cfg: { containerId, rows, cols, onRow, title, note }
+  const { containerId, rows, cols, onRow, title = '', note = '' } = cfg;
+  const container = document.getElementById(containerId);
+  if (!container) return;
 
-  // ── Expand All / Collapse All ──────────────────────────────────
-  function toggleAllCards() {
-    _allExpanded = !_allExpanded;
-    document.querySelectorAll('.card-expand-panel').forEach(panel => {
-      const bsc = bootstrap.Collapse.getOrCreateInstance(panel, { toggle: false });
-      if (_allExpanded) bsc.show(); else bsc.hide();
+  let filtered = [...rows];
+  let sortKey = null, sortDir = 1;
+  let page = 0;
+  const pageSize = 25;
+  let searchTerm = '';
+
+  function applyFilters() {
+    filtered = rows.filter(r => {
+      if (!searchTerm) return true;
+      return Object.values(r).some(v => String(v||'').toLowerCase().includes(searchTerm));
     });
-    // sync aria-expanded on all toggle buttons
-    document.querySelectorAll('.expand-toggle').forEach(btn => {
-      btn.setAttribute('aria-expanded', _allExpanded ? 'true' : 'false');
+    if (sortKey !== null) {
+      filtered.sort((a,b) => {
+        const av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
+        if (typeof av === 'number') return (av - bv) * sortDir;
+        return String(av).localeCompare(String(bv)) * sortDir;
+      });
+    }
+    page = 0;
+    render();
+  }
+
+  function render() {
+    const start = page * pageSize, end = start + pageSize;
+    const pageRows = filtered.slice(start, end);
+    const totalPages = Math.ceil(filtered.length / pageSize);
+
+    const tbody = container.querySelector('tbody');
+    tbody.innerHTML = pageRows.length === 0
+      ? `<tr><td colspan="${cols.length}" class="text-muted text-center py-4">No records found.</td></tr>`
+      : pageRows.map(r => {
+          const cells = cols.map(c => `<td title="${escH(r[c.key])}">${c.render ? c.render(r) : escH(fmt(r[c.key]))}</td>`).join('');
+          return `<tr onclick="openDrawer(${r.UserID||r.user_id})">${cells}</tr>`;
+        }).join('');
+
+    container.querySelector('.dt-count').textContent = `${filtered.length} of ${rows.length} records`;
+    const pagerEl = container.querySelector('.dt-pager');
+    pagerEl.innerHTML = `
+      <button class="btn btn-sm btn-outline-secondary" onclick="__dtPrev_${containerId}()" ${page===0?'disabled':''}>‹ Prev</button>
+      <span class="mx-2">${page+1} / ${Math.max(1,totalPages)}</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="__dtNext_${containerId}()" ${page>=totalPages-1?'disabled':''}>Next ›</button>
+    `;
+  }
+
+  window[`__dtPrev_${containerId}`] = () => { if (page > 0) { page--; render(); } };
+  window[`__dtNext_${containerId}`] = () => { const tot = Math.ceil(filtered.length/pageSize); if (page < tot-1) { page++; render(); } };
+
+  const headerCells = cols.map((c,i) =>
+    `<th onclick="__dtSort_${containerId}(${i},'${c.key}')" title="Sort by ${c.label}">${escH(c.label)} <span style="opacity:.4;font-size:.7em">⇅</span></th>`
+  ).join('');
+
+  window[`__dtSort_${containerId}`] = (i, key) => {
+    if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; }
+    applyFilters();
+  };
+
+  container.innerHTML = `
+    <div class="dt-container">
+      <div class="dt-toolbar">
+        ${title ? `<span class="fw-semibold me-2">${escH(title)}</span>` : ''}
+        <input type="search" class="form-control form-control-sm" style="max-width:220px" placeholder="Search…" id="search-${containerId}" oninput="__dtSearch_${containerId}(this.value)"/>
+        <span class="ms-auto dt-count text-muted"></span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="__dtExport_${containerId}()" title="Export CSV">⬇ CSV</button>
+      </div>
+      ${note ? `<div class="px-3 py-1 small text-muted bg-light border-bottom">${escH(note)}</div>` : ''}
+      <div class="dt-table-wrap">
+        <table class="table table-hover dt-table">
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="dt-footer">
+        <div class="dt-pager d-flex align-items-center gap-1"></div>
+      </div>
+    </div>
+  `;
+
+  window[`__dtSearch_${containerId}`] = (val) => { searchTerm = val.toLowerCase(); applyFilters(); };
+  window[`__dtExport_${containerId}`] = () => exportCsv(filtered, cols, containerId);
+
+  applyFilters();
+}
+
+function exportCsv(rows, cols, name) {
+  const header = cols.map(c => c.label).join(',');
+  const body = rows.map(r => cols.map(c => `"${String(r[c.key]??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ssip_${name}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ════════════════════════════════════════════════════════
+// OVERVIEW TAB
+// ════════════════════════════════════════════════════════
+async function loadOverview() {
+  // Health
+  const health = await api('/dashboard/health');
+  if (health.data) {
+    const d = health.data;
+    const dbOk = d.db?.connected;
+    document.getElementById('hp-db').innerHTML = `<span class="dot ${dbOk?'dot-ok':'dot-err'}"></span>PostgreSQL`;
+    document.getElementById('hp-mssql').innerHTML = `<span class="dot ${d.mssql?.configured?'dot-ok':'dot-warn'}"></span>SQL Server`;
+    document.getElementById('hp-sched').innerHTML = `<span class="dot ${d.scheduler?.status==='running'?'dot-ok':'dot-warn'}"></span>Scheduler`;
+    const mode = d.execution_mode || 'SHADOW';
+    document.getElementById('exec-badge').textContent = mode;
+    document.getElementById('exec-badge').className = `badge ${mode==='LIVE'?'bg-success':'bg-warning text-dark'}`;
+    document.getElementById('mode-badge-ov').innerHTML = `<span class="${mode==='LIVE'?'mode-live':'mode-shadow'}">${mode}</span>`;
+    document.getElementById('badge-health').className = `badge ${dbOk?'bg-success':'bg-danger'}`;
+    document.getElementById('badge-health').textContent = dbOk ? 'OK' : 'DB ERROR';
+    document.getElementById('sum-health').innerHTML = `DB: ${dbOk?'Connected':'Disconnected'} | Scheduler: ${d.scheduler?.status||'—'} | Last run: ${d.scheduler?.last_run ? fmtTs(d.scheduler.last_run) : 'Never'}`;
+  }
+
+  // Alerts
+  const alerts = await api('/dashboard/alerts');
+  if (alerts.data) {
+    const al = alerts.data.alerts || [];
+    document.getElementById('badge-alerts').textContent = al.length;
+    document.getElementById('badge-alerts').className = `badge ${al.some(a=>a.severity==='CRITICAL')?'bg-danger':al.length?'bg-warning text-dark':'bg-success'}`;
+    document.getElementById('sum-alerts').textContent = `${al.length} active alerts`;
+    document.getElementById('alerts-list').innerHTML = al.length === 0
+      ? '<p class="text-success small">No active alerts.</p>'
+      : al.map(a => `<div class="alert-item alert-${(a.severity||'info').toLowerCase()}"><strong>${escH(a.severity)}</strong> ${escH(a.message)}<br><small class="text-muted">${escH(a.recommended_action||'')}</small></div>`).join('');
+  }
+
+  // KPI Summary
+  const kpi = await api('/dashboard/summary');
+  if (kpi.data) {
+    const d = kpi.data;
+    document.getElementById('badge-kpi').textContent = d.total_tracked || 0;
+    document.getElementById('sum-kpi').innerHTML = `Tracked: ${d.total_tracked} | Attempts: ${d.total_attempts} | Shadow: ${d.shadow_executions}`;
+    const f = d.funnel || {};
+    document.getElementById('met-kpi').innerHTML = `
+      <div class="d-flex gap-2 flex-wrap mt-1">
+        ${[['Tracked',f.tracked],['Contacted',f.contacted],['Responded',f.responded],['Resolved',f.resolved]].map(([l,v]) =>
+          `<div class="kpi-box" style="min-width:70px"><div class="kpi-label">${l}</div><div class="kpi-val" style="font-size:1.1rem">${v||0}</div></div>`
+        ).join('')}
+      </div>`;
+  }
+
+  // Work queue summary
+  const wq = await api('/work-queue/summary');
+  if (wq.data) {
+    const q = wq.data.queues || {};
+    document.getElementById('work-queue-summary').innerHTML = Object.entries(q).map(([name,cnt]) =>
+      `<div class="col-6 col-md-2"><div class="kpi-box text-center"><div class="kpi-label">${escH(name.replace(/_/g,' '))}</div><div class="kpi-val">${cnt}</div></div></div>`
+    ).join('');
+  }
+
+  // GHL sync status
+  const ghl = await api('/ghl-sync/status');
+  if (ghl.data) {
+    const g = ghl.data;
+    document.getElementById('ghl-sync-status').innerHTML = `Configured: ${g.ghl_configured?'Yes':'No'} | Stored: ${g.total_messages_stored} messages | Last sync: ${g.latest_sync_at ? fmtTs(g.latest_sync_at) : 'Never'}<br><small class="text-muted">${escH(g.note||'')}</small>`;
+  }
+
+  // Recent activity
+  const ra = await api('/dashboard/recent-activity?limit=20');
+  if (ra.data) {
+    const items = ra.data.items || [];
+    document.getElementById('activity-tbody').innerHTML = items.length === 0
+      ? '<tr><td colspan="6" class="text-muted text-center py-3">No activity recorded yet.</td></tr>'
+      : items.map(h => `<tr onclick="openDrawer(${h.user_id})">
+          <td>${fmtTs(h.created_at)}</td>
+          <td>#${h.user_id}</td>
+          <td>${escH(h.channel||'—')}</td>
+          <td>${escH(h.action||'—')}</td>
+          <td><span class="${h.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${h.execution_mode}</span></td>
+          <td>${statePill(h.state_after)}</td>
+        </tr>`).join('');
+  }
+
+  // Paths for outreach selector
+  const paths = await api('/source/paths');
+  if (paths.data) {
+    const ps = paths.data.paths || [];
+    const sel = document.getElementById('path-select');
+    sel.innerHTML = ps.map(p => `<option>${escH(p)}</option>`).join('');
+  }
+
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+}
+
+// ════════════════════════════════════════════════════════
+// KPI TAB
+// ════════════════════════════════════════════════════════
+let chartsInit = false;
+async function loadKpi() {
+  const ext = await api('/dashboard/kpi-extended');
+  const d = ext.data || {};
+  if (!d.total_students) {
+    document.getElementById('kpi-cards').innerHTML = '<div class="col-12"><p class="text-muted">No data. Run SQL Server sync first.</p></div>';
+    return;
+  }
+
+  const cards = [
+    ['Total Students', d.total_students, ''],
+    ['Avg Attendance', fmtPct(d.averages?.attendance_pct), ''],
+    ['Avg Efficiency', (d.averages?.efficiency_rating||0).toFixed(1), '/ 100'],
+    ['Avg HWs Behind', (d.averages?.hws_behind||0).toFixed(1), ' HWs'],
+    ['High Engagement', d.engagement?.high_engagement||0, ''],
+    ['With Balance', d.payment?.students_with_balance||0, ''],
+  ];
+  document.getElementById('kpi-cards').innerHTML = cards.map(([l,v,u]) => `
+    <div class="col-md-2 col-6">
+      <div class="kpi-box text-center">
+        <div class="kpi-label">${escH(l)}</div>
+        <div class="kpi-val">${v}${u ? `<span style="font-size:.8rem;color:var(--color-text-light)">${u}</span>` : ''}</div>
+      </div>
+    </div>`).join('');
+
+  // Charts
+  if (!chartsInit) {
+    chartsInit = true;
+    _destroyChart('chart-segments');
+    _destroyChart('chart-hwrisk');
+    _destroyChart('chart-sections');
+    _destroyChart('chart-funnel');
+  }
+
+  const segs = d.segments || {};
+  new Chart(document.getElementById('chart-segments'), {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(segs).map(k => k.replace(/_/g,' ')),
+      datasets: [{ data: Object.values(segs), backgroundColor: ['#2b6cb0','#38a169','#d97706','#6b46c1','#e53e3e'] }],
+    },
+    options: { plugins: { legend: { position:'bottom', labels:{ font:{size:10} } } } },
+  });
+
+  // HW Risk: bar chart
+  const summ = await api('/source/summary');
+  const hwBins = { '0': 0, '1-2': 0, '3-4': 0, '5+': 0 };
+  if (summ.data) {
+    // aggregate from per-path data — use work queue for now
+    const wqAll = await api('/work-queue/all_source?limit=1000');
+    (wqAll.data?.rows||[]).forEach(r => {
+      const h = r.hws_behind||0;
+      if (h === 0) hwBins['0']++;
+      else if (h <= 2) hwBins['1-2']++;
+      else if (h <= 4) hwBins['3-4']++;
+      else hwBins['5+']++;
     });
-    if (_allExpanded) {
-      loadExpandHealth();
-      loadExpandAlerts();
-      loadExpandKpi();
-      loadExpandStates();
-      loadExpandChannels();
-      loadExpandActivity();
-      loadExpandSource();
-      initExpandStudents();
-      initExpandActions();
-      initExpandTrigger();
-      initExpandSync();
-      initExpandWorkQueue();
-    }
-    const btn = document.getElementById('expand-all-btn');
-    if (btn) btn.textContent = _allExpanded ? '⊟ Collapse All' : '⊞ Expand All';
   }
+  new Chart(document.getElementById('chart-hwrisk'), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(hwBins),
+      datasets: [{ label:'Students', data: Object.values(hwBins), backgroundColor: ['#38a169','#d97706','#e53e3e','#c53030'] }],
+    },
+    options: { plugins:{ legend:{display:false} }, scales:{ y:{ beginAtZero:true } } },
+  });
 
-  // ── Inline expand loaders (async) ─────────────────────────────
+  // Sections pie
+  const sects = d.sections || {};
+  new Chart(document.getElementById('chart-sections'), {
+    type: 'bar',
+    data: {
+      labels: Object.keys(sects).slice(0,10),
+      datasets: [{ label:'Students', data: Object.values(sects).slice(0,10), backgroundColor:'#2b6cb0' }],
+    },
+    options: { indexAxis:'y', plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true } } },
+  });
 
-  async function loadExpandHealth() {
-    const el = document.getElementById('expand-health-content');
-    if (!el) return;
-    try {
-      const res = await api('/dashboard/health');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const d = res.data;
-      el.innerHTML = `
-        <div class="d-flex flex-wrap gap-3 align-items-center small mb-2">
-          <span>${dotHtml(d.db?.connected)}<span class="${d.db?.connected ? 'text-success' : 'text-danger'} fw-semibold">PostgreSQL</span></span>
-          <span>${dotHtml(d.mssql?.configured)}<span class="${d.mssql?.configured ? 'text-success' : 'text-warning'} fw-semibold">SQL Server</span></span>
-          <span>${dotHtml(d.scheduler?.status === 'active')}<span class="fw-semibold">Scheduler: ${d.scheduler?.status || '?'}</span></span>
-          ${modeSpan(d.execution_mode)}
-        </div>
-        ${d.mssql?.host ? `<div class="text-muted" style="font-size:.72rem">Host: ${d.mssql.host}</div>` : ''}
-        ${d.scheduler?.last_run ? `<div class="text-muted" style="font-size:.72rem">Last run: ${ts(d.scheduler.last_run)}</div>` : ''}`;
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+  // Funnel
+  const sumR = await api('/dashboard/summary');
+  const f = sumR.data?.funnel || {};
+  new Chart(document.getElementById('chart-funnel'), {
+    type: 'bar',
+    data: {
+      labels: ['Tracked','Contacted','Responded','Resolved'],
+      datasets: [{ label:'Students', data:[f.tracked||0,f.contacted||0,f.responded||0,f.resolved||0], backgroundColor:['#2b6cb0','#38a169','#6b46c1','#d97706'] }],
+    },
+    options: { indexAxis:'y', plugins:{ legend:{display:false} }, scales:{ x:{ beginAtZero:true } } },
+  });
+}
 
-  async function loadExpandAlerts() {
-    const el = document.getElementById('expand-alerts-content');
-    if (!el) return;
-    try {
-      const res = await api('/dashboard/alerts');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const { alerts, count } = res.data;
-      if (!count) {
-        el.innerHTML = '<span class="text-success small">✓ No active alerts</span>';
-        return;
-      }
-      el.innerHTML = alerts.slice(0, 5).map(a => {
-        const sev = (a.severity || '').toLowerCase();
-        return `<div class="d-flex align-items-start gap-2 mb-1 small">
-          <span class="badge ${sev === 'critical' ? 'bg-danger' : sev === 'warning' ? 'bg-warning text-dark' : 'bg-info text-dark'} flex-shrink-0">${a.severity}</span>
-          <span>${a.message}</span>
-        </div>`;
-      }).join('') + (count > 5 ? `<div class="text-muted small mt-1">…and ${count - 5} more</div>` : '');
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+function _destroyChart(id) {
+  const existing = Chart.getChart(id);
+  if (existing) existing.destroy();
+}
 
-  async function loadExpandKpi() {
-    const el = document.getElementById('expand-kpi-content');
-    if (!el) return;
-    try {
-      const res = await api('/dashboard/summary');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const f = res.data.funnel || {};
-      const c = res.data.conversion || {};
-      el.innerHTML = `
-        <div class="row g-2 mb-2">
-          ${[['Tracked', f.tracked ?? '—'], ['Contacted', f.contacted ?? '—'], ['Responded', f.responded ?? '—'],
-             ['No Response', f.no_response ?? '—'], ['Intervention', f.intervention_required ?? '—'], ['Resolved', f.resolved ?? '—']]
-            .map(([l, v]) => `<div class="col-4 col-sm-2 text-center">
-              <div class="fw-bold" style="font-size:1.1rem;color:var(--color-primary)">${v}</div>
-              <div style="font-size:.6rem;color:var(--color-text-light);text-transform:uppercase;letter-spacing:.3px">${l}</div>
-            </div>`).join('')}
-        </div>
-        <div class="d-flex flex-wrap gap-3 small text-muted">
-          <span>Contact rate: <strong>${pct(c.contacted_rate)}</strong></span>
-          <span>Response rate: <strong>${pct(c.response_rate)}</strong></span>
-          <span>Resolution rate: <strong>${pct(c.resolution_rate)}</strong></span>
-        </div>`;
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+// ════════════════════════════════════════════════════════
+// SEGMENT TABS
+// ════════════════════════════════════════════════════════
+const SEGMENT_COLS = [
+  { key:'display_name', label:'Name' },
+  { key:'UserID', label:'ID' },
+  { key:'CurrentSection', label:'Section', render: r => escH(r.CurrentSection||r.PathName||'—') },
+  { key:'AttendancePercentage', label:'Attendance', render: r => {
+    const v = +(r.AttendancePercentage||0);
+    return `${v.toFixed(1)}% ${progressBar(v,100, v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
+  }},
+  { key:'HWsBehind', label:'HWs Behind', render: r => {
+    const v = r.HWsBehind||0;
+    return `<span class="${v>=3?'text-danger':v>=1?'text-warning':''} fw-semibold">${v}</span>`;
+  }},
+  { key:'AvgEffRating', label:'Efficiency', render: r => fmtPct(r.AvgEffRating) },
+  { key:'Past10DaysLogon', label:'10d Logins', render: r => fmt(r.Past10DaysLogon) },
+  { key:'LastActivityDays', label:'Inactive d', render: r => {
+    const v = r.LastActivityDays||0;
+    return `<span class="${v>7?'text-danger':v>3?'text-warning':''}">${v}</span>`;
+  }},
+  { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
+  { key:'IPBCStartDate', label:'Start Date', render: r => fmtDate(r.IPBCStartDate) },
+];
 
-  async function loadExpandStates() {
-    const el = document.getElementById('expand-states-content');
-    if (!el) return;
-    try {
-      const res = await api('/dashboard/summary');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const byState = res.data.by_state || {};
-      const active = STATE_ORDER.filter(s => byState[s]);
-      if (!active.length) { el.innerHTML = '<p class="text-muted small mb-0">No data yet</p>'; return; }
-      el.innerHTML = active.map(s =>
-        `<div class="d-flex justify-content-between align-items-center py-1" style="border-bottom:1px solid var(--color-border)">
-          <span class="${sc(s)}">${sp(s)}</span>
-          <span class="fw-semibold small">${byState[s]}</span>
-        </div>`
-      ).join('');
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+async function loadSegmentTab(tabId, segName, note) {
+  const resp = await api(`/segments/${segName}?role=${encodeURIComponent(S.role)}&limit=1000`);
+  const rows = (resp.data?.rows || []).map(r => ({ ...r, display_name: r.display_name||`#${r.UserID}` }));
+  buildTable({ containerId: `dt-${tabId}`, rows, cols: SEGMENT_COLS, note: `${note} — ${rows.length} students`, title: note.split('—')[0].trim() });
+}
 
-  async function loadExpandChannels() {
-    const el = document.getElementById('expand-channels-content');
-    if (!el) return;
-    try {
-      const res = await api('/dashboard/channel-performance');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const { channels, shadow_mode } = res.data;
-      if (!channels?.length) { el.innerHTML = '<p class="text-muted small mb-0">No outreach history yet</p>'; return; }
-      el.innerHTML = `
-        ${shadow_mode ? '<p class="text-warning small mb-2">All simulated in SHADOW mode</p>' : ''}
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0" style="font-size:.8rem">
-            <thead class="table-light"><tr><th>Channel</th><th>Attempts</th><th>Responses</th><th>Success %</th></tr></thead>
-            <tbody>${channels.map(ch => `<tr>
-              <td class="fw-semibold">${ch.channel}</td>
-              <td>${ch.attempts}</td>
-              <td class="text-success">${ch.responses}</td>
-              <td class="${ch.success_rate > 0 ? 'text-success' : 'text-muted'}">${pct(ch.success_rate)}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+async function loadEngagementTab() {
+  const resp = await api(`/work-queue/all_source?limit=1000`);
+  const rows = (resp.data?.rows || []).map(r => ({
+    ...r,
+    display_name: r.name||`#${r.user_id}`,
+    UserID: r.user_id,
+  }));
+  const cols = [
+    { key:'display_name', label:'Name' },
+    { key:'UserID', label:'ID' },
+    { key:'path', label:'Section', render: r => escH(r.path||'—') },
+    { key:'eff_rating', label:'Efficiency', render: r => {
+      const v = +(r.eff_rating||0);
+      return `${v.toFixed(1)} ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
+    }},
+    { key:'hws_behind', label:'HWs Behind', render: r => {
+      const v = r.hws_behind||0;
+      return `<span class="${v>=3?'text-danger fw-bold':v>=1?'text-warning':''}">${v}</span>`;
+    }},
+    { key:'inactivity_days', label:'Inactive Days', render: r => {
+      const v = r.inactivity_days||0;
+      return `<span class="${v>7?'text-danger':v>3?'text-warning':''}">${v}</span>`;
+    }},
+    { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
+    { key:'priority_score', label:'Score' },
+  ];
+  const roleFiltered = filterByRoleFrontend(rows, S.role);
+  buildTable({ containerId: 'dt-engagement', rows: roleFiltered, cols, note: 'All students — sorted by priority score', title: 'Coursework & Engagement' });
+}
 
-  async function loadExpandActivity() {
-    const el = document.getElementById('expand-activity-content');
-    if (!el) return;
-    try {
-      const res = await api('/dashboard/recent-activity?limit=5');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const items = res.data.items || [];
-      if (!items.length) { el.innerHTML = '<p class="text-muted small mb-0">No activity yet</p>'; return; }
-      el.innerHTML = `
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
-            <thead class="table-light"><tr><th>Time</th><th>Student</th><th>Channel</th><th>State Change</th></tr></thead>
-            <tbody>${items.map(i => `<tr>
-              <td class="text-muted text-nowrap">${ts(i.created_at)}</td>
-              <td class="fw-semibold">${i.user_id}</td>
-              <td>${i.channel || '—'}</td>
-              <td>
-                <span class="${sc(i.state_before || '')}">${sp(i.state_before || '—')}</span>
-                <span class="text-muted mx-1">→</span>
-                <span class="${sc(i.state_after || '')}">${sp(i.state_after || '—')}</span>
-              </td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+async function loadHwRiskTab() {
+  const resp = await api(`/work-queue/all_source?limit=1000`);
+  const rows = (resp.data?.rows || [])
+    .map(r => ({ ...r, display_name: r.name||`#${r.user_id}`, UserID: r.user_id }))
+    .filter(r => (r.hws_behind||0) >= 1)
+    .sort((a,b) => (b.hws_behind||0) - (a.hws_behind||0));
 
-  async function loadExpandSource() {
-    const el = document.getElementById('expand-source-content');
-    if (!el) return;
-    try {
-      const res = await api('/source/summary');
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small mb-0">Failed to load</p>'; return; }
-      const d = res.data;
-      el.innerHTML = `
-        <div class="d-flex flex-wrap gap-3 mb-2 small">
-          <span>Source: <strong style="color:var(--color-primary)">${d.total_source ?? 0}</strong></span>
-          <span>Tracked: <strong class="text-success">${d.total_tracked ?? 0}</strong></span>
-          <span>Untracked: <strong class="${(d.total_untracked ?? 0) > 0 ? 'text-warning' : 'text-muted'}">${d.total_untracked ?? 0}</strong></span>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
-            <thead class="table-light"><tr><th>Path</th><th>Total</th><th>Tracked</th><th>Untracked</th><th>URGENT</th><th>HIGH</th><th>MED</th><th>LOW</th></tr></thead>
-            <tbody>${(d.by_path || []).map(p => `<tr>
-              <td class="fw-semibold">${p.path}</td><td>${p.total}</td>
-              <td class="text-success">${p.tracked}</td>
-              <td class="${p.untracked > 0 ? 'text-warning fw-semibold' : 'text-muted'}">${p.untracked}</td>
-              <td class="text-danger">${p.risk?.URGENT ?? 0}</td>
-              <td class="text-warning">${p.risk?.HIGH ?? 0}</td>
-              <td class="text-info">${p.risk?.MEDIUM ?? 0}</td>
-              <td class="text-muted">${p.risk?.LOW ?? 0}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (_) { el.innerHTML = '<p class="text-danger small mb-0">Error loading</p>'; }
-  }
+  const cols = [
+    { key:'display_name', label:'Name' },
+    { key:'UserID', label:'ID' },
+    { key:'path', label:'Section' },
+    { key:'hws_behind', label:'HWs Behind', render: r => {
+      const v = r.hws_behind||0;
+      return `<span class="fw-bold ${v>=5?'text-danger':v>=3?'text-warning':'text-primary'}">${v}</span> ${progressBar(v,10,'bg-danger')}`;
+    }},
+    { key:'eff_rating', label:'Efficiency', render: r => fmtPct(r.eff_rating) },
+    { key:'inactivity_days', label:'Inactive Days' },
+    { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
+    { key:'recommended_action', label:'Action' },
+  ];
+  const roleFiltered = filterByRoleFrontend(rows, S.role);
+  buildTable({ containerId: 'dt-hwrisk', rows: roleFiltered, cols, note: `${roleFiltered.length} students with ≥1 HW behind`, title: 'Homework Risk' });
+}
 
-  async function initExpandWorkQueue() {
-    if (_initDone.workqueue) return;
-    _initDone.workqueue = true;
-    const el = document.getElementById('expand-workqueue-content');
-    if (!el) return;
-    const QLABELS = [
-      ['untracked','Untracked'],['eligible','Eligible'],['contacted','Contacted'],
-      ['intervention','Intervention'],['retry_due','Retry Due'],
-    ];
-    let counts = {};
-    try {
-      const r = await api('/work-queue/summary');
-      counts = r.data?.queues || {};
-    } catch (_) {}
-    el.innerHTML = `
-      <div class="d-flex flex-wrap gap-1 mb-2">
-        ${QLABELS.map(([q, l]) => `<button class="btn btn-sm btn-outline-secondary" onclick="loadExpandWorkQueueTab('${q}')" style="font-size:.72rem;padding:2px 10px">${l} <span class="badge bg-secondary ms-1">${counts[q] ?? 0}</span></button>`).join('')}
+function filterByRoleFrontend(rows, role) {
+  if (!role || role === 'Support' || role === 'Mentor') return rows;
+  if (role === 'Placement Team') return rows.filter(r => ['Launch','Placement'].some(kw => (r.CurrentSection||r.PathName||r.path||'').includes(kw)));
+  return rows;
+}
+
+// ════════════════════════════════════════════════════════
+// PAYMENT TAB
+// ════════════════════════════════════════════════════════
+async function loadPaymentTab() {
+  const resp = await api(`/payment/reconciliation?role=${encodeURIComponent(S.role)}&limit=1000`);
+  const d = resp.data || {};
+  const rows = d.rows || [];
+  const summ = d.summary || {};
+
+  document.getElementById('payment-summary-cards').innerHTML = `
+    <div class="col-md-3"><div class="kpi-box"><div class="kpi-label">Total Outstanding</div><div class="kpi-val">${fmtCur(summ.total_outstanding_balance)}</div></div></div>
+    <div class="col-md-3"><div class="kpi-box"><div class="kpi-label">High Risk Students</div><div class="kpi-val text-danger">${summ.high_risk_count||0}</div></div></div>
+    <div class="col-md-3"><div class="kpi-box"><div class="kpi-label">Bundle Deal Students</div><div class="kpi-val" style="color:#6b46c1">${summ.bundle_deal_students||0}</div></div></div>
+    <div class="col-md-3"><div class="kpi-box"><div class="kpi-label">Fully Paid</div><div class="kpi-val text-success">${summ.clear_count||0}</div></div></div>
+  `;
+
+  const cols = [
+    { key:'display_name', label:'Name' },
+    { key:'UserID', label:'ID' },
+    { key:'CurrentSection', label:'Section', render: r => escH(r.CurrentSection||r.PathName||'—') },
+    { key:'ClassValue', label:'Class Value', render: r => fmtCur(r.ClassValue) },
+    { key:'Total_Payments', label:'Paid', render: r => fmtCur(r.Total_Payments) },
+    { key:'Total_Credits', label:'Credits', render: r => fmtCur(r.Total_Credits) },
+    { key:'actual_balance', label:'Actual Balance', render: r => {
+      const v = r.actual_balance||0;
+      return `<span class="payment-risk-${r.payment_risk}">${fmtCur(v)}</span>`;
+    }},
+    { key:'is_bundle_deal', label:'Bundle', render: r => r.is_bundle_deal ? '<span class="bundle-badge">BUNDLE</span>' : '' },
+    { key:'payment_risk', label:'Risk', render: r => `<span class="payment-risk-${r.payment_risk}">${r.payment_risk}</span>` },
+    { key:'FeePaid', label:'Fee Paid', render: r => r.FeePaid ? '✓' : '✗' },
+  ];
+  buildTable({ containerId: 'dt-payment', rows, cols, note: summ.bundle_fix_note, title: 'Payment Reconciliation' });
+}
+
+// ════════════════════════════════════════════════════════
+// OUTREACH ACTIVITY TAB
+// ════════════════════════════════════════════════════════
+async function loadOutreachTab() {
+  const [chPerf, ra] = await Promise.all([
+    api('/dashboard/channel-performance'),
+    api('/dashboard/recent-activity?limit=200'),
+  ]);
+  const channels = chPerf.data?.channels || [];
+  document.getElementById('outreach-stats').innerHTML = channels.map(c => `
+    <div class="col-md-3">
+      <div class="kpi-box">
+        <div class="kpi-label">${escH(c.channel||'—')}</div>
+        <div class="kpi-val">${c.attempts}</div>
+        <div class="small text-muted">Success: ${(c.success_rate*100).toFixed(0)}% | Shadow: ${c.shadow_count}</div>
       </div>
-      <div id="expand-workqueue-table" class="small"><p class="text-muted">Select a queue above</p></div>`;
-  }
+    </div>`).join('');
 
-  async function loadExpandWorkQueueTab(queueName) {
-    const el = document.getElementById('expand-workqueue-table');
-    if (!el) return;
-    el.innerHTML = '<p class="text-muted small">Loading…</p>';
-    try {
-      const res = await api(`/work-queue/${queueName}?limit=10`);
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small">Failed</p>'; return; }
-      const { rows, total } = res.data;
-      if (!rows?.length) { el.innerHTML = '<p class="text-muted small">No students in this queue</p>'; return; }
-      el.innerHTML = `
-        <div class="text-muted mb-1" style="font-size:.7rem">Top 10 of ${total} (priority sorted)</div>
-        <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
-            <thead class="table-light"><tr><th>Student</th><th>Path</th><th>Priority</th><th>Recommended Action</th><th>State</th></tr></thead>
-            <tbody>${rows.map(r => `<tr>
-              <td class="fw-semibold">${r.name || ('#' + r.user_id)}</td>
-              <td class="text-muted">${r.path || '—'}</td>
-              <td>${priorityBadge(r.priority_level)} <span class="text-muted" style="font-size:.7rem">${r.priority_score}</span></td>
-              <td class="text-muted small">${(r.recommended_action || '—').replace(/_/g,' ')}</td>
-              <td>${r.state ? `<span class="${sc(r.state)}">${sp(r.state)}</span>` : '<span class="text-muted">—</span>'}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (_) { el.innerHTML = '<p class="text-danger small">Error</p>'; }
-  }
+  const rows = (ra.data?.items||[]).map(h => ({ ...h, display_name: `#${h.user_id}`, UserID: h.user_id }));
+  const cols = [
+    { key:'display_name', label:'Student' },
+    { key:'channel', label:'Channel' },
+    { key:'action', label:'Action' },
+    { key:'execution_mode', label:'Mode', render: r => `<span class="${r.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${r.execution_mode}</span>` },
+    { key:'simulated_status', label:'Status' },
+    { key:'state_after', label:'State', render: r => statePill(r.state_after) },
+    { key:'created_at', label:'Time', render: r => fmtTs(r.created_at) },
+  ];
+  buildTable({ containerId: 'dt-outreach', rows, cols, title: 'Outreach Activity Log' });
+}
 
-  // ── Inline static expand panels ────────────────────────────────
+// ════════════════════════════════════════════════════════
+// AI INTERVENTION TAB
+// ════════════════════════════════════════════════════════
+async function loadAiTab() {
+  const resp = await api(`/work-queue/all_source?limit=200`);
+  const rows = (resp.data?.rows||[])
+    .filter(r => r.priority_level === 'URGENT' || r.priority_level === 'HIGH')
+    .map(r => ({ ...r, display_name: r.name||`#${r.user_id}`, UserID: r.user_id }));
 
-  function initExpandStudents() {
-    if (_initDone.students) return;
-    _initDone.students = true;
-    const el = document.getElementById('expand-students-content');
-    if (!el) return;
-    el.innerHTML = `
-      <div class="d-flex gap-2 mb-2 flex-wrap align-items-center">
-        <input id="inline-student-id" type="number" class="form-control form-control-sm" placeholder="Student ID" style="max-width:140px"/>
-        <button class="btn btn-sm btn-primary" onclick="lookupStudentInline()">Look Up</button>
-      </div>
-      <div id="inline-student-result" class="small"></div>`;
-  }
+  const cols = [
+    { key:'display_name', label:'Name' },
+    { key:'UserID', label:'ID' },
+    { key:'path', label:'Section' },
+    { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
+    { key:'recommended_action', label:'Recommended' },
+    { key:'reason_codes', label:'Risk Factors', render: r => escH((r.reason_codes||[]).join(' | ')) },
+    { key:'hws_behind', label:'HWs Behind' },
+    { key:'eff_rating', label:'Efficiency', render: r => fmtPct(r.eff_rating) },
+  ];
+  buildTable({ containerId: 'dt-ai', rows, cols, note: 'URGENT + HIGH priority students. Click row to generate AI insights in the drawer.', title: 'AI Intervention' });
+}
 
-  function initExpandActions() {
-    if (_initDone.actions) return;
-    _initDone.actions = true;
-    const el = document.getElementById('expand-actions-content');
-    if (!el) return;
-    el.innerHTML = `
-      <div class="d-flex gap-2 mb-2 flex-wrap">
-        <input id="inline-action-uid"   type="number" class="form-control form-control-sm" placeholder="Student ID"  style="max-width:130px"/>
-        <input id="inline-action-notes" type="text"   class="form-control form-control-sm" placeholder="Notes"        style="max-width:200px"/>
-      </div>
-      <div class="d-flex gap-2 flex-wrap mb-2">
-        <button class="btn btn-sm btn-danger"            onclick="execActionInline('CLOSE_CASE')">Close</button>
-        <button class="btn btn-sm btn-warning text-dark" onclick="execActionInline('FORCE_RETRY')">Retry</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="execActionInline('BOOK_MEETING')">Resolve</button>
-        <button class="btn btn-sm btn-primary"           onclick="execActionInline('ESCALATE')">Escalate</button>
-      </div>
-      <div id="inline-action-result" class="text-muted small"></div>`;
-  }
+// ════════════════════════════════════════════════════════
+// RIGHT DRAWER
+// ════════════════════════════════════════════════════════
+let drawerOffcanvas = null;
+function getDrawer() {
+  if (!drawerOffcanvas) drawerOffcanvas = new bootstrap.Offcanvas(document.getElementById('studentDrawer'));
+  return drawerOffcanvas;
+}
 
-  async function initExpandTrigger() {
-    if (_initDone.trigger) return;
-    _initDone.trigger = true;
-    const el = document.getElementById('expand-trigger-content');
-    if (!el) return;
-    el.innerHTML = `
-      <div class="d-flex gap-2 align-items-center flex-wrap">
-        <select id="inline-checkpoint" class="form-select form-select-sm" style="max-width:180px">
-          <option value="">Loading paths…</option>
-        </select>
-        <button class="btn btn-sm btn-outline-primary" onclick="previewFromTrigger()">Preview</button>
-        <button class="btn btn-sm btn-primary" onclick="triggerOutreachInline()">Run Batch</button>
-        <span id="inline-trigger-result" class="text-muted small"></span>
+async function openDrawer(userId) {
+  if (!userId) return;
+  S.drawerUserId = userId;
+  S.drawerData = null;
+
+  document.getElementById('drawerTitle').textContent = `Student #${userId}`;
+  document.getElementById('drawer-subtitle').textContent = 'Loading…';
+
+  // Reset all panes
+  document.querySelectorAll('.drawer-tab-pane').forEach(el => { el.classList.remove('active'); el.innerHTML = '<p class="text-muted small">Loading…</p>'; });
+  document.querySelectorAll('.drawer-tabs .nav-link').forEach(b => b.classList.remove('active'));
+  document.querySelector('.drawer-tabs .nav-link').classList.add('active');
+  document.getElementById('drawer-info').classList.add('active');
+
+  getDrawer().show();
+
+  // Load drawer data
+  const drawerResp = await api(`/students/${userId}/drawer`);
+  S.drawerData = drawerResp.data || {};
+  renderDrawerInfo();
+}
+
+function switchDrawerTab(name, btn) {
+  document.querySelectorAll('.drawer-tab-pane').forEach(el => el.classList.remove('active'));
+  document.getElementById(`drawer-${name}`).classList.add('active');
+  document.querySelectorAll('.drawer-tabs .nav-link').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadDrawerTab(name);
+}
+
+async function loadDrawerTab(name) {
+  const uid = S.drawerUserId;
+  const el = document.getElementById(`drawer-${name}`);
+  if (!el) return;
+
+  if (name === 'info') { renderDrawerInfo(); return; }
+  if (name === 'mentor') { el.innerHTML = '<p class="text-muted small">Mentor assignment not yet configured. <br/>This tab will show assigned mentor details once the assignment system is set up.</p>'; return; }
+  if (name === 'instructor') { renderDrawerInstructor(el); return; }
+  if (name === 'supermentor') { el.innerHTML = '<p class="text-muted small">Super Mentor assignment not yet configured.</p>'; return; }
+  if (name === 'timeline') { el.innerHTML = '<p class="text-muted">Loading timeline…</p>'; await renderDrawerTimeline(el, uid); return; }
+  if (name === 'outreach') { el.innerHTML = '<p class="text-muted">Loading…</p>'; await renderDrawerOutreach(el, uid); return; }
+  if (name === 'insights') { el.innerHTML = '<p class="text-muted">Generating AI insights…</p>'; await renderDrawerInsights(el, uid); return; }
+  if (name === 'interviewprep') { el.innerHTML = '<p class="text-muted">Loading…</p>'; await renderDrawerInterviewPrep(el, uid); return; }
+  if (name === 'payment') { renderDrawerPayment(el); return; }
+  if (name === 'notes') { el.innerHTML = '<p class="text-muted">Loading…</p>'; await renderDrawerNotes(el, uid); return; }
+}
+
+function renderDrawerInfo() {
+  const d = S.drawerData;
+  const el = document.getElementById('drawer-info');
+  if (!d) { el.innerHTML = '<p class="text-muted">No data.</p>'; return; }
+  const p = d.profile || {};
+  document.getElementById('drawerTitle').textContent = p.display_name || `Student #${S.drawerUserId}`;
+  document.getElementById('drawer-subtitle').textContent = p.current_section || p.path || '—';
+
+  const segs = (d.segments||[]).map(s => `<span class="badge bg-secondary me-1">${escH(s)}</span>`).join('');
+  el.innerHTML = `
+    <table class="table table-sm small mb-3">
+      <tbody>
+        <tr><th style="width:40%">Email</th><td>${escH(p.email||'—')}</td></tr>
+        <tr><th>Phone</th><td>${escH(p.phone||'—')}</td></tr>
+        <tr><th>Section</th><td>${escH(p.current_section||p.path||'—')}</td></tr>
+        <tr><th>Start Date</th><td>${fmtDate(p.ipbc_start_date)}</td></tr>
+        <tr><th>Attendance</th><td>${fmtPct(p.attendance_pct)}</td></tr>
+        <tr><th>HWs Behind</th><td><strong>${p.hws_behind||0}</strong></td></tr>
+        <tr><th>Efficiency</th><td>${fmtPct(p.avg_eff_rating)}</td></tr>
+        <tr><th>Last Active</th><td>${p.last_activity_days||0} days ago</td></tr>
+        <tr><th>10-Day Logins</th><td>${p.past_10_days_logon||0}</td></tr>
+        <tr><th>Risk Level</th><td>${statePill(p.risk_level)}</td></tr>
+        <tr><th>Segments</th><td>${segs||'—'}</td></tr>
+      </tbody>
+    </table>
+    <div class="fw-semibold small mb-2">Outreach Tracking</div>
+    ${(d.outreach||[]).map(o => `<div class="border rounded p-2 mb-2 small"><strong>${escH(o.checkpoint_type)}</strong> ${statePill(o.state)}<br>Attempts: ${o.current_attempt} | Last: ${fmtTs(o.last_contact_at)} | Next: ${fmtTs(o.next_retry_at)}</div>`).join('') || '<p class="text-muted small">No outreach records.</p>'}
+  `;
+}
+
+function renderDrawerInstructor(el) {
+  const p = (S.drawerData||{}).profile || {};
+  el.innerHTML = `<div class="small"><strong>Current Section:</strong> ${escH(p.current_section||p.path||'—')}<br><br><p class="text-muted">Instructor assignment not yet configured. Section shown above.</p></div>`;
+}
+
+async function renderDrawerTimeline(el, uid) {
+  const resp = await api(`/timeline/${uid}`);
+  const events = resp.data?.events || [];
+  el.innerHTML = events.length === 0
+    ? '<p class="text-muted small">No timeline events yet.</p>'
+    : `<div class="mt-2">${events.map(e => `
+        <div class="tl-item tl-${e.type}">
+          <div class="tl-ts">${fmtTs(e.ts)}</div>
+          <div class="tl-label">${escH(e.label)}</div>
+          <div class="tl-detail">${escH(e.detail||'')}</div>
+          ${e.badge ? `<span class="badge bg-secondary mt-1" style="font-size:.6rem">${escH(e.badge)}</span>` : ''}
+        </div>`).join('')}
       </div>`;
-    // Populate paths dynamically
-    try {
-      const res = await api('/source/paths');
-      const paths = res.data?.paths || [];
-      const sel = document.getElementById('inline-checkpoint');
-      if (sel) {
-        sel.innerHTML = paths.length
-          ? paths.map(p => `<option value="${p}">${p}</option>`).join('')
-          : '<option value="">No paths found</option>';
-      }
-    } catch (_) {
-      const sel = document.getElementById('inline-checkpoint');
-      if (sel) sel.innerHTML = ['SQL','SSRS','SSIS','POST_COMPLETION'].map(p => `<option value="${p}">${p}</option>`).join('');
-    }
+}
+
+async function renderDrawerOutreach(el, uid) {
+  const [resp, ghlResp] = await Promise.all([
+    api(`/students/${uid}`),
+    api(`/ghl-sync/status`),
+  ]);
+  const d = resp.data || {};
+  const history = d.history || [];
+  const ghl = ghlResp.data || {};
+
+  const historyHtml = history.length === 0
+    ? '<p class="text-muted small">No outreach history.</p>'
+    : `<table class="table table-sm small"><thead><tr><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>State →</th><th>Time</th></tr></thead><tbody>
+        ${history.map(h => `<tr><td>${h.attempt_number}</td><td>${escH(h.channel||'—')}</td><td>${escH(h.action||'—')}</td><td><span class="${h.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${h.execution_mode}</span></td><td>${statePill(h.state_after)}</td><td>${fmtTs(h.created_at)}</td></tr>`).join('')}
+       </tbody></table>`;
+
+  el.innerHTML = `
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <span class="fw-semibold small">GHL Messages <span class="mode-shadow">READ-ONLY</span></span>
+      <button class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:.2rem .5rem" onclick="syncGHLStudent(${uid}, this)">Sync GHL</button>
+    </div>
+    <div id="ghl-drawer-result-${uid}" class="small text-muted mb-3"></div>
+    <div class="fw-semibold small mb-2">Outreach History</div>
+    ${historyHtml}`;
+}
+
+async function syncGHLStudent(uid, btn) {
+  const resultEl = document.getElementById(`ghl-drawer-result-${uid}`);
+  if (btn) btn.disabled = true;
+  if (resultEl) resultEl.textContent = 'Syncing GHL messages…';
+  const r = await api('/ghl-sync/student', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid }),
+  });
+  const d = r.data || {};
+  if (resultEl) {
+    const st = d.status || 'error';
+    const color = st === 'success' ? 'bg-success' : st === 'not_found' ? 'bg-secondary' : 'bg-warning text-dark';
+    resultEl.innerHTML = `<span class="badge ${color}">${escH(st)}</span> ` +
+      (st === 'success' ? `Synced: ${d.synced} new | Total GHL: ${d.total_ghl} | Phone: ${escH(d.phone_e164||'—')}` : escH(d.message || d.error || ''));
   }
-  function previewFromTrigger() {
-    const cp = document.getElementById('inline-checkpoint')?.value;
-    if (cp) batchPreview(cp);
+  if (btn) btn.disabled = false;
+}
+
+async function renderDrawerInsights(el, uid) {
+  const types = ['OUTREACH_DRAFT','INTERVENTION','RISK_EXPLANATION','INTERVIEW_COACHING'];
+  const results = await Promise.all(types.map(t => api(`/ai-insights/${uid}/${t}`)));
+  el.innerHTML = results.map((r,i) => {
+    const d = r.data || {};
+    return `<div class="mb-3">
+      <div class="fw-semibold small mb-1">${types[i].replace(/_/g,' ')}</div>
+      <div class="border rounded p-2 small" style="background:var(--color-bg-alt)">${escH(d.content||'—')}</div>
+      <div class="text-muted" style="font-size:.62rem">Model: ${d.model||'—'} | Cached: ${d.cached?'Yes':'No'}</div>
+    </div>`;
+  }).join('');
+}
+
+async function renderDrawerInterviewPrep(el, uid) {
+  const resp = await api(`/students/${uid}/interview-prep`);
+  const d = resp.data || {};
+  if (!d.available) { el.innerHTML = '<p class="text-muted small">No interview prep data. Run Interview Prep sync first.</p>'; return; }
+  const data = d.data || {};
+  el.innerHTML = `<div class="small text-muted mb-2">Synced: ${fmtTs(d.synced_at)}</div>
+    <table class="table table-sm small"><tbody>
+      ${Object.entries(data).filter(([k]) => k !== 'UserID').slice(0,30).map(([k,v]) => `<tr><th style="width:45%">${escH(k)}</th><td>${escH(String(v??'—'))}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+
+function renderDrawerPayment(el) {
+  const pay = (S.drawerData||{}).payment || {};
+  if (!Object.keys(pay).length) { el.innerHTML = '<p class="text-muted small">No payment data.</p>'; return; }
+  el.innerHTML = `
+    <table class="table table-sm small">
+      <tbody>
+        <tr><th>Class Value</th><td>${fmtCur(pay.class_value)}</td></tr>
+        <tr><th>Total Payments</th><td>${fmtCur(pay.total_payments)}</td></tr>
+        <tr><th>Credits</th><td>${fmtCur(pay.total_credits)}</td></tr>
+        <tr><th>Stored Balance</th><td>${fmtCur(pay.payment_balance_stored)}</td></tr>
+        <tr><th>Actual Balance</th><td><strong class="payment-risk-${pay.payment_risk}">${fmtCur(pay.actual_balance)}</strong></td></tr>
+        <tr><th>Bundle Deal</th><td>${pay.is_bundle_deal ? '<span class="bundle-badge">BUNDLE FIX APPLIED</span>' : 'No'}</td></tr>
+        <tr><th>Fee Paid</th><td>${pay.fee_paid ? '✓ Yes' : '✗ No'}</td></tr>
+        <tr><th>Class Fees Paid</th><td>${fmtCur(pay.class_fees_paid)}</td></tr>
+        <tr><th>Risk</th><td><span class="payment-risk-${pay.payment_risk}">${pay.payment_risk}</span></td></tr>
+      </tbody>
+    </table>`;
+}
+
+async function renderDrawerNotes(el, uid) {
+  const resp = await api(`/notes/${uid}`);
+  const notes = resp.data?.notes || [];
+  el.innerHTML = `
+    <div class="mb-3">
+      <textarea id="note-input-${uid}" class="form-control form-control-sm mb-2" rows="3" placeholder="Add a note…"></textarea>
+      <input type="text" id="note-author-${uid}" class="form-control form-control-sm mb-2" placeholder="Your name" value="operator"/>
+      <button class="btn btn-sm btn-primary" onclick="addNote(${uid})">Add Note</button>
+    </div>
+    <div id="notes-list-${uid}">
+      ${notes.length === 0 ? '<p class="text-muted small">No notes yet.</p>' :
+        notes.map(n => `<div class="border rounded p-2 mb-2 small ${n.is_ai_generated?'border-warning':''}">
+          <div class="d-flex justify-content-between"><strong>${escH(n.author)}</strong><span class="text-muted">${fmtTs(n.created_at)}</span></div>
+          ${n.is_ai_generated ? '<span class="badge bg-warning text-dark me-1" style="font-size:.6rem">AI</span>' : ''}
+          <div class="mt-1">${escH(n.content)}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+async function addNote(uid) {
+  const content = document.getElementById(`note-input-${uid}`)?.value?.trim();
+  const author = document.getElementById(`note-author-${uid}`)?.value?.trim() || 'operator';
+  if (!content) return;
+  await api('/notes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, content, author }),
+  });
+  await renderDrawerNotes(document.getElementById('drawer-notes'), uid);
+}
+
+// ════════════════════════════════════════════════════════
+// SYNC ACTIONS
+// ════════════════════════════════════════════════════════
+async function syncMssql() {
+  document.getElementById('sync-result').textContent = 'Syncing…';
+  const r = await api('/sync/mssql', { method: 'POST' });
+  const d = r.data || {};
+  document.getElementById('sync-result').innerHTML =
+    `<span class="badge ${d.status==='success'?'bg-success':d.status==='partial_success'?'bg-warning text-dark':'bg-danger'}">${d.status}</span> Scanned: ${d.rows_scanned} | Added: ${d.added} | Updated: ${d.updated} | Failed: ${d.rows_failed}` +
+    (d.error ? ` | Error: ${escH(d.error)}` : '');
+}
+
+async function syncInterviewPrep() {
+  document.getElementById('sync-result').textContent = 'Syncing Interview Prep…';
+  const r = await api('/sync/interview-prep', { method: 'POST' });
+  const d = r.data || {};
+  document.getElementById('sync-result').innerHTML =
+    `<span class="badge ${d.status==='success'?'bg-success':'bg-warning text-dark'}">${d.status}</span> Scanned: ${d.rows_scanned} | Upserted: ${d.upserted}` +
+    (d.error ? ` | Error: ${escH(d.error)}` : '');
+}
+
+async function syncGHLBatch() {
+  document.getElementById('ghl-sync-result').textContent = 'Syncing GHL messages for all students…';
+  const r = await api('/ghl-sync/batch?limit=100', { method: 'POST' });
+  const d = r.data || {};
+  const st = d.status || 'error';
+  document.getElementById('ghl-sync-result').innerHTML =
+    `<span class="badge ${st==='success'?'bg-success':st==='not_configured'?'bg-secondary':'bg-warning text-dark'}">${escH(st)}</span> ` +
+    (st === 'not_configured' ? 'GHL API key not configured.' :
+     `Students: ${d.students_processed} | Messages synced: ${d.total_synced}`);
+  // Refresh status card
+  const gs = await api('/ghl-sync/status');
+  if (gs.data) {
+    const g = gs.data;
+    document.getElementById('ghl-sync-status').innerHTML =
+      `Configured: ${g.ghl_configured?'Yes':'No'} | Stored: ${g.total_messages_stored} messages | Last sync: ${g.latest_sync_at ? fmtTs(g.latest_sync_at) : 'Never'}<br><small class="text-muted">${escH(g.note||'')}</small>`;
   }
+}
 
-  function initExpandSync() {
-    if (_initDone.sync) return;
-    _initDone.sync = true;
-    const el = document.getElementById('expand-sync-content');
-    if (!el) return;
-    el.innerHTML = `
-      <div class="d-flex gap-2 align-items-center">
-        <button class="btn btn-sm btn-outline-secondary" onclick="syncMssqlInline()">Sync Now</button>
-        <span id="inline-sync-result" class="text-muted small"></span>
-      </div>`;
-  }
+// ════════════════════════════════════════════════════════
+// ACTIONS
+// ════════════════════════════════════════════════════════
+function consoleLog(msg, color='#e2e8f0') {
+  const c = document.getElementById('action-console');
+  c.innerHTML += `<p style="color:${color}">${escH(new Date().toLocaleTimeString())} ${escH(msg)}</p>`;
+  c.scrollTop = c.scrollHeight;
+}
 
-  // ── Inline action handlers ─────────────────────────────────────
+async function runAction() {
+  const uid = +document.getElementById('action-uid').value;
+  const type = document.getElementById('action-type').value;
+  const notes = document.getElementById('action-notes').value;
+  if (!uid) { consoleLog('No student ID.', '#fc8181'); return; }
+  consoleLog(`Executing ${type} for #${uid}…`, '#90cdf4');
+  const r = await api('/actions/manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, action_type: type, notes }),
+  });
+  consoleLog(r.status === 'success' ? `Done: ${JSON.stringify(r.data)}` : `Error: ${r.error?.message}`, r.status === 'success' ? '#9ae6b4' : '#fc8181');
+}
 
-  async function lookupStudentInline() {
-    const id = document.getElementById('inline-student-id')?.value;
-    const el = document.getElementById('inline-student-result');
-    if (!id || !el) return;
-    el.innerHTML = '<span class="text-muted">Loading…</span>';
-    try {
-      const res = await api(`/students/${id}`);
-      if (res.status !== 'success') {
-        el.innerHTML = `<span class="text-danger">Not found: ${res.error?.message || 'ID ' + id}</span>`;
-        return;
-      }
-      const d = res.data;
-      const p = d.profile || {};
-      const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || `Student ${id}`;
-      el.innerHTML = `
-        <div class="d-flex flex-wrap gap-3 align-items-start mt-1">
-          <div>
-            <span class="fw-semibold">${name}</span>
-            <span class="badge ${p.risk_level === 'HIGH' ? 'bg-danger' : p.risk_level === 'MEDIUM' ? 'bg-warning text-dark' : p.risk_level === 'LOW' ? 'bg-success' : 'bg-secondary'} ms-2" style="font-size:.6rem">${p.risk_level || 'UNKNOWN'} RISK</span>
-            <div class="text-muted" style="font-size:.72rem">Path: ${p.path || '—'} · Email: ${p.email || '—'}</div>
-          </div>
-          <div class="d-flex gap-2 flex-wrap">
-            <div class="stat-box"><span class="stat-label">HWs Behind</span><span class="stat-val">${p.hws_behind ?? '—'}</span></div>
-            <div class="stat-box"><span class="stat-label">Avg Effort</span><span class="stat-val">${p.avg_eff_rating != null ? p.avg_eff_rating.toFixed(1) : '—'}</span></div>
-            <div class="stat-box"><span class="stat-label">Inactive Days</span><span class="stat-val">${p.last_activity_days ?? '—'}</span></div>
-          </div>
-          <div><span class="${sc(d.state)}">${sp(d.state)}</span> <span class="text-muted ms-2" style="font-size:.72rem">Attempt #${d.current_attempt}</span></div>
-        </div>`;
-    } catch (e) { el.innerHTML = `<span class="text-danger">Error: ${e}</span>`; }
-  }
+async function previewBatch() {
+  const path = document.getElementById('path-select').value;
+  const limit = +document.getElementById('outreach-limit').value || 10;
+  const r = await api(`/batch/preview?checkpoint_type=${encodeURIComponent(path)}&limit=${limit}`);
+  document.getElementById('batch-result').innerHTML = `Preview: ${(r.data?.preview||[]).length} students | Mode: <span class="mode-shadow">${r.data?.execution_mode}</span>`;
+}
 
-  async function execActionInline(actionType) {
-    const uid    = document.getElementById('inline-action-uid')?.value;
-    const notes  = document.getElementById('inline-action-notes')?.value;
-    const resultEl = document.getElementById('inline-action-result');
-    if (!uid) { if (resultEl) resultEl.textContent = 'Enter a Student ID first.'; return; }
-    if (resultEl) resultEl.textContent = `Running ${actionType}…`;
-    try {
-      const body = { user_id: parseInt(uid), action_type: actionType };
-      if (notes) body.notes = notes;
-      const res = await api('/actions/manual', { method: 'POST', body: JSON.stringify(body) });
-      if (res.status === 'success') {
-        const d = res.data;
-        if (resultEl) resultEl.innerHTML = `<span class="text-success">${actionType}: ${sp(d.from_state)} → ${sp(d.to_state)}</span>`;
-        loadSummary(); loadAlerts(); loadActivity();
-        if (document.getElementById('expand-activity')?.classList.contains('show')) loadExpandActivity();
-      } else {
-        if (resultEl) resultEl.innerHTML = `<span class="text-danger">Error: ${res.error?.message || res.error?.code || 'Unknown'}</span>`;
-      }
-    } catch (e) { if (resultEl) resultEl.innerHTML = `<span class="text-danger">Request failed</span>`; }
-  }
+async function runBatch() {
+  const path = document.getElementById('path-select').value;
+  const limit = +document.getElementById('outreach-limit').value || 10;
+  const r = await api('/batch/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ checkpoint_type: path, limit }),
+  });
+  document.getElementById('batch-result').innerHTML = `Batch: ${r.data?.processed||0} processed | Mode: <span class="mode-shadow">${r.data?.execution_mode}</span>`;
+}
 
-  async function triggerOutreachInline() {
-    const cp    = document.getElementById('inline-checkpoint')?.value;
-    const resEl = document.getElementById('inline-trigger-result');
-    if (!cp) return;
-    if (resEl) resEl.textContent = 'Running…';
-    try {
-      const res = await api('/outreach/trigger', { method: 'POST', body: JSON.stringify({ checkpoint_type: cp }) });
-      if (res.status === 'success') {
-        const s = res.data.summary;
-        if (resEl) resEl.textContent = `triggered: ${s.triggered}  retried: ${s.retried}  skipped: ${s.skipped}  errors: ${s.errors}`;
-        loadSummary(); loadAlerts(); loadActivity();
-      } else {
-        if (resEl) resEl.textContent = res.error?.message || 'Error';
-      }
-    } catch (e) { if (resEl) resEl.textContent = 'Request failed'; }
-  }
+// ════════════════════════════════════════════════════════
+// AUTO-REFRESH (10 minutes)
+// ════════════════════════════════════════════════════════
+function startAutoRefresh() {
+  if (S.refreshTimer) clearInterval(S.refreshTimer);
+  S.refreshTimer = setInterval(() => {
+    refreshActiveTab();
+  }, 600000); // 10 minutes
+}
 
-  function _renderSyncResult(d) {
-    if (!d.connected) {
-      const reason = d.error === 'not_configured' ? 'SQL Server not configured' : `Connection error: ${d.error}`;
-      return `<span class="text-danger">${reason}</span>`;
-    }
-    const statusClass = d.status === 'partial_success' ? 'text-warning' : 'text-success';
-    let html = `<span class="${statusClass}">`;
-    html += `Scanned: ${d.rows_scanned} &nbsp;·&nbsp; Inserted: ${d.added} &nbsp;·&nbsp; Updated: ${d.updated}`;
-    if (d.rows_failed > 0) {
-      html += ` &nbsp;·&nbsp; <strong>Skipped: ${d.rows_failed}</strong>`;
-      html += `</span>`;
-      html += `<ul class="mb-0 mt-1 ps-3" style="font-size:.75rem;color:var(--color-secondary)">`;
-      for (const f of (d.failures || [])) {
-        html += `<li>UserID ${f.user_id ?? '?'}: ${f.reason}</li>`;
-      }
-      html += `</ul>`;
-    } else {
-      html += `</span>`;
-    }
-    return html;
-  }
+// ════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  // Restore role
+  const rp = document.getElementById('role-picker');
+  rp.value = S.role;
 
-  async function syncMssqlInline() {
-    const el = document.getElementById('inline-sync-result');
-    if (el) el.innerHTML = 'Syncing…';
-    try {
-      const res = await api('/sync/mssql', { method: 'POST' });
-      if (res.status === 'success') {
-        if (el) el.innerHTML = _renderSyncResult(res.data);
-        loadHealth();
-      } else {
-        if (el) el.innerHTML = `<span class="text-danger">${res.error?.message || 'Sync failed'}</span>`;
-      }
-    } catch (e) { if (el) el.innerHTML = '<span class="text-danger">Request failed</span>'; }
-  }
+  // Load initial tab
+  loadOverview();
 
-  // ── Home card loaders ──────────────────────────────────────────
-
-  async function loadHealth() {
-    try {
-      const res = await api('/dashboard/health');
-      if (res.status !== 'success') {
-        setBadge('health', 'critical', 'ERROR');
-        setSummary('health', '<span class="text-danger">Failed to load health data</span>');
-        return;
-      }
-      const d = res.data;
-      _execMode = d.execution_mode || 'SHADOW';
-
-      const nb = document.getElementById('exec-badge');
-      if (nb) {
-        nb.textContent = d.execution_mode;
-        nb.className = `badge ${d.execution_mode === 'SHADOW' ? 'bg-warning text-dark' : 'bg-success'}`;
-      }
-      function pill(id, ok, label) {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = `<span class="dot ${ok ? 'dot-ok' : 'dot-err'}"></span>${label}`;
-      }
-      pill('hp-db',    d.db?.connected,               d.db?.connected ? 'PostgreSQL' : 'DB Error');
-      pill('hp-mssql', d.mssql?.configured,            d.mssql?.configured ? 'SQL Server' : 'SQL Server ⚠');
-      pill('hp-sched', d.scheduler?.status === 'active', d.scheduler?.status === 'active' ? 'Scheduler' : 'Scheduler ⚠');
-
-      const dbOk    = d.db?.connected;
-      const schedOk = d.scheduler?.status === 'active';
-      const mssqlOk = d.mssql?.configured;
-
-      if (!dbOk) {
-        setBadge('health', 'critical', 'CRITICAL');
-        setSummary('health', '<span class="text-danger">PostgreSQL disconnected</span>');
-      } else if (!mssqlOk) {
-        setBadge('health', 'warning', 'WARNING');
-        setSummary('health', `DB connected · ${schedOk ? 'Scheduler active' : '<span class="text-warning">Scheduler ⚠</span>'} · <span class="text-warning">SQL Server not configured</span>`);
-      } else {
-        setBadge('health', 'ok', 'OK');
-        setSummary('health', `DB connected · ${schedOk ? 'Scheduler active' : '<span class="text-warning">Scheduler ⚠</span>'} · ${d.execution_mode}`);
-      }
-      setMetric('health', modeSpan(d.execution_mode));
-
-      if (!mssqlOk) {
-        setBadge('sync', 'warning', 'WARNING');
-        setSummary('sync', '<span class="text-warning">Not configured</span> · Credentials pending');
-      } else {
-        setBadge('sync', 'ok', 'OK');
-        setSummary('sync', `Connected · Host: ${d.mssql?.host || '—'}`);
-      }
-    } catch (_) {
-      setBadge('health', 'critical', 'CRITICAL');
-      setSummary('health', 'Connection error');
-    }
-  }
-
-  async function loadAlerts() {
-    try {
-      const res = await api('/dashboard/alerts');
-      if (res.status !== 'success') return;
-      const { alerts, count } = res.data;
-      if (!count) {
-        setBadge('alerts', 'ok', 'OK');
-        setSummary('alerts', 'No active alerts');
-        setMetric('alerts', '<span class="text-success fw-bold" style="font-size:1.6rem">✓</span>');
-      } else {
-        const hasC = alerts.some(a => a.severity === 'CRITICAL');
-        const hasW = alerts.some(a => a.severity === 'WARNING');
-        setBadge('alerts', hasC ? 'critical' : hasW ? 'warning' : 'info', hasC ? 'CRITICAL' : hasW ? 'WARNING' : 'INFO');
-        setSummary('alerts', `${count} active alert${count !== 1 ? 's' : ''}`);
-        setMetric('alerts', `<span class="card-metric ${hasC ? 'metric-danger' : 'metric-warning'}">${count}</span>`);
-      }
-    } catch (_) {}
-  }
-
-  async function loadSummary() {
-    try {
-      const res = await api('/dashboard/summary');
-      if (res.status !== 'success') return;
-      const d = res.data;
-      const f = d.funnel || {};
-      const byState = d.by_state || {};
-      const tracked   = f.tracked ?? d.total_tracked ?? 0;
-      const contacted = f.contacted ?? 0;
-      const responded = f.responded ?? 0;
-
-      setBadge('kpi', 'info', 'INFO');
-      setSummary('kpi', `${tracked} tracked · ${contacted} contacted · ${responded} responded`);
-      setMetric('kpi', `<span class="card-metric metric-primary">${tracked}</span><span class="card-metric-sub">tracked</span>`);
-
-      const activeStates = STATE_ORDER.filter(s => (byState[s] || 0) > 0);
-      setBadge('states', 'info', 'INFO');
-      setSummary('states',
-        activeStates.slice(0, 3).map(s =>
-          `<span class="${sc(s)}" style="margin-right:3px">${sp(s)}</span><span class="text-muted small">${byState[s]}</span>`
-        ).join('  ') || 'No data yet'
-      );
-      setMetric('states', `<span class="card-metric metric-purple">${activeStates.length}</span><span class="card-metric-sub">active states</span>`);
-    } catch (_) {}
-  }
-
-  async function loadChannelPerf() {
-    try {
-      const res = await api('/dashboard/channel-performance');
-      if (res.status !== 'success') return;
-      const { channels, shadow_mode } = res.data;
-      const total = (channels || []).reduce((s, c) => s + (c.attempts || 0), 0);
-      setSummary('channels', shadow_mode ? 'All simulated · No real sends' : `${total} total attempts`);
-      setMetric('channels', `<span class="card-metric metric-warning">${total}</span><span class="card-metric-sub">attempts</span>`);
-    } catch (_) {}
-  }
-
-  async function loadActivity() {
-    try {
-      const res = await api('/dashboard/recent-activity?limit=20');
-      if (res.status !== 'success') return;
-      const items = res.data.items || [];
-      setBadge('activity', 'info', 'INFO');
-      setSummary('activity', `${items.length} event${items.length !== 1 ? 's' : ''} in recent log`);
-      setMetric('activity', `<span class="card-metric metric-info">${items.length}</span>`);
-    } catch (_) {}
-  }
-
-  async function loadSourceSummary() {
-    try {
-      const res = await api('/source/summary');
-      if (res.status !== 'success') return;
-      const d = res.data;
-      const untracked = d.total_untracked ?? 0;
-      const total = d.total_source ?? 0;
-      const tracked = d.total_tracked ?? 0;
-      setBadge('source', untracked > 0 ? 'warning' : 'ok', untracked > 0 ? `${untracked} NEW` : 'OK');
-      setSummary('source', `${total} source · ${tracked} tracked · <span class="${untracked > 0 ? 'text-warning fw-semibold' : 'text-success'}">${untracked} untracked</span>`);
-      setMetric('source', `<span class="card-metric metric-info">${total}</span><span class="card-metric-sub">students</span>`);
-    } catch (_) {}
-  }
-
-  async function loadWorkQueueSummary() {
-    try {
-      const res = await api('/work-queue/summary');
-      if (res.status !== 'success') return;
-      const q = res.data.queues || {};
-      const intervention = q.intervention || 0;
-      const urgent = (q.eligible || 0) + (q.retry_due || 0);
-      setBadge('workqueue',
-        intervention > 0 ? 'critical' : urgent > 0 ? 'warning' : 'ok',
-        intervention > 0 ? 'ACTION' : urgent > 0 ? 'PENDING' : 'OK');
-      setSummary('workqueue',
-        `${q.untracked || 0} untracked · ${q.eligible || 0} eligible · ${q.retry_due || 0} retry due · ${intervention} intervention`);
-      setMetric('workqueue',
-        `<span class="card-metric ${intervention > 0 ? 'metric-danger' : 'metric-warning'}">${intervention > 0 ? intervention : urgent}</span>` +
-        `<span class="card-metric-sub">${intervention > 0 ? 'intervention' : 'action needed'}</span>`);
-    } catch (_) {}
-  }
-
-  // ── Detail modal views ─────────────────────────────────────────
-
-  async function detailHealth() {
-    openModal('System Health', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/dashboard/health');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const d = res.data;
-      const ch = d.channels || {};
-      const allOff = !ch.call && !ch.sms && !ch.email;
-      document.getElementById('modal-body').innerHTML = `<div class="row g-3">
-        ${infoBox('Execution Mode', modeSpan(d.execution_mode))}
-        ${infoBox('PostgreSQL', `${dotHtml(d.db?.connected)}<span class="${d.db?.connected ? 'text-success' : 'text-danger'} fw-semibold">${d.db?.connected ? 'Connected' : 'Disconnected'}</span>`)}
-        ${infoBox('SQL Server', d.mssql?.configured
-          ? `${dotHtml(true)}<span class="text-success fw-semibold">Configured</span> <span class="text-muted small">${d.mssql?.host || ''}</span>`
-          : `${dotHtml(false)}<span class="text-danger fw-semibold">Not configured</span>`)}
-        ${infoBox('Scheduler', `${dotHtml(d.scheduler?.status === 'active')}<span class="fw-semibold">${d.scheduler?.status || '—'}</span>`)}
-        ${infoBox('Last Scheduler Run', d.scheduler?.last_run ? `<span class="small">${ts(d.scheduler.last_run)}</span>` : '<span class="text-warning">Never ran</span>')}
-        ${infoBox('Outbound Channels', allOff
-          ? '<span class="text-warning">All disabled (SHADOW)</span>'
-          : `CALL: ${ch.call ? '<span class="text-success">✓</span>' : '<span class="text-danger">✗</span>'} &nbsp; SMS: ${ch.sms ? '<span class="text-success">✓</span>' : '<span class="text-danger">✗</span>'} &nbsp; EMAIL: ${ch.email ? '<span class="text-success">✓</span>' : '<span class="text-danger">✗</span>'}`)}
-      </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailAlerts() {
-    openModal('Operational Alerts', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/dashboard/alerts');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const { alerts } = res.data;
-      if (!alerts?.length) {
-        document.getElementById('modal-body').innerHTML = '<div class="text-center text-success py-4"><div style="font-size:2.5rem">✓</div><div class="mt-2 fw-semibold">No active alerts</div></div>';
-        return;
-      }
-      document.getElementById('modal-body').innerHTML = alerts.map(a => {
-        const sev = (a.severity || '').toLowerCase();
-        return `<div class="alert-item alert-${sev} mb-2">
-          <div class="d-flex justify-content-between align-items-start gap-2">
-            <div>
-              <span class="badge ${sev === 'critical' ? 'bg-danger' : sev === 'warning' ? 'bg-warning text-dark' : 'bg-info text-dark'} me-2">${a.severity}</span>
-              <span class="fw-semibold">${a.message}</span>
-            </div>
-            ${a.student_id ? `<span class="text-muted small text-nowrap">Student #${a.student_id}</span>` : ''}
-          </div>
-          <div class="text-muted small mt-1">→ ${a.recommended_action}</div>
-        </div>`;
-      }).join('');
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailKPI() {
-    openModal('KPI Summary', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/dashboard/summary');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const d = res.data;
-      const f = d.funnel || {};
-      const c = d.conversion || {};
-      document.getElementById('modal-body').innerHTML = `
-        <div class="row g-2 mb-3">
-          ${kpiBox('Tracked',          f.tracked ?? d.total_tracked ?? '—', 'metric-primary')}
-          ${kpiBox('Ever Contacted',   f.contacted ?? '—',               'metric-info')}
-          ${kpiBox('Responded',        f.responded ?? '—',               'metric-success')}
-          ${kpiBox('No Response',      f.no_response ?? '—',             'metric-warning')}
-          ${kpiBox('Intervention',     f.intervention_required ?? '—',   'metric-danger')}
-          ${kpiBox('Resolved',         f.resolved ?? '—',                'metric-success')}
-          ${kpiBox('Closed',           f.closed ?? '—',                  '')}
-          ${kpiBox('Shadow Executions',f.shadow_executions ?? d.shadow_executions ?? '—', 'metric-warning')}
-        </div>
-        <div class="row g-2">
-          ${[['Contacted Rate', pct(c.contacted_rate)], ['Response Rate', pct(c.response_rate)], ['Resolution Rate', pct(c.resolution_rate)]].map(([l, v]) => `
-            <div class="col-4">
-              <div class="kpi-box text-center">
-                <div class="kpi-label">${l}</div>
-                <div style="font-size:1.5rem;font-weight:700;color:var(--color-primary-light)">${v}</div>
-              </div>
-            </div>`).join('')}
-        </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailStates() {
-    openModal('State Distribution', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/dashboard/summary');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const byState = res.data.by_state || {};
-      if (!Object.keys(byState).length) {
-        document.getElementById('modal-body').innerHTML = '<p class="text-center text-muted py-4">No data yet</p>';
-        return;
-      }
-      document.getElementById('modal-body').innerHTML = `
-        <div class="list-group list-group-flush">
-          ${STATE_ORDER.filter(s => byState[s] !== undefined).map(s => `
-            <div class="list-group-item d-flex justify-content-between align-items-center px-2 py-2" style="border-color:var(--color-border)">
-              <span class="${sc(s)}">${sp(s)}</span>
-              <span class="fw-semibold" style="color:var(--color-text)">${byState[s]}</span>
-            </div>`).join('')}
-        </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailChannels() {
-    openModal('Channel Performance', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/dashboard/channel-performance');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const { channels, shadow_mode, note } = res.data;
-      if (!channels?.length) {
-        document.getElementById('modal-body').innerHTML = '<p class="text-center text-muted py-4">No outreach history yet</p>';
-        return;
-      }
-      document.getElementById('modal-body').innerHTML = `
-        ${shadow_mode ? '<div class="alert alert-warning py-2 mb-3 small">All channels are simulated in SHADOW mode — no real communication sent.</div>' : ''}
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light"><tr>
-              <th>Channel</th><th>Attempts</th><th>Shadow</th><th>Responses</th><th>No Response</th><th>Success %</th>
-            </tr></thead>
-            <tbody>${channels.map(ch => `<tr>
-              <td class="fw-semibold">${ch.channel}</td>
-              <td>${ch.attempts}</td>
-              <td class="text-warning">${ch.shadow_count}</td>
-              <td class="text-success">${ch.responses}</td>
-              <td class="text-warning">${ch.no_response}</td>
-              <td class="${ch.success_rate > 0 ? 'text-success' : 'text-muted'}">${pct(ch.success_rate)}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>
-        ${note ? `<p class="text-warning small mt-2">${note}</p>` : ''}`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailActivity() {
-    openModal('Recent Activity', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/dashboard/recent-activity?limit=20');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const items = res.data.items || [];
-      if (!items.length) {
-        document.getElementById('modal-body').innerHTML = '<p class="text-center text-muted py-4">No activity yet</p>';
-        return;
-      }
-      document.getElementById('modal-body').innerHTML = `
-        <div class="d-flex justify-content-end mb-2">
-          <button class="btn btn-sm btn-outline-secondary" onclick="detailActivity()">↺ Reload</button>
-        </div>
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light"><tr>
-              <th>Time</th><th>Student</th><th>Checkpoint</th><th>Channel</th><th>Action</th><th>Mode</th><th>State Change</th>
-            </tr></thead>
-            <tbody>${items.map(i => `<tr>
-              <td class="text-muted small text-nowrap">${ts(i.created_at)}</td>
-              <td class="fw-semibold">${i.user_id}</td>
-              <td class="text-muted">${i.checkpoint_type || '—'}</td>
-              <td>${i.channel || '—'}</td>
-              <td>${i.action || '—'}</td>
-              <td>${modeSpan(i.execution_mode)}</td>
-              <td>
-                <span class="${sc(i.state_before || '')}">${sp(i.state_before || '—')}</span>
-                <span class="text-muted mx-1">→</span>
-                <span class="${sc(i.state_after || '')}">${sp(i.state_after || '—')}</span>
-              </td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailSourceSummary() {
-    openModal('Source Analysis', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const res = await api('/source/summary');
-      if (res.status !== 'success') { document.getElementById('modal-body').innerHTML = '<p class="text-danger text-center py-3">Failed to load</p>'; return; }
-      const d = res.data;
-      document.getElementById('modal-body').innerHTML = `
-        <div class="row g-2 mb-3">
-          ${kpiBox('Total Source', d.total_source ?? 0, 'metric-primary')}
-          ${kpiBox('Tracked', d.total_tracked ?? 0, 'metric-success')}
-          ${kpiBox('Untracked', d.total_untracked ?? 0, (d.total_untracked ?? 0) > 0 ? 'metric-warning' : 'metric-success')}
-          ${kpiBox('Pathways', (d.by_path || []).length, 'metric-info')}
-        </div>
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light"><tr>
-              <th>Pathway</th><th>Total</th><th>Tracked</th><th>Untracked</th>
-              <th>URGENT</th><th>HIGH</th><th>MEDIUM</th><th>LOW</th>
-            </tr></thead>
-            <tbody>${(d.by_path || []).map(p => `<tr>
-              <td class="fw-semibold">${p.path}</td><td>${p.total}</td>
-              <td class="text-success">${p.tracked}</td>
-              <td class="${p.untracked > 0 ? 'text-warning fw-semibold' : 'text-muted'}">${p.untracked}</td>
-              <td class="text-danger">${p.risk?.URGENT ?? 0}</td>
-              <td class="text-warning">${p.risk?.HIGH ?? 0}</td>
-              <td class="text-info">${p.risk?.MEDIUM ?? 0}</td>
-              <td class="text-muted">${p.risk?.LOW ?? 0}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function detailWorkQueue() {
-    const QUEUES = [
-      ['all_source','All Source'],['untracked','Untracked'],['eligible','Eligible'],
-      ['contacted','Contacted'],['intervention','Intervention'],
-      ['retry_due','Retry Due'],['resolved_closed','Resolved/Closed'],
-    ];
-    openModal('Work Queue', '<p class="text-center text-muted py-4">Loading…</p>');
-    try {
-      const summRes = await api('/work-queue/summary');
-      const counts = summRes.data?.queues || {};
-      document.getElementById('modal-body').innerHTML = `
-        <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
-          <select id="modal-queue-select" class="form-select form-select-sm" style="max-width:220px" onchange="loadModalWorkQueue(this.value)">
-            ${QUEUES.map(([q, l]) => `<option value="${q}">${l} (${counts[q] ?? 0})</option>`).join('')}
-          </select>
-          <select id="modal-queue-path" class="form-select form-select-sm" style="max-width:180px" onchange="loadModalWorkQueue(document.getElementById('modal-queue-select').value)">
-            <option value="">All Pathways</option>
-          </select>
-          <button class="btn btn-sm btn-outline-secondary" onclick="loadModalWorkQueue(document.getElementById('modal-queue-select').value)">↺</button>
-        </div>
-        <div id="modal-queue-body"><p class="text-muted small">Loading…</p></div>`;
-      // Populate paths
-      try {
-        const pr = await api('/source/paths');
-        const pathSel = document.getElementById('modal-queue-path');
-        (pr.data?.paths || []).forEach(p => {
-          const o = document.createElement('option'); o.value = p; o.textContent = p; pathSel?.appendChild(o);
-        });
-      } catch (_) {}
-      await loadModalWorkQueue('all_source');
-    } catch (e) { document.getElementById('modal-body').innerHTML = `<p class="text-danger">Error: ${e}</p>`; }
-  }
-
-  async function loadModalWorkQueue(queueName) {
-    const el = document.getElementById('modal-queue-body');
-    if (!el) return;
-    const pathFilter = document.getElementById('modal-queue-path')?.value;
-    el.innerHTML = '<p class="text-muted small">Loading…</p>';
-    try {
-      const url = `/work-queue/${queueName}?limit=50${pathFilter ? '&path=' + encodeURIComponent(pathFilter) : ''}`;
-      const res = await api(url);
-      if (res.status !== 'success') { el.innerHTML = '<p class="text-danger small">Failed to load</p>'; return; }
-      const { rows, total } = res.data;
-      if (!rows?.length) { el.innerHTML = '<p class="text-muted text-center py-3">No students in this queue</p>'; return; }
-      el.innerHTML = `
-        <div class="text-muted small mb-2">Showing top 50 of ${total} (priority sorted)</div>
-        <div class="table-responsive">
-          <table class="table table-hover mb-0" style="font-size:.82rem">
-            <thead class="table-light"><tr>
-              <th>Student</th><th>Path</th><th>Priority</th><th>Score</th>
-              <th>HW</th><th>Eff</th><th>Inact.</th><th>State</th><th>Action</th>
-            </tr></thead>
-            <tbody>${rows.map(r => `<tr>
-              <td class="fw-semibold">${r.name || ('#' + r.user_id)}</td>
-              <td class="text-muted small">${r.path || '—'}</td>
-              <td>${priorityBadge(r.priority_level)}</td>
-              <td class="fw-semibold text-center" style="color:var(--color-primary)">${r.priority_score}</td>
-              <td class="${(r.hws_behind ?? 0) >= 3 ? 'text-danger fw-semibold' : ''}">${r.hws_behind ?? '—'}</td>
-              <td class="${(r.eff_rating ?? 5) < 3 ? 'text-warning fw-semibold' : ''}">${r.eff_rating != null ? r.eff_rating.toFixed(1) : '—'}</td>
-              <td>${r.inactivity_days ?? '—'}</td>
-              <td>${r.state ? `<span class="${sc(r.state)}">${sp(r.state)}</span>` : '<span class="text-muted">—</span>'}</td>
-              <td class="text-muted small">${(r.recommended_action || '—').replace(/_/g,' ')}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (e) { el.innerHTML = `<p class="text-danger small">Error: ${e}</p>`; }
-  }
-
-  function detailStudents() {
-    openModal('Student Cases', `
-      <p class="text-muted mb-3">Enter a student ID to view their profile, outreach history, and state transitions.</p>
-      <div class="d-flex gap-2 mb-3 flex-wrap">
-        <input id="student-id" type="number" class="form-control form-control-sm" placeholder="Student ID" style="max-width:160px"/>
-        <button class="btn btn-sm btn-primary" onclick="lookupStudent()">Look Up</button>
-      </div>
-      <div id="student-result"></div>`);
-  }
-
-  async function detailTrigger() {
-    openModal('Trigger Outreach Batch', `
-      <p class="text-muted mb-3">Select a checkpoint and preview or run the outreach batch. All outreach is simulated in SHADOW mode — no real communication will be sent.</p>
-      <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
-        <select id="checkpoint" class="form-select form-select-sm" style="max-width:220px">
-          <option value="">Loading paths…</option>
-        </select>
-        <button class="btn btn-sm btn-outline-primary" onclick="batchPreview(document.getElementById('checkpoint').value)">Preview</button>
-        <button class="btn btn-sm btn-primary" onclick="triggerOutreach()">Run Batch</button>
-      </div>
-      <div id="trigger-result" class="text-muted small"></div>`);
-    try {
-      const res = await api('/source/paths');
-      const paths = res.data?.paths || [];
-      const sel = document.getElementById('checkpoint');
-      if (sel) {
-        sel.innerHTML = paths.length
-          ? paths.map(p => `<option value="${p}">${p}</option>`).join('')
-          : '<option value="">No paths found in DB</option>';
-      }
-    } catch (_) {
-      const sel = document.getElementById('checkpoint');
-      if (sel) sel.innerHTML = ['SQL','SSRS','SSIS','POST_COMPLETION'].map(p => `<option value="${p}">${p}</option>`).join('');
-    }
-  }
-
-  function detailSync() {
-    openModal('SQL Server Sync', `
-      <p class="text-muted mb-3">Sync student data from SQL Server into PostgreSQL. SQL Server is read-only — no writes are made upstream.</p>
-      <div class="d-flex gap-2 align-items-center mb-2">
-        <button class="btn btn-sm btn-outline-secondary" onclick="syncMssql()">Sync Now</button>
-        <span id="sync-result" class="text-muted small"></span>
-      </div>
-      <div id="sync-detail-result" style="font-size:.8rem"></div>`);
-  }
-
-  function detailActions() {
-    openModal('Manual Actions', `
-      <p class="text-muted mb-3">All actions are validated against the state machine and recorded in the audit log. System remains in SHADOW mode — no real outbound sends.</p>
-      <div class="d-flex gap-2 mb-3 flex-wrap">
-        <input id="action-uid"   type="number" class="form-control form-control-sm" placeholder="Student ID"       style="max-width:155px"/>
-        <input id="action-notes" type="text"   class="form-control form-control-sm" placeholder="Notes (optional)" style="max-width:230px"/>
-      </div>
-      <div class="d-flex gap-2 flex-wrap mb-3">
-        <button class="btn btn-sm btn-danger"           onclick="execAction('CLOSE_CASE')">Close Case</button>
-        <button class="btn btn-sm btn-warning text-dark" onclick="execAction('FORCE_RETRY')">Force Retry ${_execMode === 'SHADOW' ? '<span class="badge bg-secondary ms-1" style="font-size:.6rem">SHADOW</span>' : ''}</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="execAction('BOOK_MEETING')">Mark Resolved</button>
-        <button class="btn btn-sm btn-primary"           onclick="execAction('ESCALATE')">Escalate</button>
-      </div>
-      <div id="action-result" class="text-muted small mb-3"></div>
-      <div class="text-uppercase fw-semibold small text-muted mb-1" style="letter-spacing:.5px;font-size:.62rem">Action Log</div>
-      <div id="action-console"><p class="text-info">Waiting for actions…</p></div>`);
-  }
-
-  // ── Student lookup (modal) ─────────────────────────────────────
-  async function lookupStudent() {
-    const id = document.getElementById('student-id')?.value;
-    if (!id) return;
-    const el = document.getElementById('student-result');
-    if (!el) return;
-    el.innerHTML = '<p class="text-muted small">Loading…</p>';
-    try {
-      const res = await api(`/students/${id}`);
-      if (res.status !== 'success') {
-        el.innerHTML = `<div class="alert alert-danger py-2 small">Student not found: ${res.error?.message || 'No record for ID ' + id}</div>`;
-        return;
-      }
-      const d = res.data;
-      const p = d.profile || {};
-      const name = [p.first_name, p.last_name].filter(Boolean).join(' ') || `Student ${id}`;
-      const hwBad = (p.hws_behind || 0) >= 3;
-      const efBad = p.avg_eff_rating != null && p.avg_eff_rating < 3.0;
-      const acBad = (p.last_activity_days || 0) >= 5;
-
-      const histRows = (d.history || []).map(h => `<tr>
-        <td class="text-muted small text-nowrap">${ts(h.created_at)}</td>
-        <td>${h.attempt_number}</td><td>${h.channel || '—'}</td><td>${h.action || '—'}</td>
-        <td>${modeSpan(h.execution_mode)}</td>
-        <td><span class="${sc(h.state_before || '')}">${sp(h.state_before || '—')}</span></td>
-        <td><span class="${sc(h.state_after  || '')}">${sp(h.state_after  || '—')}</span></td>
-      </tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted py-3">No outreach history</td></tr>';
-
-      const transRows = (d.transitions || []).map(t => `<tr>
-        <td class="text-muted small text-nowrap">${ts(t.created_at)}</td>
-        <td><span class="${sc(t.from_state)}">${sp(t.from_state)}</span></td>
-        <td><span class="${sc(t.to_state)}">${sp(t.to_state)}</span></td>
-        <td class="text-muted">${t.trigger || '—'}</td>
-        <td class="text-muted small">${t.actor}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-3">No transitions recorded</td></tr>';
-
-      el.innerHTML = `
-        <div class="card border shadow-sm mb-3" style="border-color:var(--color-border)!important">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
-              <div>
-                <div class="fw-bold mb-1" style="font-size:1.05rem;color:var(--color-primary)">
-                  ${name}
-                  <span class="badge ${p.risk_level === 'HIGH' ? 'bg-danger' : p.risk_level === 'MEDIUM' ? 'bg-warning text-dark' : p.risk_level === 'LOW' ? 'bg-success' : 'bg-secondary'} ms-2" style="font-size:.62rem">${p.risk_level || 'UNKNOWN'} RISK</span>
-                </div>
-                <div class="text-muted small d-flex flex-wrap gap-3 mb-2">
-                  <span><strong>ID:</strong> ${d.user_id}</span>
-                  <span><strong>Path:</strong> ${p.path || '—'}</span>
-                  <span><strong>Email:</strong> ${p.email || '—'}</span>
-                  <span><strong>Phone:</strong> ${p.phone || '—'}</span>
-                </div>
-                <div class="d-flex gap-2 flex-wrap">
-                  <div class="stat-box"><span class="stat-label">HWs Behind</span><span class="stat-val ${hwBad ? 'text-danger' : 'text-success'}">${p.hws_behind ?? '—'}</span></div>
-                  <div class="stat-box"><span class="stat-label">Avg Effort</span><span class="stat-val ${efBad ? 'text-warning' : 'text-success'}">${p.avg_eff_rating != null ? p.avg_eff_rating.toFixed(1) : '—'}</span></div>
-                  <div class="stat-box"><span class="stat-label">Inactive Days</span><span class="stat-val ${acBad ? 'text-warning' : 'text-success'}">${p.last_activity_days ?? '—'}</span></div>
-                </div>
-              </div>
-              <div class="text-end flex-shrink-0">
-                <div class="mb-1"><span class="${sc(d.state)}">${sp(d.state)}</span></div>
-                <div class="text-muted small">Checkpoint: <strong>${d.checkpoint_type}</strong></div>
-                <div class="text-muted small">Attempts: <strong>${d.current_attempt}</strong></div>
-                ${d.last_contact_at ? `<div class="text-muted" style="font-size:.7rem">Last contact: ${ts(d.last_contact_at)}</div>` : ''}
-                ${d.next_retry_at   ? `<div class="text-muted" style="font-size:.7rem">Next retry: ${ts(d.next_retry_at)}</div>` : ''}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="text-uppercase fw-semibold small text-muted mb-2" style="letter-spacing:.5px;font-size:.62rem">Outreach History</div>
-        <div class="table-responsive mb-3">
-          <table class="table table-hover mb-0">
-            <thead class="table-light"><tr><th>Date</th><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>From</th><th>To</th></tr></thead>
-            <tbody>${histRows}</tbody>
-          </table>
-        </div>
-        <div class="text-uppercase fw-semibold small text-muted mb-2" style="letter-spacing:.5px;font-size:.62rem">State Transitions</div>
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead class="table-light"><tr><th>Date</th><th>From</th><th>To</th><th>Trigger</th><th>Actor</th></tr></thead>
-            <tbody>${transRows}</tbody>
-          </table>
-        </div>`;
-    } catch (e) { el.innerHTML = `<p class="text-danger small">Error: ${e}</p>`; }
-  }
-
-  // ── Trigger outreach (modal) ───────────────────────────────────
-  async function triggerOutreach() {
-    const cp    = document.getElementById('checkpoint')?.value;
-    const resEl = document.getElementById('trigger-result');
-    if (!cp) return;
-    if (resEl) resEl.textContent = 'Running…';
-    try {
-      const res = await api('/outreach/trigger', {
-        method: 'POST', body: JSON.stringify({ checkpoint_type: cp }),
-      });
-      if (res.status === 'success') {
-        const s = res.data.summary;
-        if (resEl) resEl.textContent = `Done — triggered: ${s.triggered}  retried: ${s.retried}  skipped: ${s.skipped}  errors: ${s.errors}`;
-        loadSummary(); loadAlerts(); loadActivity();
-      } else {
-        if (resEl) resEl.textContent = res.error?.message || 'Error';
-      }
-    } catch (e) { if (resEl) resEl.textContent = 'Request failed'; }
-  }
-
-  // ── SQL sync (modal) ───────────────────────────────────────────
-  async function syncMssql() {
-    const statusEl = document.getElementById('sync-result');
-    const detailEl = document.getElementById('sync-detail-result');
-    if (statusEl) statusEl.textContent = 'Syncing…';
-    if (detailEl) detailEl.innerHTML = '';
-    try {
-      const res = await api('/sync/mssql', { method: 'POST' });
-      if (res.status === 'success') {
-        const d = res.data;
-        if (!d.connected) {
-          const reason = d.error === 'not_configured' ? 'SQL Server not configured' : `Connection error: ${d.error}`;
-          if (statusEl) statusEl.innerHTML = `<span class="text-danger">${reason}</span>`;
-          return;
-        }
-        const isPartial = d.status === 'partial_success';
-        const badge = isPartial
-          ? '<span class="badge bg-warning text-dark ms-2">WARNING — partial sync</span>'
-          : '<span class="badge bg-success ms-2">OK</span>';
-        if (statusEl) statusEl.innerHTML = `Sync complete${badge}`;
-
-        let html = `<table class="table table-sm mb-0" style="font-size:.8rem">
-          <tbody>
-            <tr><td class="text-muted">Rows scanned</td><td>${d.rows_scanned}</td></tr>
-            <tr><td class="text-muted">Rows inserted</td><td>${d.added}</td></tr>
-            <tr><td class="text-muted">Rows updated</td><td>${d.updated}</td></tr>
-            <tr><td class="text-muted">Rows skipped</td><td class="${isPartial ? 'text-warning fw-semibold' : ''}">${d.rows_failed}</td></tr>
-          </tbody>
-        </table>`;
-        if (isPartial && d.failures?.length) {
-          html += `<div class="mt-2"><span class="text-muted small fw-semibold">Skipped rows</span>
-            <table class="table table-sm mt-1 mb-0" style="font-size:.75rem">
-              <thead class="table-light"><tr><th>UserID</th><th>Reason</th></tr></thead>
-              <tbody>${d.failures.map(f =>
-                `<tr><td>${f.user_id ?? '—'}</td><td class="text-danger">${f.reason}</td></tr>`
-              ).join('')}</tbody>
-            </table></div>`;
-        }
-        if (detailEl) detailEl.innerHTML = html;
-      } else {
-        if (statusEl) statusEl.innerHTML = `<span class="text-danger">${res.error?.message || 'Sync failed'}</span>`;
-      }
-    } catch (e) {
-      if (statusEl) statusEl.innerHTML = '<span class="text-danger">Request failed</span>';
-    }
-  }
-
-  // ── Manual actions (modal) ─────────────────────────────────────
-  function clog(msg, type) {
-    const el = document.getElementById('action-console');
-    if (!el) return;
-    const p = document.createElement('p');
-    p.className = type === 'ok' ? 'text-success' : type === 'err' ? 'text-danger' : 'text-info';
-    p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    el.prepend(p);
-    while (el.children.length > 60) el.removeChild(el.lastChild);
-  }
-
-  async function execAction(actionType) {
-    const uid     = document.getElementById('action-uid')?.value;
-    const notes   = document.getElementById('action-notes')?.value;
-    const resultEl = document.getElementById('action-result');
-    if (!uid) { if (resultEl) resultEl.textContent = 'Enter a Student ID first.'; return; }
-    clog(`Executing ${actionType} for student ${uid}…`);
-    if (resultEl) resultEl.textContent = '';
-    try {
-      const body = { user_id: parseInt(uid), action_type: actionType };
-      if (notes) body.notes = notes;
-      const res = await api('/actions/manual', { method: 'POST', body: JSON.stringify(body) });
-      if (res.status === 'success') {
-        const d = res.data;
-        const msg = `${actionType} executed: ${sp(d.from_state)} → ${sp(d.to_state)}`;
-        if (resultEl) resultEl.textContent = msg;
-        clog(msg, 'ok');
-        loadSummary(); loadAlerts(); loadActivity();
-      } else {
-        const msg = res.error?.message || res.error?.code || 'Error';
-        if (resultEl) resultEl.textContent = `Error: ${msg}`;
-        clog(`Error: ${msg}`, 'err');
-      }
-    } catch (e) {
-      if (resultEl) resultEl.textContent = 'Request failed';
-      clog(`Request failed: ${e}`, 'err');
-    }
-  }
-
-  // ── Batch preview + execution ──────────────────────────────────
-
-  async function batchPreview(checkpoint) {
-    if (!checkpoint) return;
-    _batchPreviewCheckpoint = checkpoint;
-    const bodyEl = document.getElementById('batch-preview-body');
-    if (bodyEl) bodyEl.innerHTML = '<p class="text-center text-muted py-3">Loading preview…</p>';
-    getBatchModal().show();
-    try {
-      const res = await api(`/batch/preview?checkpoint_type=${encodeURIComponent(checkpoint)}&limit=50`);
-      if (res.status !== 'success') { if (bodyEl) bodyEl.innerHTML = '<p class="text-danger text-center py-3">Failed to load preview</p>'; return; }
-      const d = res.data;
-      const decs = d.decisions || {};
-      if (bodyEl) bodyEl.innerHTML = `
-        <div class="alert ${d.shadow ? 'alert-warning' : 'alert-info'} py-2 mb-3 small">
-          <strong>${d.shadow ? 'SHADOW mode' : 'LIVE mode'}:</strong> Preview for <strong>${d.checkpoint_type}</strong> —
-          ${d.would_process} students in scope.
-        </div>
-        <div class="row g-2 mb-3">
-          ${[['Trigger',decs.TRIGGER_OUTREACH,'metric-info'],['Retry',decs.RETRY_OUTREACH,'metric-warning'],
-             ['Escalate',decs.ESCALATE,'metric-danger'],['Close',decs.CLOSE,''],['No Action',decs.NO_ACTION,'text-muted']]
-            .map(([l,v,cls]) => `<div class="col"><div class="kpi-box text-center"><div class="kpi-label">${l}</div><div class="kpi-val ${cls}">${v ?? 0}</div></div></div>`).join('')}
-        </div>
-        <div class="table-responsive" style="max-height:320px;overflow-y:auto">
-          <table class="table table-sm table-hover mb-0" style="font-size:.78rem">
-            <thead class="table-light" style="position:sticky;top:0">
-              <tr><th>Student</th><th>Priority</th><th>Score</th><th>Decision</th><th>Recommended</th><th>State</th></tr>
-            </thead>
-            <tbody>${(d.rows || []).map(r => `<tr>
-              <td class="fw-semibold">${r.name || ('#' + r.user_id)}</td>
-              <td>${priorityBadge(r.priority_level)}</td>
-              <td class="text-center fw-semibold" style="color:var(--color-primary)">${r.priority_score}</td>
-              <td class="text-muted small">${sp(r.decision || '—')}</td>
-              <td class="text-muted small">${(r.recommended_action || '—').replace(/_/g,' ')}</td>
-              <td>${r.current_state ? `<span class="${sc(r.current_state)}">${sp(r.current_state)}</span>` : '<span class="text-muted">New</span>'}</td>
-            </tr>`).join('')}</tbody>
-          </table>
-        </div>`;
-    } catch (e) { if (bodyEl) bodyEl.innerHTML = `<p class="text-danger text-center py-3">Error: ${e}</p>`; }
-  }
-
-  async function executeBatch() {
-    const btn = document.getElementById('batch-run-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
-    try {
-      const res = await api('/batch/run', {
-        method: 'POST',
-        body: JSON.stringify({ checkpoint_type: _batchPreviewCheckpoint }),
-      });
-      getBatchModal().hide();
-      if (res.status === 'success') {
-        const s = res.data;
-        loadSummary(); loadAlerts(); loadActivity(); loadWorkQueueSummary();
-        if (document.getElementById('expand-activity')?.classList.contains('show')) loadExpandActivity();
-      }
-    } catch (e) {
-      const bodyEl = document.getElementById('batch-preview-body');
-      if (bodyEl) {
-        const d = document.createElement('div');
-        d.className = 'alert alert-danger py-2 mt-2 small'; d.textContent = `Error: ${e}`;
-        bodyEl.appendChild(d);
-      }
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = 'Run Batch <span class="mode-shadow ms-1">SHADOW</span>'; }
-    }
-  }
-
-  // ── Boot ───────────────────────────────────────────────────────
-  async function loadAll() {
-    await Promise.allSettled([
-      loadHealth(), loadAlerts(), loadSummary(), loadChannelPerf(), loadActivity(),
-      loadSourceSummary(), loadWorkQueueSummary(),
-    ]);
-    document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
-    // Refresh any open expand panels
-    if (document.getElementById('expand-health')?.classList.contains('show'))     loadExpandHealth();
-    if (document.getElementById('expand-alerts')?.classList.contains('show'))     loadExpandAlerts();
-    if (document.getElementById('expand-kpi')?.classList.contains('show'))        loadExpandKpi();
-    if (document.getElementById('expand-states')?.classList.contains('show'))     loadExpandStates();
-    if (document.getElementById('expand-channels')?.classList.contains('show'))   loadExpandChannels();
-    if (document.getElementById('expand-activity')?.classList.contains('show'))   loadExpandActivity();
-    if (document.getElementById('expand-source')?.classList.contains('show'))     loadExpandSource();
-  }
-
-  loadAll();
-  setInterval(loadAll, 60000);
+  // Start auto-refresh
+  startAutoRefresh();
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+});
 </script>
 </body>
 </html>
