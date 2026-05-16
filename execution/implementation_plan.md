@@ -59,6 +59,8 @@ The goal is to ensure:
 
 ---
 
+### Planned (original)
+
 ```plaintext id="4r9z9j"
 PHASE 1 → Core Foundation
 PHASE 2 → Outreach Execution
@@ -68,6 +70,18 @@ PHASE 5 → LLM + Analysis
 PHASE 6 → Failure Handling + Observability
 PHASE 7 → Dashboard + UX
 ```
+
+### Delivered (actual as of 2025-05)
+
+```
+PHASE 1 → Core MVP (FastAPI, PostgreSQL, SQL Server sync, scheduler, dashboard shell)
+PHASE 2 → GHL Integration (phone-based contact lookup, message cache, SHADOW read-only)
+PHASE 3 → AI Insights (LLM generation, unified timeline, notes, right-side drawer)
+PHASE 4 → Operational Intelligence (segments, payment tracking, source routing, batch processing, work queue)
+PHASE 5 → Student Lifecycle Tabs (6 tabs, action bars, quick action logging, campaign activity)
+```
+
+Phase labels in the sections below reflect the original plan. The actual delivered phases above are the authoritative record; see `PROGRESS.md` for per-phase completion details.
 
 ---
 

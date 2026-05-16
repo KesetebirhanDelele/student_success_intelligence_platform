@@ -136,7 +136,93 @@ If the student ID has no tracking record:
 
 ---
 
-## 5. FAILURE INVESTIGATION WORKFLOW
+## 5. LIFECYCLE TAB WORKFLOWS
+
+---
+
+The lifecycle tabs are the primary daily working surface for operators. All six tabs share the same interaction model.
+
+---
+
+### 5.1 Navigating Lifecycle Tabs
+
+**Steps:**
+
+1. Open the dashboard at `http://host/`
+2. Scroll below the 10 summary cards to the tab bar: Newcomers | Engagement | HW Risk | CAP Hopefuls | Launch Hopefuls | Placement Hopefuls
+3. Click the desired tab
+4. Tab data loads automatically from the lifecycle endpoint
+5. Use the search box to filter by name, email, or any column value
+6. Click any column header to sort
+7. Use pagination controls to navigate pages
+8. Click **Export CSV** to download the current filtered view
+
+---
+
+### 5.2 Selecting a Student
+
+1. Click any row in a lifecycle tab table
+2. The row highlights with a blue outline — this is the **selected student**
+3. The action bar above the table enables all action buttons and shows the student's name
+4. The right-side drawer opens simultaneously, showing the student's full profile, timeline, and notes
+
+If you need to act on a different student, click their row — the selection moves and the drawer updates.
+
+---
+
+### 5.3 Taking an Action (SHADOW Mode)
+
+All actions in SHADOW mode log to PostgreSQL only. No real communication is sent.
+
+**Steps:**
+
+1. Select a student row (buttons activate)
+2. Confirm the `SHADOW MODE` badge is visible — this confirms no real outbound sends will occur
+3. Click the desired action button (e.g., "Send Welcome Email", "Log Call", "Flag for Review")
+4. An inline result appears below the button bar confirming the log was written
+5. The "Last Campaign Activity" columns in the tab table will reflect the action on next load
+6. The action also appears in the student's timeline (right drawer → Timeline tab)
+
+**What is logged:**
+* `student_quick_action_log` — button click audit record (action_key, action_label, tab_name, created_at, execution_mode)
+* `student_campaign_activity` — campaign activity entry visible in tab columns and timeline
+
+**What is NOT sent in SHADOW mode:**
+* No GHL API write
+* No SMS
+* No email
+* No outbound call trigger
+
+---
+
+### 5.4 Syncing Student Data Before Using Tabs
+
+If tabs are empty or showing stale data:
+
+1. On the dashboard Overview tab, click **Sync Students** (or **Sync All** on the SQL Server Sync card)
+2. `POST /sync/mssql` runs — pulls latest rows from SQL Server `AI_ChatBot_TriggerData`
+3. Result shows: scanned / added / updated / failed counts
+4. Return to the lifecycle tab and reload — data now reflects the latest sync
+
+Launch Hopefuls and Placement Hopefuls tabs will remain empty until students have `LastActivitySection` values containing "CAP Project" or "Launch" — these populate naturally as students progress through the program and `LastActivitySection` updates in SQL Server.
+
+---
+
+### 5.5 Using the Student Drawer
+
+Clicking a row opens a right-side drawer with tabs:
+
+* **Profile** — contact info, program path, academic metrics, risk badge
+* **Timeline** — unified activity log (outreach history, GHL messages, notes, AI insights, state transitions), newest first
+* **Notes** — internal notes; operator can add a new note
+* **Outreach** — GHL message sync button; shows last N GHL messages if synced
+* **AI Insights** — LLM-generated analysis for this student
+
+Drawer closes via the ✕ button or by pressing Escape.
+
+---
+
+## 6. FAILURE INVESTIGATION WORKFLOW
 
 ---
 

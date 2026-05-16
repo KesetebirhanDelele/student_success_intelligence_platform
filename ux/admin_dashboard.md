@@ -296,7 +296,82 @@ Set by `GET /dashboard/health` MSSQL configured field — WARNING if not configu
 
 ---
 
-## 15. MANUAL ACTIONS
+## 15. STUDENT LIFECYCLE TABS
+
+---
+
+The dashboard home page includes six tabbed views below the 10-card summary grid. Each tab is a full-featured data table driven by a dedicated lifecycle endpoint.
+
+---
+
+### 15.1 Tab Overview
+
+| Tab Name            | Endpoint                        | Filter Criteria                                      |
+| ------------------- | ------------------------------- | ---------------------------------------------------- |
+| Newcomers           | `GET /lifecycle/newcomers`      | IPBCStartDate within last 90 days                    |
+| Engagement          | `GET /lifecycle/engagement`     | All students                                         |
+| HW Risk             | `GET /lifecycle/hw-risk`        | IPBCStartDate not null                               |
+| CAP Hopefuls        | `GET /lifecycle/cap-hopefuls`   | IPBCStartDate not null AND AttendancePercentage > 50 |
+| Launch Hopefuls     | `GET /lifecycle/launch-hopefuls`| Attendance > 70% AND section contains "CAP Project"  |
+| Placement Hopefuls  | `GET /lifecycle/placement-hopefuls` | Attendance > 70% AND section contains "Launch"   |
+
+---
+
+### 15.2 Tab Features (all tabs)
+
+* Search across all columns (client-side)
+* Sort by any column header
+* Pagination (50 rows/page default)
+* CSV export
+* Row click → right-side detail drawer opens for that student
+* Row selection highlights selected row with a blue outline
+
+---
+
+### 15.3 Action Bar
+
+Each tab has an action button bar above the table. Buttons are **disabled by default** and **enabled only after a row is selected**. The selected student's name is shown in the label next to the buttons.
+
+On button click:
+1. `POST /quick-actions/log` is called with the student_user_id, action_key, action_label, and tab_name
+2. Inline result shows the API response (shadow mode note if SHADOW)
+3. The action is recorded in both `student_quick_action_log` (audit) and `student_campaign_activity` (populates "Last Campaign Activity" columns)
+4. No real outbound communication occurs in SHADOW mode
+
+**SHADOW mode indicator:** A `SHADOW MODE` badge is always visible next to the action bar, confirming no real sends are active.
+
+---
+
+### 15.4 Per-Tab Column Schemas
+
+#### Newcomers (17 columns)
+Student Name, UserID, Email, Phone, Program Path, IPBC Start Date, Weeks in Program, HW Submitted (days ago), Attendance %, Active, Status I, Status II, Last Campaign Activity Date, Last Campaign Activity Type, Last Campaign Activity, Campaign Notes, Notes
+
+#### Engagement (18 columns)
+Student Name, UserID, Email, Phone, Program Path, IPBC Start Date, Weeks in Program, Class Name, Last Activity Section, HW Submitted (days ago), Last Login Days, Attendance %, Active, Last Campaign Activity Date, Last Campaign Activity Type, Last Campaign Activity, Campaign Notes, Notes
+
+#### HW Risk (20 columns)
+Student Name, UserID, Email, Phone, Program Path, IPBC Start Date, Weeks in Program, HWs Behind, Avg Effort Rating, Last Activity Days, HW Submitted (days ago), Last Login Days, Attendance %, Active, Status I, Status II, Last Campaign Activity Date, Last Campaign Activity Type, Last Campaign Activity, Notes
+
+#### CAP Hopefuls (20 columns)
+Student Name, UserID, Email, Phone, Program Path, IPBC Start Date, Weeks in Program, Class Name, Last Activity Section, HW Submitted (days ago), Attendance %, Active, Status I, Status II, Total Payments, Payment Balance, Fee Paid, Last Campaign Activity Date, Last Campaign Activity, Notes
+
+#### Launch Hopefuls (20 columns)
+Same as CAP Hopefuls columns (students within CAP Project section, higher attendance threshold).
+
+#### Placement Hopefuls (28 columns)
+All prior columns plus: Last Interview, Last Interview Days Ago, Recruiter Interview Count, Technical Interview Count, Recruiter:Technical Ratio, Avg Interview Prep Score, Avg Interview Score, ChatGPT Prompt. (Interview fields are currently null until placement data source is integrated.)
+
+---
+
+### 15.5 Empty-State Messaging
+
+* Launch Hopefuls and Placement Hopefuls tabs show a descriptive empty-state note explaining their filter criteria when no rows match, rather than a generic "No records found."
+* All tabs show "Sync students from SQL Server first" guidance if `student_trigger_data` is empty.
+
+---
+
+## 16. MANUAL ACTIONS
 
 ---
 

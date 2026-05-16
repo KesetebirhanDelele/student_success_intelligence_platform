@@ -526,7 +526,366 @@ Returns the most recent N OutreachHistory rows. Default limit 20, max 100. Used 
 
 ---
 
-## 3.7 GHL Webhook Endpoint
+## 3.7 Sync Endpoints
+
+---
+
+### POST /sync/mssql
+
+Triggers a full SQL Server → PostgreSQL sync. Reads `AI_ChatBot_TriggerData` via `SELECT *`, upserts rows into `student_trigger_data`. Safe to call repeatedly (idempotent).
+
+```json
+{
+  "status": "success",
+  "data": {
+    "scanned": 412,
+    "added": 3,
+    "updated": 409,
+    "failed": 0,
+    "partial": false
+  }
+}
+```
+
+Partial sync is allowed when `PARTIAL_SYNC_TOLERANCE=true`: individual row failures are logged but do not abort the batch.
+
+---
+
+### GET /sync/status
+
+Returns the timestamp and result of the last sync run.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "last_sync_at": "ISO8601 | null",
+    "last_result": { "scanned": 412, "added": 3, "updated": 409, "failed": 0 }
+  }
+}
+```
+
+---
+
+## 3.8 Lifecycle Tab Endpoints
+
+---
+
+All lifecycle endpoints share the same response envelope:
+
+```json
+{
+  "status": "success",
+  "data": {
+    "tab": "newcomers",
+    "total": 47,
+    "rows": [ { "...": "student row with derived fields" } ]
+  }
+}
+```
+
+Each row includes all raw `student_trigger_data` columns plus these derived fields:
+
+| Derived field                  | Source                                                      |
+| ------------------------------ | ----------------------------------------------------------- |
+| `row_id`                       | Sequential index (1-based)                                  |
+| `student_name`                 | `FirstName + " " + LastName`                               |
+| `weeks_in_program`             | `(now - IPBCStartDate).days // 7`                          |
+| `last_hw_submitted_days`       | Parsed from `LastSubmitted`; fallback to `LastActivityDays` |
+| `active_student`               | 1 if `ActiveStatus` in ("1","Active","active","true","yes") |
+| `last_campaign_activity_date`  | Latest `StudentCampaignActivity.activity_date`             |
+| `last_campaign_activity_type`  | Latest `StudentCampaignActivity.activity_type`             |
+| `last_campaign_activity`       | Latest `StudentCampaignActivity.activity_label`            |
+| `campaign_notes` / `notes`     | Latest `StudentNote.content`                               |
+
+---
+
+### GET /lifecycle/newcomers
+
+Students where `IPBCStartDate IS NOT NULL AND IPBCStartDate >= (now - 90 days)`. Default limit 2000, max 5000.
+
+---
+
+### GET /lifecycle/engagement
+
+All students. Default limit 2000, max 5000. Shows coursework engagement view using `LastActivitySection`.
+
+---
+
+### GET /lifecycle/hw-risk
+
+Students where `IPBCStartDate IS NOT NULL`. Homework and progress risk view.
+
+---
+
+### GET /lifecycle/cap-hopefuls
+
+Students where `IPBCStartDate IS NOT NULL AND AttendancePercentage > 50`. CAP program candidates.
+
+---
+
+### GET /lifecycle/launch-hopefuls
+
+Students where `IPBCStartDate IS NOT NULL AND AttendancePercentage > 70 AND LastActivitySection ILIKE '%CAP Project%'`.
+
+---
+
+### GET /lifecycle/placement-hopefuls
+
+Students where `IPBCStartDate IS NOT NULL AND AttendancePercentage > 70 AND LastActivitySection ILIKE '%Launch%'`.
+
+---
+
+## 3.9 Quick Action & Campaign Activity Endpoints
+
+---
+
+### POST /quick-actions/log
+
+Logs one operator button click. Creates a `StudentQuickActionLog` record AND a companion `StudentCampaignActivity` so "Last Campaign Activity" columns populate immediately.
+
+**Request:**
+
+```json
+{
+  "student_user_id": 12345,
+  "action_key": "log_call",
+  "action_label": "Log Call",
+  "tab_name": "newcomers",
+  "created_by": "operator",
+  "payload_json": {}
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "logged": true,
+    "id": 42,
+    "shadow_mode": true,
+    "execution_mode": "SHADOW",
+    "note": "Action logged. No external communication sent (SHADOW mode)."
+  }
+}
+```
+
+**SHADOW enforcement:** In SHADOW mode, no outbound HTTP call is made to GHL, SMS provider, or email service. The log record is the only side effect.
+
+---
+
+### GET /campaign-activity/{user_id}
+
+Campaign activity history for one student, newest first. Limit 50, max 200.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": 12345,
+    "count": 3,
+    "activities": [
+      {
+        "id": 7,
+        "activity_date": "2025-05-14",
+        "activity_type": "NEWCOMERS",
+        "activity_label": "Send Welcome Email",
+        "channel": "OPERATOR",
+        "source": "operator",
+        "created_by": "operator",
+        "created_at": "ISO8601",
+        "execution_mode": "SHADOW",
+        "shadow_only": true
+      }
+    ]
+  }
+}
+```
+
+---
+
+### GET /quick-actions/{user_id}
+
+Quick action log for one student, newest first.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": 12345,
+    "count": 2,
+    "logs": [
+      {
+        "id": 5,
+        "action_key": "log_call",
+        "action_label": "Log Call",
+        "tab_name": "newcomers",
+        "status": "LOGGED",
+        "created_by": "operator",
+        "created_at": "ISO8601",
+        "execution_mode": "SHADOW"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 3.10 GHL Sync Endpoints
+
+---
+
+### POST /ghl-sync/student
+
+Syncs one student's GHL messages by UserID. Looks up the student's phone number from `student_trigger_data`, normalizes to E.164, calls GHL API to find the matching contact, then fetches conversation messages. Stores results in `ghl_messages` table. No writes back to GHL.
+
+**Request:**
+
+```json
+{ "user_id": 12345 }
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": 12345,
+    "contact_id": "abc123",
+    "messages_synced": 12
+  }
+}
+```
+
+---
+
+### POST /ghl-sync/batch
+
+Syncs GHL messages for multiple students. Query param `limit` (default 100, max 500).
+
+```
+POST /ghl-sync/batch?limit=100
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "processed": 100,
+    "succeeded": 97,
+    "failed": 3
+  }
+}
+```
+
+---
+
+### GET /ghl-sync/status
+
+Returns GHL sync configuration status (API key present, base URL configured).
+
+---
+
+## 3.11 Student Timeline Endpoint
+
+---
+
+### GET /timeline/{user_id}
+
+Unified timeline for one student. Merges rows from `outreach_history`, `state_transition_log`, `student_notes`, `ai_insights`, and `ghl_messages`, ordered newest first.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "user_id": 12345,
+    "timeline": [
+      {
+        "event_type": "ghl_message",
+        "direction": "inbound",
+        "channel": "SMS",
+        "body": "...",
+        "timestamp": "ISO8601"
+      },
+      {
+        "event_type": "note",
+        "content": "Student called back.",
+        "created_by": "operator",
+        "timestamp": "ISO8601"
+      },
+      {
+        "event_type": "outreach",
+        "channel": "CALL",
+        "action": "CALL_SIMULATED",
+        "execution_mode": "SHADOW",
+        "timestamp": "ISO8601"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 3.12 Notes Endpoints
+
+---
+
+### POST /notes
+
+Create an internal note for a student.
+
+**Request:**
+
+```json
+{
+  "user_id": 12345,
+  "content": "Student requested callback on Thursday.",
+  "note_type": "general",
+  "visibility": "internal",
+  "created_by": "operator"
+}
+```
+
+### GET /notes/{user_id}
+
+List all notes for a student, newest first.
+
+---
+
+## 3.13 AI Insights Endpoints
+
+---
+
+### POST /ai-insights/generate
+
+Trigger LLM analysis for one student. Returns structured insight object stored in `ai_insights`.
+
+### GET /ai-insights/{user_id}
+
+List all AI insights for a student.
+
+---
+
+## 3.14 Segment Endpoints
+
+---
+
+### GET /segments/summary
+
+Returns student counts by segment (CAP_HOPEFULS, LAUNCH_HOPEFULS, PLACEMENT_HOPEFULS, NEW_STUDENTS, AT_RISK, ENGAGED).
+
+### GET /segments/{segment_name}
+
+Returns student list for a given segment. Segment names: `cap_hopefuls`, `launch_hopefuls`, `placement_hopefuls`, `new_students`, `at_risk`, `engaged`.
+
+---
+
+## 3.15 GHL Webhook Endpoint
 
 ---
 
