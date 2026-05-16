@@ -650,15 +650,15 @@ function buildTable(cfg) {
             const titleVal = c.render ? '' : escH(String(rawVal ?? ''));
             return `<td${titleVal ? ` title="${titleVal}"` : ''}>${displayVal}</td>`;
           }).join('');
-          return `<tr class="${isSelected ? 'dt-row-selected' : ''}" onclick="__dtRowClick_${containerId}(${rowId})">${cells}</tr>`;
+          return `<tr class="${isSelected ? 'dt-row-selected' : ''}" onclick="window['__dtRowClick_${containerId}'](${rowId})">${cells}</tr>`;
         }).join('');
 
     container.querySelector('.dt-count').textContent = `${filtered.length} of ${rows.length} records`;
     const pagerEl = container.querySelector('.dt-pager');
     pagerEl.innerHTML = `
-      <button class="btn btn-sm btn-outline-secondary" onclick="__dtPrev_${containerId}()" ${page===0?'disabled':''}>‹ Prev</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="window['__dtPrev_${containerId}']()" ${page===0?'disabled':''}>‹ Prev</button>
       <span class="mx-2">${page+1} / ${Math.max(1,totalPages)}</span>
-      <button class="btn btn-sm btn-outline-secondary" onclick="__dtNext_${containerId}()" ${page>=totalPages-1?'disabled':''}>Next ›</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="window['__dtNext_${containerId}']()" ${page>=totalPages-1?'disabled':''}>Next ›</button>
     `;
   }
 
@@ -674,7 +674,7 @@ function buildTable(cfg) {
   window[`__dtNext_${containerId}`] = () => { const tot = Math.ceil(filtered.length/pageSize); if (page < tot-1) { page++; render(); } };
 
   const headerCells = cols.map((c,i) =>
-    `<th onclick="__dtSort_${containerId}(${i},'${c.key}')" title="Sort by ${c.label}">${escH(c.label)} <span style="opacity:.4;font-size:.7em">⇅</span></th>`
+    `<th onclick="window['__dtSort_${containerId}'](${i},'${c.key}')" title="Sort by ${c.label}">${escH(c.label)} <span style="opacity:.4;font-size:.7em">⇅</span></th>`
   ).join('');
 
   window[`__dtSort_${containerId}`] = (i, key) => {

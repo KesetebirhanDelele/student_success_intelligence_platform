@@ -255,6 +255,11 @@
   - What changed: app/services/segmentation.py — NEWCOMERS segment uses `IPBCStartDate or StudentStartDate` for date check; CAP_HOPEFULS removes `has_ipbc_start` gate, classifies on attendance alone; SEGMENT_RULES strings updated to document new logic
   - Verification: consistent with lifecycle endpoint behaviour
 
+- [x] Fix action buttons — row click handler unreachable due to hyphen in containerId
+  - Date: 2026-05-15
+  - What changed: frontend/index.html — `buildTable()` generated four inline onclick strings using bare identifiers (`__dtRowClick_dt-newcomers(...)`) which JavaScript parses as subtraction; fixed all four generators (row click, prev pager, next pager, sort header) to use `window['__dtXxx_${containerId}'](...)` bracket notation so the hyphenated key is reachable
+  - Verification: `onSelect` callback now fires on row click → action buttons un-disable; pager Prev/Next and column sort also unblocked by same fix
+
 - [x] Make ODBC driver configurable — MSSQL_DRIVER env var
   - Date: 2026-05-15
   - What changed: app/config.py — added `MSSQL_DRIVER: str = "ODBC Driver 17 for SQL Server"` setting; `mssql_dsn` property uses `{self.MSSQL_DRIVER}` instead of hardcoded v18; production can override with `MSSQL_DRIVER=ODBC Driver 18 for SQL Server` in `.env`

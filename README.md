@@ -239,3 +239,20 @@ docker compose build api && docker compose run --rm api python -m pytest tests/ 
 # To restart without rebuilding (e.g. after an .env change only):
 
 docker compose up -d api
+
+# to fix/add
+missing source tables and columns for CAP, launch, and placement
+
+payment source
+
+backlog data for all tabs as applicable
+
+apply correct filter after getting back log data since students not in IPBC should not appear in all current tabs
+
+build email independently
+build SMS message with WhatsApp link embeded at the bottom
+Calendar integartion, and other production use cases
+
+Pull previous communications from GHL before drafting message for student
+
+CSV download not working and the action buttons are active but need to be populated with draft message to be sent out to student or mentor as applicable which should be verified/edited as applicable and sent by operator. Right now, when clicked it simply logs the action.
