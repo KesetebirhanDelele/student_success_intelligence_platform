@@ -233,6 +233,35 @@
 
 ---
 
+## Phase 6 — Lifecycle Tab Data Fix (Newcomers / HW Risk / CAP Hopefuls empty)
+
+- [x] Diagnose empty lifecycle tabs
+  - Date: 2026-05-15
+  - What changed: investigation only — no code changed during diagnosis
+  - Verification: confirmed `IPBCStartDate` is NULL for all 76 SQL Server students; `AttendancePercentage` was NULL in PostgreSQL despite being populated in SQL Server (scale mismatch + stale sync); 39/76 students skipped by sync validation (HWsBehind/AvgEffRating NULL); PostgreSQL had 10 seed rows + 80 partially-synced real rows
+
+- [x] Fix sync validation — allow students without homework data
+  - Date: 2026-05-15
+  - What changed: app/services/sync.py — `_REQUIRED_FIELDS` narrowed to `("UserID",)` only; `_coerce_row()` now defaults `HWsBehind → 0` and `AvgEffRating → 0.0` when NULL (students before first HW submission); `AttendancePercentage` normalized from SQL Server's 0–1 fraction to 0–100 scale (×100); `ClassSignupsID` cast to `str` (SQL Server int → PostgreSQL VARCHAR); `Total_Credits`/`ClassValue`/`PaymentBalance`/`ClassFeesPaid` explicitly cast to `float`
+  - Verification: sync ran 76/76 scanned, 76 successful, 0 failures; `AttendancePercentage` now 92.3 (was NULL) for sample student
+
+- [x] Fix lifecycle tab filters — remove IPBC gate
+  - Date: 2026-05-15
+  - What changed: app/routers/lifecycle.py — **Newcomers**: filter changed to `COALESCE(IPBCStartDate, StudentStartDate) within 90 days` via SQLAlchemy `or_/and_`; **HW Risk**: removed `IPBCStartDate IS NOT NULL` gate entirely (shows all 94 students); **CAP Hopefuls**: removed `IPBCStartDate IS NOT NULL`, kept `AttendancePercentage > 50` (now 59 students qualify); `_compute_common()` falls back to `StudentStartDate` for `weeks_in_program` when `IPBCStartDate` is NULL; added `and_` / `or_` to imports
+  - Verification: Newcomers=17, HW Risk=94, CAP Hopefuls=59 rows returned after fix
+
+- [x] Fix segmentation service — mirror same logic
+  - Date: 2026-05-15
+  - What changed: app/services/segmentation.py — NEWCOMERS segment uses `IPBCStartDate or StudentStartDate` for date check; CAP_HOPEFULS removes `has_ipbc_start` gate, classifies on attendance alone; SEGMENT_RULES strings updated to document new logic
+  - Verification: consistent with lifecycle endpoint behaviour
+
+- [x] Make ODBC driver configurable — MSSQL_DRIVER env var
+  - Date: 2026-05-15
+  - What changed: app/config.py — added `MSSQL_DRIVER: str = "ODBC Driver 17 for SQL Server"` setting; `mssql_dsn` property uses `{self.MSSQL_DRIVER}` instead of hardcoded v18; production can override with `MSSQL_DRIVER=ODBC Driver 18 for SQL Server` in `.env`
+  - Verification: sync succeeded using Driver 17 locally
+
+---
+
 ## Documentation Update — Phase 5 Sync
 
 - [x] Spec, UX, and implementation plan docs updated to reflect Phases 4 & 5

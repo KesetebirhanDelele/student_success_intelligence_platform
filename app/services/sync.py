@@ -12,8 +12,9 @@ from app.models import StudentInterviewPrep, StudentTriggerData
 
 logger = logging.getLogger(__name__)
 
-# Columns that map to NOT NULL model fields
-_REQUIRED_FIELDS: tuple[str, ...] = ("UserID", "HWsBehind", "AvgEffRating")
+# Only UserID is truly required — HWsBehind/AvgEffRating default to 0 for students
+# who haven't submitted homework yet (common in early weeks of the class).
+_REQUIRED_FIELDS: tuple[str, ...] = ("UserID",)
 
 
 def _validate_row(row: dict[str, Any]) -> list[str]:
@@ -39,6 +40,25 @@ def _coerce_row(row: dict[str, Any]) -> dict[str, Any]:
     fee_paid = result.get("FeePaid")
     if fee_paid is not None and not isinstance(fee_paid, bool):
         result["FeePaid"] = bool(fee_paid)
+    # Default fields that are NULL for students without homework data yet
+    if result.get("HWsBehind") is None:
+        result["HWsBehind"] = 0
+    if result.get("AvgEffRating") is None:
+        result["AvgEffRating"] = 0.0
+    # SQL Server stores AttendancePercentage as a 0–1 fraction; normalize to 0–100 scale
+    att = result.get("AttendancePercentage")
+    if att is not None:
+        att_float = float(att)
+        result["AttendancePercentage"] = att_float * 100.0 if att_float <= 1.0 else att_float
+    # ClassSignupsID is INTEGER in SQL Server but VARCHAR(100) in the PG model
+    csi = result.get("ClassSignupsID")
+    if csi is not None and not isinstance(csi, str):
+        result["ClassSignupsID"] = str(csi)
+    # Ensure float columns from SQL Server money/numeric types are cast correctly
+    for float_col in ("Total_Credits", "ClassValue", "PaymentBalance", "ClassFeesPaid", "FeePaid"):
+        v = result.get(float_col)
+        if v is not None and float_col != "FeePaid":
+            result[float_col] = float(v)
     return result
 
 

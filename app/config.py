@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     MSSQL_USER: str = ""
     MSSQL_PASS: str = ""
     MSSQL_DATABASE: str = ""
+    MSSQL_DRIVER: str = "ODBC Driver 17 for SQL Server"
 
     # GHL — currently READ ONLY / SHADOW MODE
     GHL_API_KEY: str = ""
@@ -60,7 +61,7 @@ class Settings(BaseSettings):
     @property
     def mssql_dsn(self) -> str:
         return (
-            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"DRIVER={{{self.MSSQL_DRIVER}}};"
             f"SERVER={self.MSSQL_HOST},{self.MSSQL_PORT};"
             f"DATABASE={self.MSSQL_DATABASE};"
             f"UID={self.MSSQL_USER};"

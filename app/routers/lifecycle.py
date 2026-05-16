@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -142,7 +142,7 @@ def _compute_common(rows: list[dict]) -> list[dict]:
     for i, r in enumerate(rows):
         r["row_id"] = i + 1
         r["student_name"] = _name(r)
-        r["weeks_in_program"] = _weeks_in_program(r.get("IPBCStartDate"))
+        r["weeks_in_program"] = _weeks_in_program(r.get("IPBCStartDate") or r.get("StudentStartDate"))
         r["last_hw_submitted_days"] = _hw_submitted_days(r.get("LastSubmitted"), r.get("LastActivityDays"))
         r["active_student"] = _active_student(r.get("ActiveStatus"))
         # Nulls for staff fields not yet sourced
@@ -184,13 +184,26 @@ async def newcomers(
     limit: int = Query(2000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """Students who joined IPBC within the last 90 days (IPBCStartDate not null, within 90d)."""
-    cutoff = datetime.now() - timedelta(days=90)   # naive — IPBCStartDate stored without tz
+    """Students who started within the last 90 days.
+
+    Uses IPBCStartDate when populated; falls back to StudentStartDate so
+    class-phase students (who have no IPBC date yet) are still included.
+    """
+    cutoff = datetime.now() - timedelta(days=90)
     result = await db.execute(
         select(StudentTriggerData)
         .where(
-            StudentTriggerData.IPBCStartDate.isnot(None),
-            StudentTriggerData.IPBCStartDate >= cutoff,
+            or_(
+                and_(
+                    StudentTriggerData.IPBCStartDate.isnot(None),
+                    StudentTriggerData.IPBCStartDate >= cutoff,
+                ),
+                and_(
+                    StudentTriggerData.IPBCStartDate.is_(None),
+                    StudentTriggerData.StudentStartDate.isnot(None),
+                    StudentTriggerData.StudentStartDate >= cutoff,
+                ),
+            )
         )
         .limit(limit)
     )
@@ -224,12 +237,13 @@ async def hw_risk(
     limit: int = Query(2000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """Students in IPBC (IPBCStartDate not null) — homework and progress risk view."""
-    result = await db.execute(
-        select(StudentTriggerData)
-        .where(StudentTriggerData.IPBCStartDate.isnot(None))
-        .limit(limit)
-    )
+    """All students — homework and progress risk view.
+
+    IPBC gate removed: class-phase students with outstanding homework are the
+    primary audience for this tab. IPBCStartDate is NULL for all students until
+    they enter the IPBC phase.
+    """
+    result = await db.execute(select(StudentTriggerData).limit(limit))
     rows = [_raw(s) for s in result.scalars().all()]
     user_ids = [r["UserID"] for r in rows]
     acts, notes = await _activity_map(user_ids, db), await _note_map(user_ids, db)
@@ -244,11 +258,15 @@ async def cap_hopefuls(
     limit: int = Query(2000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """IPBC students with AttendancePercentage > 50 — potential CAP candidates."""
+    """Students with AttendancePercentage > 50 — potential CAP candidates.
+
+    IPBC gate removed: attendance is populated for all students regardless of phase.
+    AttendancePercentage is stored on a 0-100 scale (normalized from SQL Server's 0-1 fraction).
+    """
     result = await db.execute(
         select(StudentTriggerData)
         .where(
-            StudentTriggerData.IPBCStartDate.isnot(None),
+            StudentTriggerData.AttendancePercentage.isnot(None),
             StudentTriggerData.AttendancePercentage > 50,
         )
         .limit(limit)

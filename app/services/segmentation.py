@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 
 # Rule definitions for documentation / UI display
 SEGMENT_RULES: dict[str, str] = {
-    "NEWCOMERS":          "IPBCStartDate within last 90 days",
+    "NEWCOMERS":          "IPBCStartDate (or StudentStartDate) within last 90 days",
     "HYPER_ACTIVE":       "Past10DaysLogon >= 7 AND AvgEffRating > 90",
-    "CAP_HOPEFULS":       "AttendancePercentage > 50 AND IPBCStartDate not null",
+    "CAP_HOPEFULS":       "AttendancePercentage > 50 (no IPBC gate — class-phase students included)",
     "LAUNCH_HOPEFULS":    "AttendancePercentage > 70 AND LastActivitySection contains 'CAP Project'",
     "PLACEMENT_HOPEFULS": "AttendancePercentage > 70 AND LastActivitySection contains 'Launch'",
 }
@@ -38,8 +38,8 @@ def classify_student(student: dict) -> list[str]:
     segments: list[str] = []
     now = datetime.now(tz=timezone.utc)
 
-    # NEWCOMERS
-    start = student.get("IPBCStartDate")
+    # NEWCOMERS — prefer IPBCStartDate; fall back to StudentStartDate for class-phase students
+    start = student.get("IPBCStartDate") or student.get("StudentStartDate")
     if start is not None:
         if isinstance(start, str):
             try:
@@ -60,10 +60,9 @@ def classify_student(student: dict) -> list[str]:
 
     section = _section(student)
     attendance = float(student.get("AttendancePercentage") or 0)
-    has_ipbc_start = student.get("IPBCStartDate") is not None
 
-    # CAP_HOPEFULS: in IPBC programme, attendance > 50%
-    if has_ipbc_start and attendance > 50:
+    # CAP_HOPEFULS: attendance > 50% — IPBC gate removed, class-phase students included
+    if attendance > 50:
         segments.append("CAP_HOPEFULS")
 
     # LAUNCH_HOPEFULS: nearing Launch, attendance > 70%, in CAP Project section
