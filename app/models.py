@@ -28,9 +28,10 @@ class StudentTriggerData(Base):
     HWsBehind: Mapped[int] = mapped_column(Integer, default=0)
     AvgEffRating: Mapped[float] = mapped_column(Float, default=0.0)
     LastActivityDays: Mapped[int] = mapped_column(Integer, default=0)
-    # Extended fields (all optional — added in Phase 4)
+
+    # Phase 4 extended fields (optional — added via migration-lite)
     AttendancePercentage: Mapped[Optional[float]] = mapped_column(Float)
-    CurrentSection: Mapped[Optional[str]] = mapped_column(String(200))
+    CurrentSection: Mapped[Optional[str]] = mapped_column(String(200))   # kept; not in SQL Server
     IPBCStartDate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=False))
     Past10DaysLogon: Mapped[Optional[int]] = mapped_column(Integer)
     Total_Payments: Mapped[Optional[float]] = mapped_column(Float)
@@ -39,6 +40,18 @@ class StudentTriggerData(Base):
     ClassValue: Mapped[Optional[float]] = mapped_column(Float)
     FeePaid: Mapped[Optional[bool]] = mapped_column(Boolean)
     ClassFeesPaid: Mapped[Optional[float]] = mapped_column(Float)
+
+    # Phase 5 — additional SQL Server columns confirmed in source schema
+    ClassName: Mapped[Optional[str]] = mapped_column(String(200))
+    ClassSignupsID: Mapped[Optional[str]] = mapped_column(String(100))
+    ActiveStatus: Mapped[Optional[str]] = mapped_column(String(50))
+    StatusI: Mapped[Optional[str]] = mapped_column(String(100))
+    StatusII: Mapped[Optional[str]] = mapped_column(String(100))
+    StudentStartDate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=False))
+    ClassStartDate: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=False))
+    LastActivitySection: Mapped[Optional[str]] = mapped_column(String(300))
+    LastLoginDays: Mapped[Optional[int]] = mapped_column(Integer)
+    LastSubmitted: Mapped[Optional[str]] = mapped_column(String(200))
 
 
 class StudentInterviewPrep(Base):
@@ -163,6 +176,8 @@ class StudentNote(Base):
     author: Mapped[str] = mapped_column(String(100), default="system")
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    note_type: Mapped[Optional[str]] = mapped_column(String(50))     # 'manual', 'ai', 'action_log'
+    visibility: Mapped[Optional[str]] = mapped_column(String(50))    # 'internal', 'mentor'
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -201,3 +216,42 @@ class GHLMessage(Base):
     status: Mapped[Optional[str]] = mapped_column(String(50))
     ghl_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ── Phase 5 operational tables ─────────────────────────────────────────────────
+
+class StudentCampaignActivity(Base):
+    """Operator-logged campaign activities per student (shadow-safe, append-only)."""
+    __tablename__ = "student_campaign_activity"
+    __table_args__ = (Index("ix_sca_student_user_id", "student_user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    student_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    activity_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    activity_type: Mapped[Optional[str]] = mapped_column(String(100))
+    activity_label: Mapped[Optional[str]] = mapped_column(String(200))
+    channel: Mapped[Optional[str]] = mapped_column(String(50))
+    subject: Mapped[Optional[str]] = mapped_column(String(300))
+    message_body: Mapped[Optional[str]] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(100), default="operator")
+    created_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    execution_mode: Mapped[str] = mapped_column(String(20), default="SHADOW")
+    shadow_only: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class StudentQuickActionLog(Base):
+    """Every operator button click logged — no external side effects in SHADOW mode."""
+    __tablename__ = "student_quick_action_log"
+    __table_args__ = (Index("ix_sqal_student_user_id", "student_user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    student_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    action_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    action_label: Mapped[Optional[str]] = mapped_column(String(200))
+    tab_name: Mapped[Optional[str]] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(50), default="LOGGED")
+    payload_json: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    execution_mode: Mapped[str] = mapped_column(String(20), default="SHADOW")

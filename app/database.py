@@ -38,6 +38,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 _NEW_TRIGGER_COLS = [
+    # Phase 4
     ('AttendancePercentage', 'DOUBLE PRECISION'),
     ('CurrentSection', 'VARCHAR(200)'),
     ('IPBCStartDate', 'TIMESTAMP'),
@@ -48,13 +49,24 @@ _NEW_TRIGGER_COLS = [
     ('ClassValue', 'DOUBLE PRECISION'),
     ('FeePaid', 'BOOLEAN'),
     ('ClassFeesPaid', 'DOUBLE PRECISION'),
+    # Phase 5 — additional SQL Server source columns
+    ('ClassName', 'VARCHAR(200)'),
+    ('ClassSignupsID', 'VARCHAR(100)'),
+    ('ActiveStatus', 'VARCHAR(50)'),
+    ('StatusI', 'VARCHAR(100)'),
+    ('StatusII', 'VARCHAR(100)'),
+    ('StudentStartDate', 'TIMESTAMP'),
+    ('ClassStartDate', 'TIMESTAMP'),
+    ('LastActivitySection', 'VARCHAR(300)'),
+    ('LastLoginDays', 'INTEGER'),
+    ('LastSubmitted', 'VARCHAR(200)'),
 ]
 
 
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Migration-lite: add new columns to existing table if absent
+        # Migration-lite: add new columns if absent (safe to run repeatedly)
         for col_name, col_type in _NEW_TRIGGER_COLS:
             await conn.execute(
                 text(
@@ -62,6 +74,13 @@ async def init_db() -> None:
                     f'ADD COLUMN IF NOT EXISTS "{col_name}" {col_type}'
                 )
             )
+        # Expand student_notes with note_type and visibility
+        await conn.execute(text(
+            "ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS note_type VARCHAR(50)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS visibility VARCHAR(50)"
+        ))
     logger.info("Database tables and column migrations applied")
 
 

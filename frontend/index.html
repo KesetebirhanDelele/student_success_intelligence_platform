@@ -112,6 +112,15 @@
     .payment-risk-MEDIUM { color: #b45309; font-weight: 600; }
     .payment-risk-CLEAR { color: #276749; }
     .bundle-badge { background: #faf5ff; color: #6b46c1; border: 1px solid #d6bcfa; font-size: .62rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+
+    /* ── Row selection ── */
+    .dt-table tbody tr.dt-row-selected { background: rgba(43,108,176,.14) !important; outline: 2px solid var(--color-primary-light); outline-offset: -2px; }
+
+    /* ── Action bar ── */
+    .action-bar-wrap { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: .55rem .85rem; margin-bottom: .75rem; }
+    .action-bar-wrap .action-bar-label { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-light); }
+    .action-bar-wrap .action-btn { font-size: .72rem; padding: .28rem .65rem; white-space: nowrap; }
+    .action-bar-wrap .action-btn:disabled { opacity: .45; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -307,13 +316,139 @@
   </div>
 </div><!-- /tab-kpi -->
 
-<!-- ════════ SEGMENT TABS (shared table template) ════════ -->
-<div id="tab-newcomers"  class="tab-pane"><div id="dt-newcomers"></div></div>
-<div id="tab-engagement" class="tab-pane"><div id="dt-engagement"></div></div>
-<div id="tab-hwrisk"     class="tab-pane"><div id="dt-hwrisk"></div></div>
-<div id="tab-cap"        class="tab-pane"><div id="dt-cap"></div></div>
-<div id="tab-launch"     class="tab-pane"><div id="dt-launch"></div></div>
-<div id="tab-placement"  class="tab-pane"><div id="dt-placement"></div></div>
+<!-- ════════ TAB: NEWCOMERS ════════ -->
+<div id="tab-newcomers" class="tab-pane">
+  <div class="section-label mb-2 mt-1">Newcomers — Students who joined IPBC within the last 90 days</div>
+  <div class="action-bar-wrap">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="action-bar-label me-2">Actions:</span>
+      <span class="small text-muted me-2" id="sel-label-newcomers">Select a row to activate</span>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="newcomers" data-key="send_welcome_email" onclick="handleAction(this)">Welcome Email Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="newcomers" data-key="send_agreement_reminder" onclick="handleAction(this)">Agreement Reminder Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="newcomers" data-key="payment_history" onclick="handleAction(this)">Payment History</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="newcomers" data-key="add_whatsapp_log" onclick="handleAction(this)">WhatsApp Group Log</button>
+      <button class="btn btn-sm btn-outline-danger action-btn" disabled data-tab="newcomers" data-key="mark_inactive" onclick="handleAction(this)">Mark Inactive</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="newcomers" data-key="log_note" onclick="handleAction(this)">Log Note</button>
+      <button class="btn btn-sm btn-outline-info action-btn" disabled data-tab="newcomers" data-key="view_campaign" onclick="handleAction(this)">View Campaign</button>
+      <span class="mode-shadow ms-auto">SHADOW</span>
+    </div>
+    <div id="action-result-newcomers" class="small mt-1"></div>
+  </div>
+  <div id="dt-newcomers"></div>
+</div>
+
+<!-- ════════ TAB: ENGAGEMENT ════════ -->
+<div id="tab-engagement" class="tab-pane">
+  <div class="section-label mb-2 mt-1">Engagement — Coursework engagement and SSIS pipeline</div>
+  <div class="action-bar-wrap">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="action-bar-label me-2">Actions:</span>
+      <span class="small text-muted me-2" id="sel-label-engagement">Select a row to activate</span>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="engagement" data-key="send_ssis_email" onclick="handleAction(this)">SSIS Email Draft</button>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="engagement" data-key="send_congrats_email" onclick="handleAction(this)">Congratulations Email Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="engagement" data-key="log_call" onclick="handleAction(this)">Log Call</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="engagement" data-key="log_note" onclick="handleAction(this)">Log Note</button>
+      <button class="btn btn-sm btn-outline-danger action-btn" disabled data-tab="engagement" data-key="mark_inactive" onclick="handleAction(this)">Mark Inactive</button>
+      <button class="btn btn-sm btn-outline-info action-btn" disabled data-tab="engagement" data-key="view_campaign" onclick="handleAction(this)">View Campaign</button>
+      <span class="mode-shadow ms-auto">SHADOW</span>
+    </div>
+    <div id="action-result-engagement" class="small mt-1"></div>
+  </div>
+  <div id="dt-engagement"></div>
+</div>
+
+<!-- ════════ TAB: HW RISK ════════ -->
+<div id="tab-hwrisk" class="tab-pane">
+  <div class="section-label mb-2 mt-1">HW Risk — IPBC students with homework and progress risk</div>
+  <div class="action-bar-wrap">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="action-bar-label me-2">Actions:</span>
+      <span class="small text-muted me-2" id="sel-label-hwrisk">Select a row to activate</span>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="hwrisk" data-key="send_progress_email" onclick="handleAction(this)">Progress Email Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="notify_mentor" onclick="handleAction(this)">Notify Mentor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="notify_supermentor" onclick="handleAction(this)">Notify Super Mentor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="notify_instructor" onclick="handleAction(this)">Notify Instructor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="log_call" onclick="handleAction(this)">Log Call</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="log_note" onclick="handleAction(this)">Log Note</button>
+      <button class="btn btn-sm btn-outline-danger action-btn" disabled data-tab="hwrisk" data-key="mark_inactive" onclick="handleAction(this)">Mark Inactive</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="payment_history" onclick="handleAction(this)">Payment History</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="hwrisk" data-key="schedule_meeting" onclick="handleAction(this)">Schedule Meeting Draft</button>
+      <span class="mode-shadow ms-auto">SHADOW</span>
+    </div>
+    <div id="action-result-hwrisk" class="small mt-1"></div>
+  </div>
+  <div id="dt-hwrisk"></div>
+</div>
+
+<!-- ════════ TAB: CAP HOPEFULS ════════ -->
+<div id="tab-cap" class="tab-pane">
+  <div class="section-label mb-2 mt-1">CAP Hopefuls — IPBC students with attendance &gt; 50%</div>
+  <div class="action-bar-wrap">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="action-bar-label me-2">Actions:</span>
+      <span class="small text-muted me-2" id="sel-label-cap">Select a row to activate</span>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="cap" data-key="send_cap_email" onclick="handleAction(this)">CAP Hopeful Email Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="cap" data-key="notify_mentor" onclick="handleAction(this)">Notify Mentor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="cap" data-key="notify_instructor" onclick="handleAction(this)">Notify Instructor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="cap" data-key="log_call" onclick="handleAction(this)">Log Call</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="cap" data-key="log_sms" onclick="handleAction(this)">Log SMS Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="cap" data-key="add_note" onclick="handleAction(this)">Add Note</button>
+      <button class="btn btn-sm btn-outline-danger action-btn" disabled data-tab="cap" data-key="mark_inactive" onclick="handleAction(this)">Mark Inactive</button>
+      <button class="btn btn-sm btn-outline-info action-btn" disabled data-tab="cap" data-key="view_timeline" onclick="handleAction(this)">View Timeline</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="cap" data-key="payment_history" onclick="handleAction(this)">Payment History</button>
+      <span class="mode-shadow ms-auto">SHADOW</span>
+    </div>
+    <div id="action-result-cap" class="small mt-1"></div>
+  </div>
+  <div id="dt-cap"></div>
+</div>
+
+<!-- ════════ TAB: LAUNCH HOPEFULS ════════ -->
+<div id="tab-launch" class="tab-pane">
+  <div class="section-label mb-2 mt-1">Launch Hopefuls — Students nearing Launch (attendance &gt; 70%, CAP Project section)</div>
+  <div class="action-bar-wrap">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="action-bar-label me-2">Actions:</span>
+      <span class="small text-muted me-2" id="sel-label-launch">Select a row to activate</span>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="launch" data-key="send_launch_email" onclick="handleAction(this)">Launch Hopeful Email Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="launch" data-key="notify_mentor" onclick="handleAction(this)">Notify Mentor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="launch" data-key="notify_placement" onclick="handleAction(this)">Notify Placement Team Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="launch" data-key="generate_ai_draft" onclick="handleAction(this)">Generate AI Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="launch" data-key="log_call" onclick="handleAction(this)">Log Call</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="launch" data-key="log_sms" onclick="handleAction(this)">Log SMS Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="launch" data-key="add_note" onclick="handleAction(this)">Add Note</button>
+      <button class="btn btn-sm btn-outline-danger action-btn" disabled data-tab="launch" data-key="mark_inactive" onclick="handleAction(this)">Mark Inactive</button>
+      <button class="btn btn-sm btn-outline-info action-btn" disabled data-tab="launch" data-key="view_timeline" onclick="handleAction(this)">View Timeline</button>
+      <span class="mode-shadow ms-auto">SHADOW</span>
+    </div>
+    <div id="action-result-launch" class="small mt-1"></div>
+  </div>
+  <div id="dt-launch"></div>
+</div>
+
+<!-- ════════ TAB: PLACEMENT HOPEFULS ════════ -->
+<div id="tab-placement" class="tab-pane">
+  <div class="section-label mb-2 mt-1">Placement Hopefuls — Launch/placement pipeline (attendance &gt; 70%, Launch section)</div>
+  <div class="action-bar-wrap">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="action-bar-label me-2">Actions:</span>
+      <span class="small text-muted me-2" id="sel-label-placement">Select a row to activate</span>
+      <button class="btn btn-sm btn-outline-primary action-btn" disabled data-tab="placement" data-key="send_placement_email" onclick="handleAction(this)">Placement Follow-up Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="notify_placement" onclick="handleAction(this)">Notify Placement Team Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="notify_mentor" onclick="handleAction(this)">Notify Mentor Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="generate_ai_coaching" onclick="handleAction(this)">Generate AI Coaching Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="log_interview_followup" onclick="handleAction(this)">Log Interview Follow-up</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="log_call" onclick="handleAction(this)">Log Call</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="log_sms" onclick="handleAction(this)">Log SMS Draft</button>
+      <button class="btn btn-sm btn-outline-secondary action-btn" disabled data-tab="placement" data-key="add_note" onclick="handleAction(this)">Add Note</button>
+      <button class="btn btn-sm btn-outline-danger action-btn" disabled data-tab="placement" data-key="mark_inactive" onclick="handleAction(this)">Mark Inactive</button>
+      <button class="btn btn-sm btn-outline-info action-btn" disabled data-tab="placement" data-key="view_timeline" onclick="handleAction(this)">View Timeline</button>
+      <span class="mode-shadow ms-auto">SHADOW</span>
+    </div>
+    <div id="action-result-placement" class="small mt-1"></div>
+  </div>
+  <div id="dt-placement"></div>
+</div>
 
 <!-- ════════════════════ TAB: PAYMENT ════════════════════ -->
 <div id="tab-payment" class="tab-pane">
@@ -389,6 +524,7 @@ const S = {
   charts: {},
   refreshTimer: null,
   tabLoaded: {},
+  selectedStudent: null,   // currently selected student row (full dict)
 };
 
 // ════════════════════════════════════════════════════════
@@ -446,12 +582,12 @@ function loadTab(name) {
   const loaders = {
     overview:   loadOverview,
     kpi:        loadKpi,
-    newcomers:  () => loadSegmentTab('newcomers', 'NEWCOMERS', 'Newcomers — joined within last 90 days'),
-    engagement: () => loadEngagementTab(),
-    hwrisk:     () => loadHwRiskTab(),
-    cap:        () => loadSegmentTab('cap', 'CAP_HOPEFULS', 'CAP Hopefuls — IPBC students, attendance > 30%'),
-    launch:     () => loadSegmentTab('launch', 'LAUNCH_HOPEFULS', 'Launch Hopefuls — CAP students, attendance > 55%'),
-    placement:  () => loadSegmentTab('placement', 'PLACEMENT_HOPEFULS', 'Placement Hopefuls — Launch students, attendance > 70%'),
+    newcomers:  loadNewcomersTab,
+    engagement: loadEngagementTab,
+    hwrisk:     loadHwRiskTab,
+    cap:        loadCapTab,
+    launch:     loadLaunchTab,
+    placement:  loadPlacementTab,
     payment:    loadPaymentTab,
     outreach:   loadOutreachTab,
     ai:         loadAiTab,
@@ -469,8 +605,8 @@ function refreshActiveTab() {
 // DATA TABLE ENGINE
 // ════════════════════════════════════════════════════════
 function buildTable(cfg) {
-  // cfg: { containerId, rows, cols, onRow, title, note }
-  const { containerId, rows, cols, onRow, title = '', note = '' } = cfg;
+  // cfg: { containerId, rows, cols, onRow, onSelect, title, note }
+  const { containerId, rows, cols, onRow, onSelect, title = '', note = '' } = cfg;
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -479,6 +615,7 @@ function buildTable(cfg) {
   let page = 0;
   const pageSize = 25;
   let searchTerm = '';
+  let selectedId = null;  // UserID of currently selected row
 
   function applyFilters() {
     filtered = rows.filter(r => {
@@ -505,8 +642,15 @@ function buildTable(cfg) {
     tbody.innerHTML = pageRows.length === 0
       ? `<tr><td colspan="${cols.length}" class="text-muted text-center py-4">No records found.</td></tr>`
       : pageRows.map(r => {
-          const cells = cols.map(c => `<td title="${escH(r[c.key])}">${c.render ? c.render(r) : escH(fmt(r[c.key]))}</td>`).join('');
-          return `<tr onclick="openDrawer(${r.UserID||r.user_id})">${cells}</tr>`;
+          const rowId = r.UserID || r.user_id;
+          const isSelected = selectedId !== null && selectedId === rowId;
+          const cells = cols.map(c => {
+            const rawVal = r[c.key];
+            const displayVal = c.render ? c.render(r) : escH(fmt(rawVal));
+            const titleVal = c.render ? '' : escH(String(rawVal ?? ''));
+            return `<td${titleVal ? ` title="${titleVal}"` : ''}>${displayVal}</td>`;
+          }).join('');
+          return `<tr class="${isSelected ? 'dt-row-selected' : ''}" onclick="__dtRowClick_${containerId}(${rowId})">${cells}</tr>`;
         }).join('');
 
     container.querySelector('.dt-count').textContent = `${filtered.length} of ${rows.length} records`;
@@ -517,6 +661,14 @@ function buildTable(cfg) {
       <button class="btn btn-sm btn-outline-secondary" onclick="__dtNext_${containerId}()" ${page>=totalPages-1?'disabled':''}>Next ›</button>
     `;
   }
+
+  window[`__dtRowClick_${containerId}`] = (rowId) => {
+    const row = filtered.find(r => (r.UserID || r.user_id) === rowId);
+    selectedId = rowId;
+    render();
+    if (row && onSelect) onSelect(row);
+    if (rowId) openDrawer(rowId);
+  };
 
   window[`__dtPrev_${containerId}`] = () => { if (page > 0) { page--; render(); } };
   window[`__dtNext_${containerId}`] = () => { const tot = Math.ceil(filtered.length/pageSize); if (page < tot-1) { page++; render(); } };
@@ -758,93 +910,248 @@ function _destroyChart(id) {
 }
 
 // ════════════════════════════════════════════════════════
-// SEGMENT TABS
+// ACTION BAR — row selection → enable buttons → POST log
 // ════════════════════════════════════════════════════════
-const SEGMENT_COLS = [
-  { key:'display_name', label:'Name' },
-  { key:'UserID', label:'ID' },
-  { key:'CurrentSection', label:'Section', render: r => escH(r.CurrentSection||r.PathName||'—') },
-  { key:'AttendancePercentage', label:'Attendance', render: r => {
-    const v = +(r.AttendancePercentage||0);
-    return `${v.toFixed(1)}% ${progressBar(v,100, v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
-  }},
-  { key:'HWsBehind', label:'HWs Behind', render: r => {
-    const v = r.HWsBehind||0;
-    return `<span class="${v>=3?'text-danger':v>=1?'text-warning':''} fw-semibold">${v}</span>`;
-  }},
-  { key:'AvgEffRating', label:'Efficiency', render: r => fmtPct(r.AvgEffRating) },
-  { key:'Past10DaysLogon', label:'10d Logins', render: r => fmt(r.Past10DaysLogon) },
-  { key:'LastActivityDays', label:'Inactive d', render: r => {
-    const v = r.LastActivityDays||0;
-    return `<span class="${v>7?'text-danger':v>3?'text-warning':''}">${v}</span>`;
-  }},
-  { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
-  { key:'IPBCStartDate', label:'Start Date', render: r => fmtDate(r.IPBCStartDate) },
-];
+function onTabRowSelect(tabId, row) {
+  S.selectedStudent = row;
+  const name = row.student_name || row.display_name || `#${row.UserID||row.user_id}`;
+  const label = document.getElementById(`sel-label-${tabId}`);
+  if (label) label.innerHTML = `<strong>${escH(name)}</strong> selected`;
+  document.querySelectorAll(`[data-tab="${tabId}"].action-btn`).forEach(btn => btn.disabled = false);
+}
 
-async function loadSegmentTab(tabId, segName, note) {
-  const resp = await api(`/segments/${segName}?role=${encodeURIComponent(S.role)}&limit=1000`);
-  const rows = (resp.data?.rows || []).map(r => ({ ...r, display_name: r.display_name||`#${r.UserID}` }));
-  buildTable({ containerId: `dt-${tabId}`, rows, cols: SEGMENT_COLS, note: `${note} — ${rows.length} students`, title: note.split('—')[0].trim() });
+async function handleAction(btn) {
+  const tabId = btn.dataset.tab;
+  const actionKey = btn.dataset.key;
+  const actionLabel = btn.textContent.trim();
+  const st = S.selectedStudent;
+  if (!st) { alert('Select a student row first.'); return; }
+  const uid = st.UserID || st.user_id;
+  const resultEl = document.getElementById(`action-result-${tabId}`);
+  if (resultEl) resultEl.innerHTML = '<span class="text-muted">Logging…</span>';
+  btn.disabled = true;
+  try {
+    const r = await api('/quick-actions/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_user_id: uid, action_key: actionKey, action_label: actionLabel, tab_name: tabId, created_by: 'operator' }),
+    });
+    const d = r.data || {};
+    if (resultEl) resultEl.innerHTML = `<span class="badge bg-success">LOGGED</span> <em>${escH(actionLabel)}</em> for <strong>#${uid}</strong> — ${escH(d.note||'')}`;
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = `<span class="badge bg-danger">ERROR</span> ${escH(String(e))}`;
+  }
+  btn.disabled = false;
+}
+
+// ════════════════════════════════════════════════════════
+// LIFECYCLE TAB LOADERS
+// ════════════════════════════════════════════════════════
+
+async function loadNewcomersTab() {
+  const resp = await api('/lifecycle/newcomers');
+  const rows = resp.data?.rows || [];
+  const cols = [
+    { key:'row_id', label:'ID' },
+    { key:'student_name', label:'Student Name' },
+    { key:'Email', label:'Student Email' },
+    { key:'PhoneNumber', label:'Phone Number' },
+    { key:'IPBCStartDate', label:'IPBC Sign Up Date', render: r => fmtDate(r.IPBCStartDate) },
+    { key:'plan_name', label:'Plan Name', render: r => fmt(r.plan_name) },
+    { key:'agreement_signed', label:'Agreement Signed', render: r => fmt(r.agreement_signed) },
+    { key:'UserID', label:'User ID' },
+    { key:'ActiveStatus', label:'Status', render: r => escH(r.ActiveStatus||'—') },
+    { key:'ClassValue', label:'Total Contract Value', render: r => fmtCur(r.ClassValue) },
+    { key:'down_payment', label:'Down Payment Amount', render: r => fmt(r.down_payment) },
+    { key:'Total_Payments', label:'Amount Paid', render: r => fmtCur(r.Total_Payments) },
+    { key:'last_campaign_activity_date', label:'Last Campaign Activity Date', render: r => fmtTs(r.last_campaign_activity_date) },
+    { key:'last_campaign_activity_type', label:'Last Campaign Activity Type', render: r => fmt(r.last_campaign_activity_type) },
+    { key:'last_campaign_activity', label:'Last Campaign Activity', render: r => fmt(r.last_campaign_activity) },
+    { key:'notes', label:'Notes', render: r => escH(r.notes||'—') },
+    { key:'ClassSignupsID', label:'Class Signups ID', render: r => fmt(r.ClassSignupsID) },
+  ];
+  buildTable({ containerId: 'dt-newcomers', rows, cols, title: 'Newcomers', note: `${rows.length} students joined within last 90 days`,
+    onSelect: row => onTabRowSelect('newcomers', row) });
 }
 
 async function loadEngagementTab() {
-  const resp = await api(`/work-queue/all_source?limit=1000`);
-  const rows = (resp.data?.rows || []).map(r => ({
-    ...r,
-    display_name: r.name||`#${r.user_id}`,
-    UserID: r.user_id,
-  }));
+  const resp = await api('/lifecycle/engagement');
+  const rows = resp.data?.rows || [];
   const cols = [
-    { key:'display_name', label:'Name' },
-    { key:'UserID', label:'ID' },
-    { key:'path', label:'Section', render: r => escH(r.path||'—') },
-    { key:'eff_rating', label:'Efficiency', render: r => {
-      const v = +(r.eff_rating||0);
-      return `${v.toFixed(1)} ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
+    { key:'row_id', label:'ID' },
+    { key:'student_name', label:'Student Name' },
+    { key:'PhoneNumber', label:'Phone Number' },
+    { key:'certified_date', label:'Certified Date', render: r => fmt(r.certified_date) },
+    { key:'ClassName', label:'Class Name', render: r => escH(r.ClassName||'—') },
+    { key:'ClassStartDate', label:'Class Start Date', render: r => fmtDate(r.ClassStartDate) },
+    { key:'LastActivitySection', label:'Current Section Name', render: r => escH(r.LastActivitySection||'—') },
+    { key:'AttendancePercentage', label:'Percentage Completed', render: r => {
+      const v = +(r.AttendancePercentage||0);
+      return `${v.toFixed(1)}% ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
     }},
-    { key:'hws_behind', label:'HWs Behind', render: r => {
-      const v = r.hws_behind||0;
-      return `<span class="${v>=3?'text-danger fw-bold':v>=1?'text-warning':''}">${v}</span>`;
-    }},
-    { key:'inactivity_days', label:'Inactive Days', render: r => {
-      const v = r.inactivity_days||0;
-      return `<span class="${v>7?'text-danger':v>3?'text-warning':''}">${v}</span>`;
-    }},
-    { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
-    { key:'priority_score', label:'Score' },
+    { key:'ssis_start_date', label:'Start Date Of SSIS', render: r => fmt(r.ssis_start_date) },
+    { key:'days_old', label:'Days Old', render: r => fmt(r.days_old) },
+    { key:'months_back_ssis', label:'Months Back SSIS Start', render: r => fmt(r.months_back_ssis) },
+    { key:'ssis_completion_days', label:'SSIS Completion Days Ago', render: r => fmt(r.ssis_completion_days) },
+    { key:'Email', label:'Student Email' },
+    { key:'UserID', label:'Student User ID' },
+    { key:'last_campaign_activity_date', label:'Last Campaign Activity Date', render: r => fmtTs(r.last_campaign_activity_date) },
+    { key:'last_campaign_activity_type', label:'Last Campaign Activity Type', render: r => fmt(r.last_campaign_activity_type) },
+    { key:'last_campaign_activity', label:'Last Campaign Activity', render: r => fmt(r.last_campaign_activity) },
+    { key:'campaign_notes', label:'Campaign Notes', render: r => escH(r.campaign_notes||'—') },
   ];
-  const roleFiltered = filterByRoleFrontend(rows, S.role);
-  buildTable({ containerId: 'dt-engagement', rows: roleFiltered, cols, note: 'All students — sorted by priority score', title: 'Coursework & Engagement' });
+  buildTable({ containerId: 'dt-engagement', rows, cols, title: 'Engagement', note: `${rows.length} students`,
+    onSelect: row => onTabRowSelect('engagement', row) });
 }
 
 async function loadHwRiskTab() {
-  const resp = await api(`/work-queue/all_source?limit=1000`);
-  const rows = (resp.data?.rows || [])
-    .map(r => ({ ...r, display_name: r.name||`#${r.user_id}`, UserID: r.user_id }))
-    .filter(r => (r.hws_behind||0) >= 1)
-    .sort((a,b) => (b.hws_behind||0) - (a.hws_behind||0));
-
+  const resp = await api('/lifecycle/hw-risk');
+  const rows = resp.data?.rows || [];
   const cols = [
-    { key:'display_name', label:'Name' },
-    { key:'UserID', label:'ID' },
-    { key:'path', label:'Section' },
-    { key:'hws_behind', label:'HWs Behind', render: r => {
-      const v = r.hws_behind||0;
-      return `<span class="fw-bold ${v>=5?'text-danger':v>=3?'text-warning':'text-primary'}">${v}</span> ${progressBar(v,10,'bg-danger')}`;
+    { key:'student_name', label:'Student Name' },
+    { key:'Email', label:'Student Email' },
+    { key:'PhoneNumber', label:'Phone Number' },
+    { key:'IPBCStartDate', label:'IPBC Start Date', render: r => fmtDate(r.IPBCStartDate) },
+    { key:'mentor_name', label:'Mentor Name', render: r => fmt(r.mentor_name) },
+    { key:'mentor_email', label:'Mentor Email', render: r => fmt(r.mentor_email) },
+    { key:'super_mentor_name', label:'Super Mentor Name', render: r => fmt(r.super_mentor_name) },
+    { key:'super_mentor_email', label:'Super Mentor Email', render: r => fmt(r.super_mentor_email) },
+    { key:'instructor_name', label:'IPBC Instructor Name', render: r => fmt(r.instructor_name) },
+    { key:'instructor_email', label:'IPBC Instructor Email', render: r => fmt(r.instructor_email) },
+    { key:'LastActivitySection', label:'Current Section', render: r => escH(r.LastActivitySection||'—') },
+    { key:'AttendancePercentage', label:'Percentage On Pace', render: r => {
+      const v = +(r.AttendancePercentage||0);
+      return `${v.toFixed(1)}% ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
     }},
-    { key:'eff_rating', label:'Efficiency', render: r => fmtPct(r.eff_rating) },
-    { key:'inactivity_days', label:'Inactive Days' },
-    { key:'priority_level', label:'Priority', render: r => priorityBadge(r.priority_level) },
-    { key:'recommended_action', label:'Action' },
+    { key:'last_hw_submitted_days', label:'Last HW Submitted Days', render: r => {
+      const v = r.last_hw_submitted_days;
+      return v == null ? '—' : `<span class="${v>14?'text-danger':v>7?'text-warning':''}">${v}</span>`;
+    }},
+    { key:'weeks_in_program', label:'Weeks In Program', render: r => fmt(r.weeks_in_program) },
+    { key:'days_to_market', label:'Days To Market', render: r => fmt(r.days_to_market) },
+    { key:'mm_user_id', label:'Mm User ID', render: r => fmt(r.mm_user_id) },
+    { key:'last_campaign_activity_date', label:'Last Campaign Activity Date', render: r => fmtTs(r.last_campaign_activity_date) },
+    { key:'last_campaign_activity_type', label:'Last Campaign Activity Type', render: r => fmt(r.last_campaign_activity_type) },
+    { key:'last_campaign_activity', label:'Last Campaign Activity', render: r => fmt(r.last_campaign_activity) },
+    { key:'campaign_notes', label:'Campaign Notes', render: r => escH(r.campaign_notes||'—') },
   ];
-  const roleFiltered = filterByRoleFrontend(rows, S.role);
-  buildTable({ containerId: 'dt-hwrisk', rows: roleFiltered, cols, note: `${roleFiltered.length} students with ≥1 HW behind`, title: 'Homework Risk' });
+  buildTable({ containerId: 'dt-hwrisk', rows, cols, title: 'HW Risk', note: `${rows.length} IPBC students`,
+    onSelect: row => onTabRowSelect('hwrisk', row) });
+}
+
+async function loadCapTab() {
+  const resp = await api('/lifecycle/cap-hopefuls');
+  const rows = resp.data?.rows || [];
+  const cols = [
+    { key:'row_id', label:'ID' },
+    { key:'student_name', label:'Student Name' },
+    { key:'PhoneNumber', label:'Phone Number' },
+    { key:'IPBCStartDate', label:'IPBC Start Date', render: r => fmtDate(r.IPBCStartDate) },
+    { key:'active_student', label:'Active Student', render: r => r.active_student ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>' },
+    { key:'Email', label:'Student Email' },
+    { key:'mm_user_id', label:'Mm user id', render: r => fmt(r.mm_user_id) },
+    { key:'mentor_name', label:'Mentor', render: r => fmt(r.mentor_name) },
+    { key:'mentor_email', label:'Mentor email', render: r => fmt(r.mentor_email) },
+    { key:'weeks_in_program', label:'Weeks in Program', render: r => fmt(r.weeks_in_program) },
+    { key:'days_to_market', label:'Days to market', render: r => fmt(r.days_to_market) },
+    { key:'AttendancePercentage', label:'Completion %', render: r => {
+      const v = +(r.AttendancePercentage||0);
+      return `${v.toFixed(1)}% ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
+    }},
+    { key:'AttendancePercentage', label:'Pace %', render: r => fmtPct(r.AttendancePercentage) },
+    { key:'LastSubmitted', label:'Last HW Submitted', render: r => fmtDate(r.LastSubmitted) },
+    { key:'last_hw_submitted_days', label:'Last HW Submitted Days', render: r => fmt(r.last_hw_submitted_days) },
+    { key:'LastActivitySection', label:'Current section', render: r => escH(r.LastActivitySection||'—') },
+    { key:'last_campaign_activity', label:'Last Campaign Activity', render: r => fmt(r.last_campaign_activity) },
+    { key:'last_campaign_activity_date', label:'Last activity date', render: r => fmtTs(r.last_campaign_activity_date) },
+    { key:'last_campaign_activity_type', label:'Last activity type', render: r => fmt(r.last_campaign_activity_type) },
+    { key:'notes', label:'Notes', render: r => escH(r.notes||'—') },
+  ];
+  buildTable({ containerId: 'dt-cap', rows, cols, title: 'CAP Hopefuls', note: `${rows.length} students — attendance > 50%`,
+    onSelect: row => onTabRowSelect('cap', row) });
+}
+
+async function loadLaunchTab() {
+  const resp = await api('/lifecycle/launch-hopefuls');
+  const rows = resp.data?.rows || [];
+  const emptyNote = rows.length === 0
+    ? 'No students currently match the Launch Hopeful filter (attendance > 70%, CAP Project section). Columns ready for when data matches.'
+    : `${rows.length} students — attendance > 70%, CAP Project section`;
+  const cols = [
+    { key:'row_id', label:'ID' },
+    { key:'student_name', label:'Student Name' },
+    { key:'PhoneNumber', label:'Phone number' },
+    { key:'IPBCStartDate', label:'IPBC Start Date', render: r => fmtDate(r.IPBCStartDate) },
+    { key:'active_student', label:'Active Student', render: r => r.active_student ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>' },
+    { key:'Email', label:'Student Email' },
+    { key:'mm_user_id', label:'Mm user id', render: r => fmt(r.mm_user_id) },
+    { key:'mentor_name', label:'Mentor', render: r => fmt(r.mentor_name) },
+    { key:'mentor_email', label:'Mentor email', render: r => fmt(r.mentor_email) },
+    { key:'weeks_in_program', label:'Weeks in Program', render: r => fmt(r.weeks_in_program) },
+    { key:'days_to_market', label:'Days to market', render: r => fmt(r.days_to_market) },
+    { key:'AttendancePercentage', label:'Completion %', render: r => {
+      const v = +(r.AttendancePercentage||0);
+      return `${v.toFixed(1)}% ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
+    }},
+    { key:'AttendancePercentage', label:'Pace %', render: r => fmtPct(r.AttendancePercentage) },
+    { key:'LastSubmitted', label:'Last HW Submitted', render: r => fmtDate(r.LastSubmitted) },
+    { key:'last_hw_submitted_days', label:'Last HW Submitted Days', render: r => fmt(r.last_hw_submitted_days) },
+    { key:'LastActivitySection', label:'Current section', render: r => escH(r.LastActivitySection||'—') },
+    { key:'last_campaign_activity', label:'Last Campaign Activity', render: r => fmt(r.last_campaign_activity) },
+    { key:'last_campaign_activity_date', label:'Last activity date', render: r => fmtTs(r.last_campaign_activity_date) },
+    { key:'last_campaign_activity_type', label:'Last activity type', render: r => fmt(r.last_campaign_activity_type) },
+    { key:'notes', label:'Notes', render: r => escH(r.notes||'—') },
+  ];
+  buildTable({ containerId: 'dt-launch', rows, cols, title: 'Launch Hopefuls', note: emptyNote,
+    onSelect: row => onTabRowSelect('launch', row) });
+}
+
+async function loadPlacementTab() {
+  const resp = await api('/lifecycle/placement-hopefuls');
+  const rows = resp.data?.rows || [];
+  const emptyNote = rows.length === 0
+    ? 'No students currently match the Placement Hopeful filter (attendance > 70%, Launch section). Columns ready for when data matches.'
+    : `${rows.length} students — attendance > 70%, Launch section`;
+  const cols = [
+    { key:'row_id', label:'ID' },
+    { key:'student_name', label:'Student Name' },
+    { key:'PhoneNumber', label:'Phone number' },
+    { key:'IPBCStartDate', label:'IPBC Start Date', render: r => fmtDate(r.IPBCStartDate) },
+    { key:'active_student', label:'Active Student', render: r => r.active_student ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>' },
+    { key:'Email', label:'Student Email' },
+    { key:'mm_user_id', label:'Mm user id', render: r => fmt(r.mm_user_id) },
+    { key:'mentor_name', label:'Mentor', render: r => fmt(r.mentor_name) },
+    { key:'mentor_email', label:'Mentor email', render: r => fmt(r.mentor_email) },
+    { key:'weeks_in_program', label:'Weeks in Program', render: r => fmt(r.weeks_in_program) },
+    { key:'days_to_market', label:'Days to market', render: r => fmt(r.days_to_market) },
+    { key:'AttendancePercentage', label:'Completion %', render: r => {
+      const v = +(r.AttendancePercentage||0);
+      return `${v.toFixed(1)}% ${progressBar(v,100,v>70?'bg-success':v>40?'bg-warning':'bg-danger')}`;
+    }},
+    { key:'AttendancePercentage', label:'Pace %', render: r => fmtPct(r.AttendancePercentage) },
+    { key:'LastSubmitted', label:'Last HW Submitted', render: r => fmtDate(r.LastSubmitted) },
+    { key:'last_hw_submitted_days', label:'Last HW Submitted Days', render: r => fmt(r.last_hw_submitted_days) },
+    { key:'LastActivitySection', label:'Current section', render: r => escH(r.LastActivitySection||'—') },
+    { key:'last_campaign_activity_date', label:'Last activity date', render: r => fmtTs(r.last_campaign_activity_date) },
+    { key:'last_campaign_activity_type', label:'Last activity type', render: r => fmt(r.last_campaign_activity_type) },
+    { key:'last_interview', label:'Last interview', render: r => fmt(r.last_interview) },
+    { key:'last_interview_days_ago', label:'Last interview days ago', render: r => fmt(r.last_interview_days_ago) },
+    { key:'recruiter_interview_count', label:'Recruiter interview count', render: r => fmt(r.recruiter_interview_count) },
+    { key:'technical_interview_count', label:'Technical interview count', render: r => fmt(r.technical_interview_count) },
+    { key:'recruiter_to_technical_ratio', label:'Recruiter to technical ratio', render: r => fmt(r.recruiter_to_technical_ratio) },
+    { key:'avg_interview_prep_score', label:'Avg interview prep score', render: r => fmt(r.avg_interview_prep_score) },
+    { key:'avg_interview_score', label:'Avg interview score', render: r => fmt(r.avg_interview_score) },
+    { key:'chat_gpt_prompt', label:'Chat gpt prompt', render: r => fmt(r.chat_gpt_prompt) },
+    { key:'last_campaign_activity', label:'Last Campaign Activity', render: r => fmt(r.last_campaign_activity) },
+    { key:'notes', label:'Notes', render: r => escH(r.notes||'—') },
+  ];
+  buildTable({ containerId: 'dt-placement', rows, cols, title: 'Placement Hopefuls', note: emptyNote,
+    onSelect: row => onTabRowSelect('placement', row) });
 }
 
 function filterByRoleFrontend(rows, role) {
   if (!role || role === 'Support' || role === 'Mentor') return rows;
-  if (role === 'Placement Team') return rows.filter(r => ['Launch','Placement'].some(kw => (r.CurrentSection||r.PathName||r.path||'').includes(kw)));
+  if (role === 'Placement Team') return rows.filter(r => ['Launch','Placement'].some(kw => (r.LastActivitySection||r.CurrentSection||r.PathName||'').includes(kw)));
   return rows;
 }
 

@@ -20,12 +20,21 @@ def _validate_row(row: dict[str, Any]) -> list[str]:
     return [f for f in _REQUIRED_FIELDS if row.get(f) is None]
 
 
+_DATE_COLS = ("IPBCStartDate", "StudentStartDate", "ClassStartDate")
+
+
 def _coerce_row(row: dict[str, Any]) -> dict[str, Any]:
     """Convert SQL Server–specific types to Python/PostgreSQL-compatible ones."""
     result = dict(row)
     # SQL Server date → datetime (PostgreSQL DateTime needs datetime, not date)
-    if isinstance(result.get("IPBCStartDate"), date) and not isinstance(result.get("IPBCStartDate"), datetime):
-        result["IPBCStartDate"] = datetime.combine(result["IPBCStartDate"], datetime.min.time())
+    for col in _DATE_COLS:
+        v = result.get(col)
+        if isinstance(v, date) and not isinstance(v, datetime):
+            result[col] = datetime.combine(v, datetime.min.time())
+    # LastSubmitted may be date/datetime — normalise to ISO string for VARCHAR storage
+    ls = result.get("LastSubmitted")
+    if ls is not None and not isinstance(ls, str):
+        result["LastSubmitted"] = ls.isoformat() if hasattr(ls, "isoformat") else str(ls)
     # Convert bit/pyodbc booleans if needed
     fee_paid = result.get("FeePaid")
     if fee_paid is not None and not isinstance(fee_paid, bool):

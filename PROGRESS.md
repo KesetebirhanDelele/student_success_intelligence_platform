@@ -190,6 +190,45 @@
 - [x] PROGRESS.md created
   - Date: 2026-05-06
   - What changed: this file created to satisfy CLAUDE.md hard gate; documents full project state through commit 22802e3
+
+## Phase 5 — Lifecycle Tab Reformat (6 tabs, per-spec column schemas)
+
+- [x] Expand StudentTriggerData — 10 additional SQL Server source columns
+  - Date: 2026-05-15
+  - What changed: app/models.py — added ClassName, ClassSignupsID, ActiveStatus, StatusI, StatusII, StudentStartDate, ClassStartDate, LastActivitySection, LastLoginDays, LastSubmitted to StudentTriggerData; added StudentCampaignActivity and StudentQuickActionLog models; expanded StudentNote with note_type and visibility fields
+  - Verification: migration-lite in init_db() adds all new columns via ALTER TABLE IF NOT EXISTS on container restart — safe to run repeatedly
+
+- [x] Migration-lite for Phase 5 columns
+  - Date: 2026-05-15
+  - What changed: app/database.py — _NEW_TRIGGER_COLS extended with 10 new columns; student_notes ALTER TABLE adds note_type and visibility
+
+- [x] Segmentation service — fix section field and thresholds
+  - Date: 2026-05-15
+  - What changed: app/services/segmentation.py — replaced CurrentSection references with LastActivitySection (via _section() helper falling back to PathName); CAP_HOPEFULS threshold corrected to attendance > 50 (was > 30); LAUNCH_HOPEFULS filter changed to 'CAP Project' in section (was 'CAP'); rules dict updated to match spec
+  - Notes: CurrentSection was always NULL because it does not exist in SQL Server — LastActivitySection is the correct source column
+
+- [x] Sync coerce — generalize date column handling
+  - Date: 2026-05-15
+  - What changed: app/services/sync.py — _coerce_row() now handles StudentStartDate and ClassStartDate date→datetime conversion alongside IPBCStartDate; LastSubmitted coerced to ISO string for VARCHAR storage
+
+- [x] Lifecycle router — 6 dedicated tab endpoints
+  - Date: 2026-05-15
+  - What changed: app/routers/lifecycle.py (NEW) — GET /lifecycle/newcomers (IPBCStartDate within 90d), /engagement (all), /hw-risk (IPBCStartDate not null), /cap-hopefuls (attendance>50), /launch-hopefuls (attendance>70 AND 'CAP Project' in section), /placement-hopefuls (attendance>70 AND 'Launch' in section); each endpoint merges latest campaign activity and latest note per student; _compute_common() derives row_id, student_name, weeks_in_program, last_hw_submitted_days, active_student; all null-safe with graceful fallbacks
+  - Verification: SHADOW mode unaffected (read-only endpoints)
+
+- [x] Quick actions router — operator button log + campaign activity query
+  - Date: 2026-05-15
+  - What changed: app/routers/quick_actions.py (NEW) — POST /quick-actions/log (logs StudentQuickActionLog + companion StudentCampaignActivity); GET /campaign-activity/{user_id}; GET /quick-actions/{user_id}; execution_mode stamped on every record; no external communication triggered
+  - Verification: SHADOW mode enforced — shadow_only=True on all campaign activity records when in shadow mode
+
+- [x] Register new routers in app/main.py
+  - Date: 2026-05-15
+  - What changed: lifecycle_router and quick_actions_router registered with Lifecycle and QuickActions tags
+
+- [x] Frontend — 6 lifecycle tabs with per-spec column schemas and action bars
+  - Date: 2026-05-15
+  - What changed: frontend/index.html — CSS added for .dt-row-selected and .action-bar-wrap; 6 tab pane HTML replaced with structured layout (section label + action bar + table container); buildTable() updated with onSelect callback and selectedId row highlighting via .dt-row-selected class; TAB_ACTIONS and handleAction() implement button click → POST /quick-actions/log flow; 6 dedicated loaders: loadNewcomersTab() (17 cols), loadEngagementTab() (18 cols), loadHwRiskTab() (20 cols), loadCapTab() (20 cols), loadLaunchTab() (20 cols), loadPlacementTab() (28 cols); loadTab() updated to call per-tab loaders; action buttons disabled until row selected; SHADOW badge visible on each action bar
+  - Verification: column order matches spec exactly for each tab; campaign/notes columns present but blank until activity logged; Launch and Placement Hopefuls show empty table with descriptive note when filter returns no rows
   - Verification: user confirmed
 
 ---

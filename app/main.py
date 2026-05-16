@@ -12,6 +12,8 @@ from app.routers import ai_insights as ai_insights_router
 from app.routers import batch as batch_router
 from app.routers import dashboard as dashboard_router
 from app.routers import ghl_sync as ghl_sync_router
+from app.routers import lifecycle as lifecycle_router
+from app.routers import quick_actions as quick_actions_router
 from app.routers import notes as notes_router
 from app.routers import payment as payment_router
 from app.routers import segments as segments_router
@@ -79,6 +81,8 @@ app.include_router(timeline_router.router, tags=["Timeline"])
 app.include_router(ai_insights_router.router, tags=["AIInsights"])
 app.include_router(notes_router.router, tags=["Notes"])
 app.include_router(ghl_sync_router.router, tags=["GHLSync"])
+app.include_router(lifecycle_router.router, tags=["Lifecycle"])
+app.include_router(quick_actions_router.router, tags=["QuickActions"])
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 

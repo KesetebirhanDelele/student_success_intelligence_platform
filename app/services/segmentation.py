@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 SEGMENT_RULES: dict[str, str] = {
     "NEWCOMERS":          "IPBCStartDate within last 90 days",
     "HYPER_ACTIVE":       "Past10DaysLogon >= 7 AND AvgEffRating > 90",
-    "CAP_HOPEFULS":       "AttendancePercentage > 30 AND CurrentSection contains IPBC",
-    "LAUNCH_HOPEFULS":    "AttendancePercentage > 55 AND CurrentSection contains CAP",
-    "PLACEMENT_HOPEFULS": "AttendancePercentage > 70 AND CurrentSection contains Launch",
+    "CAP_HOPEFULS":       "AttendancePercentage > 50 AND IPBCStartDate not null",
+    "LAUNCH_HOPEFULS":    "AttendancePercentage > 70 AND LastActivitySection contains 'CAP Project'",
+    "PLACEMENT_HOPEFULS": "AttendancePercentage > 70 AND LastActivitySection contains 'Launch'",
 }
 
 ALL_SEGMENTS = list(SEGMENT_RULES.keys())
@@ -21,6 +21,16 @@ ROLE_SECTION_FILTER: dict[str, list[str] | None] = {
     "Instructor":     None,   # caller passes explicit section
     "Placement Team": ["Launch", "Placement"],
 }
+
+
+def _section(student: dict) -> str:
+    """Return the best available section string for a student."""
+    return str(
+        student.get("LastActivitySection")
+        or student.get("CurrentSection")
+        or student.get("PathName")
+        or ""
+    )
 
 
 def classify_student(student: dict) -> list[str]:
@@ -48,15 +58,19 @@ def classify_student(student: dict) -> list[str]:
     if logons >= 7 and eff > 90:
         segments.append("HYPER_ACTIVE")
 
-    section = str(student.get("CurrentSection") or student.get("PathName") or "")
+    section = _section(student)
     attendance = float(student.get("AttendancePercentage") or 0)
+    has_ipbc_start = student.get("IPBCStartDate") is not None
 
-    if attendance > 30 and "IPBC" in section:
+    # CAP_HOPEFULS: in IPBC programme, attendance > 50%
+    if has_ipbc_start and attendance > 50:
         segments.append("CAP_HOPEFULS")
 
-    if attendance > 55 and "CAP" in section:
+    # LAUNCH_HOPEFULS: nearing Launch, attendance > 70%, in CAP Project section
+    if attendance > 70 and "CAP Project" in section:
         segments.append("LAUNCH_HOPEFULS")
 
+    # PLACEMENT_HOPEFULS: in Launch/placement pipeline, attendance > 70%
     if attendance > 70 and "Launch" in section:
         segments.append("PLACEMENT_HOPEFULS")
 
@@ -86,15 +100,12 @@ def filter_by_role(students: list[dict], role: str | None, section: str | None =
         return [
             s for s in students
             if any(
-                kw in (s.get("CurrentSection") or s.get("PathName") or "")
+                kw in _section(s)
                 for kw in ["Launch", "Placement"]
             )
         ]
 
     if role == "Instructor" and section:
-        return [
-            s for s in students
-            if section in (s.get("CurrentSection") or s.get("PathName") or "")
-        ]
+        return [s for s in students if section in _section(s)]
 
     return students
