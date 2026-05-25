@@ -679,10 +679,33 @@ Access revocation and restoration events originate from SQL Server operational t
 The system MUST:
 
 * Sync access revocation and restoration events from SQL Server on each sync cycle
-* Record each event with: timestamp, trigger event type, actor (operator or system), prior access state, new access state
-* Extend event records with platform-originated context (operator notes, manual restorations) where applicable
-* Surface a chronological access history per student
+* Record each event with: timestamp, trigger event type, actor (operator or system), prior access state, new access state, **origin_source**
+* Extend event records with platform-originated context (operator notes, manual restorations) where applicable; these extensions carry `origin_source: platform_manual` or `origin_source: platform_system`
+* Surface a chronological access history per student ordered by event timestamp
 * Alert operators when a student's access is revoked for > 48 hours without restoration or explicit closure
+
+---
+
+#### Access Event Origin Classification
+
+Every access event carries an `origin_source` field with one of three values:
+
+| origin_source | Description |
+|---|---|
+| `mirrored_sql_server` | Event read from SQL Server on a sync cycle; SQL Server is the authoritative record |
+| `platform_manual` | Event created by an operator action within the platform (e.g., manual access restoration note) |
+| `platform_system` | Event created by platform automated logic (e.g., automatic access flag on payment delinquency detection) |
+
+Platform-originated event types (`platform_manual`, `platform_system`) are introduced only in the PRODUCTION tier when a specific platform access management capability is explicitly approved as an architectural decision. Until then, all access events are `mirrored_sql_server`.
+
+---
+
+#### Access Event Conflict Resolution
+
+* SQL Server is the authoritative source for a student's **current access status** for all eligibility decisions, outreach gating, and operational alerts (see FAD-5)
+* Platform-originated access events (`platform_manual`, `platform_system`) are contextual supplementary records; they are displayed in the timeline with clear source attribution but do NOT override the SQL Server-mirrored current state for eligibility purposes
+* The access history timeline is chronologically ordered by event timestamp; events from all origin sources are displayed together with `origin_source` always visible
+* If SQL Server shows a student as revoked and the platform has a manual restoration event with no corresponding SQL Server restoration, the student remains operationally treated as revoked until SQL Server confirms restoration
 
 ---
 
@@ -796,6 +819,7 @@ The system MUST generate, store, and serve AI insights per student covering all 
 * AI insight generation MUST be idempotent for the same `(student_id, insight_type, date, prompt_version)` tuple
 * Cached insights are served until TTL expires (default: 24 hours; configurable)
 * Force-refresh is supported via an explicit API parameter
+* AI insight text captured in a finalized monthly snapshot is a physical copy at snapshot generation time; subsequent force-refresh or regeneration of insights MUST NOT affect finalized snapshot AI content (see FAD-1)
 
 ---
 
@@ -839,7 +863,7 @@ Each snapshot MUST preserve the following — the snapshot is self-contained and
 * **Financial summary:** actual balance, payment risk classification, class fees paid, bundle deal flag
 * **Placement summary:** current cohort (CAP / Launch / Placement), readiness score, interview prep status
 * **AI summaries:** last risk summary text, last progress summary text, monthly narrative text
-* **Snapshot metadata:** snapshot_month, generated_at, schema_version
+* **Snapshot metadata:** snapshot_month, generated_at, schema_version, configuration_registry_version, ai_prompt_version (per insight type), ai_model_version (per insight type), report_template_version — collectively forming the **Snapshot Reproducibility Fingerprint** (see Section 4.8)
 
 ---
 
@@ -849,6 +873,16 @@ Each snapshot MUST preserve the following — the snapshot is self-contained and
 * Keyed by `(student_id, snapshot_month)` — exactly one snapshot per student per month
 * Students with no activity in the snapshot month still receive a snapshot (zero-activity metrics; not silently excluded)
 * Snapshot finalization is a two-phase operation: draft → finalized; only finalized snapshots are used for reports
+* DRAFT snapshots are mutable and may be replaced or discarded before finalization; the immutability guarantee applies only to FINALIZED snapshots
+
+---
+
+#### AI Content Physical Copy Rule
+
+* AI-generated summaries and narratives (risk summary text, progress summary text, monthly narrative text) captured in a snapshot are stored as physical point-in-time text copies in the snapshot row
+* Snapshots MUST NOT store live references or foreign key references to `ai_insights` rows; text is embedded directly in the snapshot record
+* Post-finalization regeneration of AI insights, force-refresh, or LLM provider changes have NO effect on finalized snapshot AI content
+* This design guarantees that historical report regeneration (Section 3.19) reproduces AI content identical to the original, regardless of any subsequent AI operations (see FAD-1)
 
 ---
 
@@ -892,9 +926,11 @@ The system MUST allow authorized operators to regenerate a monthly report for an
 The system MUST:
 
 * Use only the finalized snapshot data stored for the requested month
+* Use finalized snapshot data exclusively for trend interpretation in historical reports; live SQL Server mirror data MUST NOT be used for historical trend analytics (see FAD-2)
+* Reproduce AI narrative content from the physical text copy stored in the snapshot; MUST NOT make new LLM calls to regenerate AI content for historical reports
 * Produce output deterministically identical to the original report for the same snapshot data and report template version
 * NEVER re-query SQL Server or live operational tables when generating a historical report
-* Maintain an audit log of every historical regeneration request: who requested it, when, for which month, which report version was produced
+* Maintain an audit log of every historical regeneration request: who requested it, when, for which month, which report version was produced, and the Snapshot Reproducibility Fingerprint of the source snapshot (see FAD-6)
 
 ---
 
@@ -911,6 +947,14 @@ The system MUST:
 * **Given** a finalized snapshot exists for month M
 * **When** a historical report is regenerated for month M
 * **Then** the output matches the original report byte-for-byte when using the same report template version
+
+* **Given** a historical report is regenerated after the AI model or prompt version has changed
+* **When** the regeneration runs
+* **Then** the AI narrative content is reproduced from the physical text copy stored in the snapshot; no new LLM call is made; the output is identical to the original AI content
+
+* **Given** trend interpretation data is requested for a historical report for month M
+* **When** the report is generated
+* **Then** trend analytics are derived exclusively from the finalized snapshots available at or before month M; live operational data is not used
 
 * **Given** no finalized snapshot exists for month M
 * **When** a historical report is requested for month M
@@ -1056,10 +1100,43 @@ System MUST log:
 ### 4.7 Reporting Warehouse Immutability
 
 * Snapshot rows, once finalized, MUST NOT be updated or deleted by any application code path
-* Delete operations on snapshot tables require a manual DBA action with documented business justification
 * The `warehouse` schema exposes only SELECT access to the application service layer
 * Any code path that would issue an UPDATE or DELETE against a finalized snapshot row is a production defect, not a feature
 * Report records are similarly immutable after publication; a new report version must be created rather than modifying an existing one
+
+---
+
+#### Compliance Governance Pathway
+
+The operational immutability guarantee does not preclude compliance-driven deletion or anonymization. Such actions are governed by a defined pathway, not ad-hoc DBA access. Any deletion or anonymization of finalized snapshot or report records that bypasses this pathway is a compliance defect.
+
+A compliance action on a finalized snapshot or report record requires ALL of the following before execution:
+
+* **Authorization:** approval from a designated compliance authority (defined by the organization)
+* **Scope definition:** explicit enumeration of all records affected across all tables, derived from the compliance scope manifest
+* **Pre-action audit entry:** a record in the Compliance Audit Area (see below) created before any deletion or anonymization executes
+
+**Required audit entry fields:**
+
+| Field | Description |
+|---|---|
+| authorization_timestamp | When authorization was granted |
+| authorized_by | Identity of the approving compliance authority |
+| executed_by | Identity of the operator executing the action |
+| affected_student_id | Student record being acted upon |
+| affected_tables | Explicit list of all tables from which records are removed or anonymized |
+| action_type | `DELETE` or `ANONYMIZE` |
+| audit_rationale | Legal or compliance basis for the action (e.g., FERPA request, contract term) |
+| affected_record_count | Number of records removed or anonymized per table |
+
+---
+
+#### Compliance Audit Area
+
+* The compliance audit area is a logically isolated domain (`compliance_audit` schema) with no foreign key dependencies on the operational or warehouse schemas
+* Initial implementation resides within PostgreSQL; a future evolution may move it to an external compliance system; the logical isolation design accommodates this without architectural change
+* The `compliance_audit` schema is append-only; no audit record is modified or deleted after creation; audit records survive the operational deletions they document
+* Application service accounts MUST NOT have INSERT, UPDATE, or DELETE privileges on the `compliance_audit` schema; only a dedicated compliance pathway service account has write access
 
 ---
 
@@ -1069,6 +1146,29 @@ System MUST log:
 * Snapshots are self-contained: all fields required to render a report are captured at snapshot time; no live table joins are permitted at report generation time
 * Snapshot schema changes require a versioning mechanism: new columns are nullable with defaults; prior snapshots remain valid and renderable
 * Report template changes that would alter historical output MUST create a new template version; existing reports reference their original template version
+
+---
+
+#### Snapshot Reproducibility Fingerprint
+
+The Snapshot Reproducibility Fingerprint is a first-class concept in the SSIP data model. Every finalized snapshot carries a fingerprint that captures the complete versioned context under which the snapshot was generated. The fingerprint enables future auditors to determine exactly which rules, models, and templates produced any given historical report without requiring live interrogation of current system state.
+
+**Fingerprint components:**
+
+| Component | Description |
+|---|---|
+| `schema_version` | Version of the snapshot row schema (column definitions) at generation time |
+| `configuration_registry_version` | Version of the Configuration Version Registry active at snapshot generation time (see Section 12.8) |
+| `ai_prompt_version` | Map of insight type → prompt version used to generate each AI summary captured in the snapshot |
+| `ai_model_version` | Map of insight type → AI model identifier used to generate each AI summary |
+| `report_template_version` | Version of the report template active when the snapshot was first used to generate a report |
+
+**Fingerprint guarantees:**
+
+* A finalized snapshot's fingerprint is immutable; it is set at finalization time and MUST NOT be modified after finalization
+* Historical report regeneration logs the source snapshot's fingerprint alongside the regeneration audit entry
+* If a regenerated report's source snapshot fingerprint differs from the original report's source snapshot fingerprint, the mismatch is logged as an audit warning; the report is marked `POTENTIALLY_DIVERGENT` from the original
+* If any fingerprint component version is unknown at finalization time (e.g., Configuration Version Registry not yet implemented), it is recorded as `UNKNOWN_V0` to preserve fingerprint structure; this does not block snapshot finalization
 
 ---
 
@@ -1118,7 +1218,12 @@ Alternative: Integrate a payment processor API for independent reconciliation in
 * Must enforce deterministic logic; LLM outputs are advisory, never authoritative for eligibility or state transitions
 * PostgreSQL is the exclusively owned database for all platform-generated data, AI outputs, snapshots, and reports
 * Operational and reporting concerns MUST occupy separate database schemas (`public` and `warehouse`)
-* Snapshot tables are append-only; update and delete operations are prohibited at the application layer
+* Compliance audit records MUST occupy a logically isolated schema (`compliance_audit`); no operational or warehouse code paths may write to this schema
+* Snapshot tables are append-only; update and delete operations are prohibited at the application layer; compliance-governed deletion requires the Compliance Governance Pathway (Section 4.7)
+* Snapshot AI content MUST be stored as physical point-in-time text copies in snapshot rows; live references or foreign key references to `ai_insights` records in snapshot tables are prohibited
+* Trend interpretation for historical reports MUST use finalized snapshot data exclusively; live SQL Server mirror data MUST NOT be used for historical trend analytics
+* Configuration rule changes are prospective only; they MUST NOT retroactively modify finalized snapshots, published reports, or historical cohort classification records
+* SQL Server-mirrored access state is authoritative for operational eligibility decisions; platform-originated access events are supplementary context only
 * LLM prompts MUST NOT contain PII; only anonymized student metrics and program context are permitted
 * Historical reports MUST be generated from snapshot data alone; live table queries at report generation time are prohibited
 * Role-based access control is mandatory for any multi-user deployment; unauthenticated access to student data is prohibited
@@ -1147,8 +1252,13 @@ Alternative: Integrate a payment processor API for independent reconciliation in
 * Student has no mentor assignment — student visible to operators only; no error surfaced to mentor endpoints
 * Two snapshot jobs for the same month triggered concurrently — idempotency key prevents duplicate finalized rows; second job exits cleanly
 * GHL message sync returns a message for an unrecognized student ID — stored with NULL user reference; flagged for manual review
-* Cohort threshold configuration is updated mid-month — reclassification runs on next daily job; prior cohort records are retained as history; new classification is appended
-* LLM provider is switched (configurable) — prior insights retain the `model_used` attribution from the original generation; new insights use the new provider
+* Cohort threshold configuration is updated mid-month — reclassification runs on next daily job; prior cohort records are retained as history; new classification is appended; finalized snapshots already taken this month are not retroactively affected
+* LLM provider is switched (configurable) — prior insights retain the `model_used` attribution from the original generation; new insights use the new provider; finalized snapshot AI content is unaffected by the provider change
+* Compliance deletion request received while snapshot is in DRAFT state — draft is discarded without invoking the Compliance Governance Pathway; a discard audit entry is created in the compliance audit area documenting the student ID, discard timestamp, and rationale; the student is treated as if no snapshot was taken for that month
+* Historical trend interpretation requested for a period prior to snapshot introduction — trend interpretation returns `NOT_AVAILABLE` for the historical period; no live data fallback; trend analysis covers only periods with available finalized snapshots
+* Snapshot Reproducibility Fingerprint mismatch detected during historical report regeneration — regeneration completes using stored snapshot data; mismatch is logged as an audit warning with both fingerprints (original and current); operator is notified; regenerated report is marked `POTENTIALLY_DIVERGENT`
+* Compliance action executed on a student whose snapshot contributed to published aggregate cohort reports — compliance deletion proceeds on the student-level snapshot; published aggregate report statistics are not retroactively recalculated; the report record is annotated with a compliance-action flag indicating that a student's records were removed after original publication
+* Configuration Version Registry version active at snapshot time is later purged or unavailable — fingerprint notes the version as `ARCHIVED`; report regeneration proceeds using stored snapshot data; a warning is logged; the missing version is an audit concern, not a blocking error
 
 ---
 
@@ -1226,6 +1336,7 @@ Every stored AI output MUST carry the following metadata:
 | **Attributable** | `model_used`, `prompt_version`, `generated_at` stored on every record |
 | **Reviewable** | Full insight record including metadata is accessible via the AI insights API |
 | **Reproducible** | Same input metrics + same prompt version → same output (within LLM non-determinism tolerance) |
+| **Snapshot-isolated** | AI outputs captured in finalized snapshots are physical point-in-time text copies; they are NOT live references to `ai_insights` rows; subsequent regeneration, force-refresh, or provider changes MUST NOT alter finalized snapshot AI content (see FAD-1) |
 
 ---
 
@@ -1290,21 +1401,27 @@ Bounded scope: Requires explicit business requirement sign-off before any implem
 | U-1 | CAP / Launch / Placement hopeful cohorts cannot be auto-derived | **RESOLVED.** Explicit SQL-derived heuristic rules now defined in Section 2.4. Rules are configurable and marked as operational heuristics. | Architecture decision |
 | U-3 | Access revocation/restoration source is unclear (platform vs. SQL Server) | **RESOLVED.** Events originate from SQL Server operational tables. Platform mirrors them into PostgreSQL. Platform does not own the authoritative source initially. Platform-owned extensions are a future-phase option. | Architecture decision |
 | U-5 | Mentor assignment model unclear (1:N vs. M:N) | **RESOLVED.** Current model: one primary mentor per student, one optional super mentor, one optional instructor. At most one active assignment per role per student. Future evolution to M:N history-based model must not require breaking schema change. | Architecture decision |
+| D-1 | When a configuration threshold changes, do historical snapshots and cohort classifications change retroactively? | **RESOLVED.** Configuration changes are prospective only. Historical snapshots, finalized reports, and prior cohort classification records are immutable and remain attributed to the configuration version that generated them. Reclassification runs only from the next execution forward. | FAD-3 |
+| D-3 | If SQL Server shows access as REVOKED and the platform has a manual restoration event with no SQL Server confirmation, what is the operational access status? | **RESOLVED.** SQL Server-mirrored state is authoritative for operational access status and eligibility decisions. Platform-originated access events are contextual additions displayed in the timeline but do not override SQL Server state for operational purposes. | FAD-5 |
+| D-4 | Are AI outputs in snapshots stored as physical copies or as live references to `ai_insights` records? | **RESOLVED.** Physical copy semantics. Snapshot rows physically embed AI-generated text at finalization time. No live references to `ai_insights` rows. Post-finalization AI regeneration has no effect on snapshot AI content. | FAD-1 |
+| D-5 | Where is the audit trail for compliance-driven deletions stored? | **RESOLVED.** Logically isolated compliance audit area, initially in PostgreSQL as a dedicated `compliance_audit` schema with no foreign key dependencies on operational or warehouse schemas. Audit records are append-only and survive the deletion they audit. | FAD-4 |
+| D-6 | Does trend interpretation for historical reports use live data or snapshot data? | **RESOLVED.** Historical trend interpretation uses finalized snapshot data exclusively. Live SQL Server mirror data is not used for historical trend analytics, preserving full reproducibility. | FAD-2 |
 
 ---
 
 ### 11.2 Remaining Open Assumptions
 
-These assumptions could not be resolved from available architectural context. They require business owner input before the dependent features are built.
+These assumptions require external input before dependent features can be built. Each is classified by the type of input required.
 
-| # | Open Assumption | Dependent Features | Decision Needed From | Urgency |
-|---|---|---|---|---|
-| U-4 | "Month-end" default cutoff: is last calendar day of month correct? What happens for students enrolled on the final day of a month? | Monthly snapshot trigger, report period boundaries | Product / Operations | HIGH — needed before snapshot scheduler is built |
-| U-6 | Is SQL Server the complete financial record? No external payment processor (Stripe, etc.) needs to be reconciled? | Payment intelligence, bundle deal detection, HIGH risk alerting | Finance / Operations | HIGH — determines scope of payment intelligence |
-| U-7 | Is the AI monthly narrative for internal operator use only, or is any version delivered to students or external stakeholders? | Narrative prompt design, PII policies, tone guidelines | Product / Legal | MEDIUM — needed before monthly narrative generation is built |
-| U-8 | Does the GHL API provide complete message history including messages not initiated by this platform? What is the API's lookback limit? | Unified communication telemetry completeness, channel analytics accuracy | Engineering (GHL API audit required) | HIGH — determines whether unified timeline is complete or partial |
-| U-9 | What is the snapshot retention policy? Are there FERPA or contract-based requirements to delete student records after a defined period? | Snapshot immutability design, warehouse schema, compliance posture | Legal / Compliance | HIGH — determines whether a compliant deletion path must be built before snapshots launch |
-| U-10 | Is UserID a reliable 1:1 key across SQL Server, GHL, and the platform? Are there known cases of duplicate or merged student records? | Unified communication timeline accuracy, deduplication requirements | Engineering / IT | HIGH — if UserID is not reliable, unified timeline cannot be trusted without a deduplication layer |
+| # | Open Assumption | Dependent Features | Decision Needed From | Urgency | Category |
+|---|---|---|---|---|---|
+| U-4 | "Month-end" default cutoff: is last calendar day of month correct? What happens for students enrolled on the final day of a month? | Monthly snapshot trigger, report period boundaries | Product / Operations | HIGH — needed before snapshot scheduler goes live (not a warehouse schema blocker) | Business-owner |
+| U-6 | Is SQL Server the complete financial record? No external payment processor (Stripe, etc.) needs to be reconciled? | Payment intelligence scope, HIGH risk alerting completeness | Finance / Operations | HIGH — determines scope of payment intelligence STANDARD tier | Business-owner |
+| U-7 | Is the AI monthly narrative for internal operator use only, or is any version delivered to students or external stakeholders? | Narrative prompt design, PII policies, tone guidelines | Product / Legal | MEDIUM — needed before monthly narrative generation is built | Business-owner |
+| U-8 | Does the GHL API provide complete message history including messages not initiated by this platform? What is the API's lookback limit? | Unified communication telemetry completeness, channel analytics accuracy | Engineering (GHL API audit required) | HIGH — determines whether unified timeline is complete or partial | Implementation |
+| U-9 | What is the snapshot retention policy? Are there FERPA or contract-based requirements to delete student records after a defined period? | Compliance scope manifest, compliance_audit schema scope, warehouse schema retention design | Legal / Compliance | HIGH — must be resolved before first production snapshot is finalized; does NOT block warehouse schema creation | Business-owner / Legal |
+| U-10 | Is UserID a reliable 1:1 key across SQL Server, GHL, and the platform? Are there known cases of duplicate or merged student records? | Unified communication timeline accuracy, deduplication layer requirement | Engineering / IT | HIGH — if UserID is not reliable, unified timeline cannot be trusted without a deduplication layer | Implementation |
+| D-2 | Who provides the super mentor → supervised mentor supervision graph, and via what mechanism? Is it the same external assignment management interface as student assignments or a separate input? | Super mentor RBAC enforcement, transitive roster visibility, Assignment Hierarchy Model | Engineering / Operations | HIGH — must be resolved before PRODUCTION-tier RBAC is implemented; does NOT block STANDARD tier | Implementation |
 
 ---
 
@@ -1385,6 +1502,252 @@ The additive priority score (0–135) used by the outreach eligibility engine is
 * Report templates are versioned; each monthly report records the template version used at generation time
 * Prompt versions are stored with every AI insight; changing a prompt creates a new prompt version, not a modification of an existing one
 * Mentor hierarchy model configuration (role labels, assignment depth) is externalized for future evolution
+
+---
+
+### 12.8 Configuration Version Registry
+
+The Configuration Version Registry is a platform-managed, append-only record of all changes to configurable operational rules. It gives every classification run, snapshot, and AI insight generation a verifiable historical anchor in the Snapshot Reproducibility Fingerprint (Section 4.8).
+
+---
+
+#### Governance Principles
+
+* Every change to any value in Sections 12.1–12.7 creates a new version record; the prior version is retained and never overwritten or modified
+* Version records are append-only; no existing version record is modified after creation
+* A version change requires a documented operational decision and authorization before the new version is activated; undocumented changes are prohibited
+* The registry records both the proposing identity and the activating identity
+* Configuration changes are **prospective only**: historical snapshots, finalized reports, and prior cohort classification records remain attributed to the version active when they were generated (see FAD-3)
+
+---
+
+#### Version Record Fields (conceptual)
+
+| Field | Description |
+|---|---|
+| version_id | Unique version identifier (monotonically increasing) |
+| effective_from | Timestamp when this version became the active version |
+| activated_by | Identity of the operator who activated this version |
+| change_rationale | Required free-text description of why this change was made |
+| rule_set_snapshot | Complete snapshot of all configurable rule values at this version (not just the diff) |
+| prior_version_id | Reference to the immediately preceding version |
+
+---
+
+#### Lifecycle of a Configuration Change
+
+1. **Propose:** operator documents the proposed change with rationale
+2. **Review:** change is reviewed and approved by designated authority
+3. **Activate:** new version record is created in the registry; activation timestamp is recorded
+4. **Classify:** next classification run uses the new version; prior runs attributed to the old version remain unchanged
+5. **Snapshot:** next monthly snapshot captures the active version in its fingerprint
+6. **Audit:** version history is queryable; any classification run or snapshot can be traced to its active version
+
+---
+
+#### Acceptance Criteria
+
+* **Given** a configurable threshold is changed
+* **When** a new version is created in the registry
+* **Then** all subsequent classification runs use the new version; all prior snapshots retain their original version attribution unchanged
+
+* **Given** a historical snapshot is queried with its Reproducibility Fingerprint
+* **When** the `configuration_registry_version` in the fingerprint is looked up
+* **Then** the complete rule set active at snapshot generation time is retrievable
+
+---
+
+## 13. FINALIZED ARCHITECTURE DECISIONS
+
+These decisions are authoritative and binding. They resolve the architecture-blocking open questions identified during the harmonization analysis and provide the foundation for warehouse schema design. No implementation may contradict these decisions without explicit re-opening and documented resolution.
+
+---
+
+### FAD-1 — Snapshot AI Content: Physical Copy Semantics
+
+**Decision:** Finalized snapshots physically store AI-generated summaries and narratives as point-in-time text. Snapshots do NOT store live references or foreign key references to `ai_insights` rows. Post-finalization AI regeneration, force-refresh, or LLM provider changes MUST NOT mutate historical snapshots.
+
+**Rationale:** Historical reproducibility is prioritized over storage minimization. A reproducibility guarantee for historical reports including AI content cannot be satisfied by reference semantics, because the referenced `ai_insights` record may have been updated, versioned, or deleted by the time of regeneration.
+
+**Resolves:** D-4
+
+**Implementation implications:**
+- Snapshot warehouse table columns must include AI text fields (risk_summary_text, progress_summary_text, monthly_narrative_text) as text storage, not foreign keys
+- Snapshot row size grows proportionally with AI text length; benchmark representative output lengths before finalizing schema
+- Compliance deletion of an `ai_insights` record does not orphan snapshot AI content (no FK dependency exists to orphan)
+
+---
+
+### FAD-2 — Historical Trend Interpretation: Snapshot Data Only
+
+**Decision:** Trend analytics for historical reports derive exclusively from immutable finalized snapshots. Live SQL Server mirror data is not used for historical trend regeneration. Historical reports remain reproducible regardless of subsequent changes to operational data.
+
+**Rationale:** Trend interpretation that queries live operational data produces different results when regenerated on different dates, violating the Historical Reproducibility guarantee in Section 4.8. Snapshot data provides the only stable foundation for reproducible historical analytics.
+
+**Resolves:** D-6
+
+**Implementation implications:**
+- Trend interpretation service must support a `historical_mode` flag that restricts input data to snapshots at or before the target month
+- Trend interpretation for current (non-historical) use may continue to use live data; the two modes are distinct code paths
+- A minimum snapshot history depth (to be determined by the product team) must exist before trend interpretation can be computed; the platform must return `INSUFFICIENT_HISTORY` when fewer than the required months of snapshots are available
+
+---
+
+### FAD-3 — Configuration Changes: Prospective Only
+
+**Decision:** Configuration Version Registry changes affect future classification runs only. Historical snapshots retain their original `configuration_registry_version` attribution. Finalized reports and prior cohort classification records are immutable with respect to configuration changes. Retroactive reprocessing under a new configuration version is prohibited.
+
+**Rationale:** Retroactive reclassification would invalidate historical records and undermine the trust of archived reports. The append-only philosophy applies to configuration versions precisely as it applies to snapshot rows — past data reflects the rules that governed it at the time.
+
+**Resolves:** D-1
+
+**Implementation implications:**
+- Configuration changes must not trigger retroactive reprocessing of any historical data
+- The Configuration Version Registry activates a new version at a defined timestamp; all runs after that timestamp use the new version
+- Any migration or backfill that reprocesses historical records under a new configuration version requires explicit business owner sign-off and a compliance audit entry
+
+---
+
+### FAD-4 — Compliance Auditability: Separate Append-Only Compliance Audit Area
+
+**Decision:** Compliance deletion and anonymization actions require an audit trail in a logically isolated compliance audit area. Initial implementation resides within PostgreSQL as a `compliance_audit` schema with no foreign key dependencies on operational or warehouse schemas. Compliance audit records survive the operational deletions they document.
+
+**Required audit fields:** authorization_timestamp, authorized_by, executed_by, affected_student_id, affected_tables (list), action_type (DELETE or ANONYMIZE), audit_rationale, affected_record_count
+
+**Rationale:** An audit trail that can itself be deleted by the same operation it documents provides no compliance assurance. Logical isolation (separate schema, no FK coupling) ensures audit records remain intact after the deletion completes. A future evolution may move the compliance audit area to an external compliance system (object storage, dedicated audit service); the logical isolation design accommodates this without architectural change.
+
+**Resolves:** D-5
+
+**Implementation implications:**
+- `compliance_audit` schema must be created in the same Alembic migration as the `warehouse` schema (Step 1 of the dependency sequence)
+- Application service accounts must NOT have write privileges on `compliance_audit`; only a dedicated compliance pathway service account may write audit records
+- The compliance scope manifest (which tables are in scope for compliance deletion per record type) must be defined as a living operational document and reviewed when any new table storing student-identifiable data is introduced
+
+---
+
+### FAD-5 — Access Event Authority: SQL Server Authoritative for Current State
+
+**Decision:** SQL Server is the authoritative source for a student's current access status for all eligibility decisions, outreach gating, and operational alerts. Platform-originated access events (`platform_manual`, `platform_system`) are contextual supplementary records displayed in the timeline with clear source attribution. They do NOT override SQL Server-mirrored state for operational purposes unless platform-owned access control is explicitly introduced as a separate and approved architectural decision.
+
+**Rationale:** The platform does not write to SQL Server. SQL Server may be updated by processes outside the platform's visibility. Using platform events to override SQL Server state without a confirmed bidirectional synchronization channel would create operationally divergent decisions based on unverified platform-side state.
+
+**Resolves:** D-3
+
+**Implementation implications:**
+- Dashboard display of "current access status" must use the most recent `mirrored_sql_server` event, not the most recent event regardless of origin
+- Platform access event types (`platform_manual`, `platform_system`) are introduced only when a specific platform access management capability is designed and explicitly approved; they are not speculative placeholder features
+- Access history timeline UI must display `origin_source` clearly so operators can distinguish SQL Server-authoritative events from platform-supplementary events
+
+---
+
+### FAD-6 — Snapshot Reproducibility Fingerprint: First-Class Concept
+
+**Decision:** Every finalized snapshot carries a Snapshot Reproducibility Fingerprint comprising five components: `schema_version`, `configuration_registry_version`, `ai_prompt_version` (per insight type), `ai_model_version` (per insight type), `report_template_version`. The fingerprint is immutable after snapshot finalization and is included in all historical report regeneration audit log entries.
+
+**Rationale:** Historical explainability requires that future auditors can determine exactly which rules, models, and templates produced any given historical report. The fingerprint is the complete answer to the question "what governed the generation of this snapshot?" without requiring live interrogation of current system state — which may have changed.
+
+**Resolves:** Identified as a new first-class architectural requirement during the harmonization analysis.
+
+**Implementation implications:**
+- All five fingerprint components must be known and available at snapshot finalization time
+- If any component version is unknown at finalization (e.g., Configuration Version Registry not yet implemented), the unknown component is recorded as `UNKNOWN_V0` to preserve fingerprint structure without blocking finalization
+- Fingerprint mismatch during regeneration (current system versions differ from fingerprint) is a warning with logging, not a blocking error; regeneration proceeds using stored snapshot data
+
+---
+
+## 14. ARCHITECTURE READINESS ASSESSMENT
+
+### 14.1 Warehouse Schema Design: Readiness Status
+
+**Assessment: READY — warehouse schema design may begin. All architecture-blocking decisions are resolved.**
+
+---
+
+#### Resolved blockers
+
+| Blocker | Decision | Status |
+|---|---|---|
+| Snapshot AI content storage model | Physical copy semantics (FAD-1) | ✓ RESOLVED |
+| Historical trend data source | Snapshot data only (FAD-2) | ✓ RESOLVED |
+| Configuration version change semantics | Prospective only (FAD-3) | ✓ RESOLVED |
+| Compliance audit trail architecture | Separate `compliance_audit` schema (FAD-4) | ✓ RESOLVED |
+| Access event authority model | SQL Server authoritative for current state (FAD-5) | ✓ RESOLVED |
+| Reproducibility fingerprint concept | First-class fingerprint (FAD-6) | ✓ RESOLVED |
+| D-1: threshold change retroactivity | Prospective only | ✓ RESOLVED |
+| D-3: access event conflict resolution | SQL Server wins for operational state | ✓ RESOLVED |
+| D-4: snapshot AI copy semantics | Physical text copy | ✓ RESOLVED |
+| D-5: compliance audit location | `compliance_audit` schema | ✓ RESOLVED |
+| D-6: trend interpretation data source | Snapshot data only | ✓ RESOLVED |
+
+---
+
+#### Provisional decisions for warehouse schema (acceptable defaults; review when resolved)
+
+| Assumption | Provisional Default | Schema Risk if Wrong |
+|---|---|---|
+| U-4: Month-end cutoff definition | Last calendar day of month | **Low** — configurable at scheduler level; schema column types unaffected |
+| U-9: Snapshot retention period | Retain indefinitely; deletion policy TBD | **Medium** — `compliance_audit` schema is built regardless; scope manifest may need expansion when U-9 is resolved |
+
+---
+
+#### Open items that do NOT block warehouse schema design
+
+These must be resolved before their dependent feature tiers are implemented but do not affect the warehouse schema itself.
+
+| Item | Category | Feature Dependency | When to Resolve |
+|---|---|---|---|
+| U-6: Financial data completeness | Business-owner | Payment intelligence STANDARD tier | Before STANDARD payment features |
+| U-7: AI narrative audience | Business-owner | Monthly narrative prompt design | Before monthly narrative generation |
+| U-8: GHL API history coverage | Implementation | Communication telemetry PRODUCTION tier | Before unified timeline PRODUCTION tier |
+| U-10: UserID cross-system reliability | Implementation | Unified timeline deduplication | Before communication telemetry STANDARD tier |
+| D-2: Super mentor supervision graph | Implementation | PRODUCTION-tier RBAC for super mentor | Before PRODUCTION multi-role deployment |
+
+---
+
+### 14.2 Dependency Sequencing (Authoritative)
+
+This sequencing supersedes all prior provisional sequencing.
+
+**Step 1 — Warehouse and compliance schemas (now unblocked):**
+Write `alembic/versions/0002_warehouse_schema.py`
+- New schema: `warehouse` (append-only; SELECT-only for application service accounts)
+- New tables: `warehouse.student_snapshots` (with all Fingerprint columns and inline AI text fields), `warehouse.monthly_reports`, `warehouse.report_audit_log`
+- New schema: `compliance_audit` (append-only; restricted write access)
+- New table: `compliance_audit.deletion_log`
+
+**Step 2 — Configuration Version Registry (concurrent with Step 1 or immediately after):**
+Write `alembic/versions/0003_config_version_registry.py`
+- New table: `public.config_version_registry` (append-only version records)
+- Populate seed record capturing all current Section 12 default values as version `V1`
+- Service: `app/services/config_registry.py` — `get_active_version()`, `create_version()`
+
+**Step 3 — Snapshot scheduler service (after Steps 1 and 2):**
+Design `app/services/snapshot.py`
+- Requires: warehouse schema (Step 1), config registry (Step 2), `ai_insights` service (already exists)
+- Month-end trigger via APScheduler; draft → finalized two-phase; fingerprint computed at finalization
+- Prerequisite gate: U-4 (month-end definition) and U-9 (retention policy) must be resolved before Step 3 goes to production
+
+**Step 4 — Historical report generation (after Step 3):**
+Design `app/routers/reports.py`, `app/services/trend_interpretation.py` (historical mode)
+- Requires: finalized snapshots; no live data queries at report time
+- Trend analytics module uses snapshot-only data path
+
+**Step 5 — Compliance pathway implementation (prerequisite for Step 3 go-live):**
+`compliance_audit` schema created in Step 1; service design for compliance pathway
+- Compliance scope manifest defined as a living operational document
+- Required before first production snapshot is finalized
+
+---
+
+### 14.3 Outstanding Risk Register
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| U-9 unresolved at snapshot go-live | **HIGH** — first production snapshot creates immutable records without a defined deletion scope | Escalate U-9 to Legal/Compliance immediately; resolve before Step 3 goes to production |
+| U-10 UserID unreliability | **HIGH** — unified timeline may have attribution errors or duplicates | Conduct cross-system UserID audit before STANDARD-tier timeline; design deduplication layer if audit reveals mismatches |
+| D-2 super mentor supervision graph undefined | **HIGH** for PRODUCTION RBAC | Acceptable at STANDARD tier (primary mentor only); must resolve before PRODUCTION deployment |
+| AI text volume in snapshots (FAD-1 physical copy) | **Medium** — inline text inflates snapshot row size | Benchmark representative AI output lengths before finalizing warehouse schema column types; evaluate a linked AI snapshot content table if row size exceeds acceptable threshold |
+| Compliance scope manifest incomplete at first compliance request | **Medium** — scope may omit newly added tables | Mandate compliance scope manifest review as a Definition of Done item for every new table storing student-identifiable data |
 
 ---
 

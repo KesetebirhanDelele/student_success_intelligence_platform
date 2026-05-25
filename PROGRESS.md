@@ -313,6 +313,21 @@
 
 ---
 
+## Phase 8 — Architecture Harmonization & Pre-Warehouse Specification Finalization
+
+- [x] Architecture harmonization analysis — spec consistency review across 5 impact areas
+  - Date: 2026-05-25
+  - What changed: design-level analysis only; no code or schema changes; produced 5 new required abstraction layers, 6 unresolved design decisions (D-1 through D-6), 8 specification sections requiring revision, dependency sequencing, and readiness assessment
+  - Verification: analysis documented in session context; spec not yet updated (analysis phase only)
+
+- [x] Finalize architecture-blocking design decisions — 6 FADs
+  - Date: 2026-05-25
+  - What changed: `spec/01_requirements.md` — integrated all 6 Finalized Architecture Decisions (FAD-1 through FAD-6); updated Sections 3.15, 3.17, 3.18, 3.19, 4.7, 4.8, 6, 7, 9.4, 11.1, 11.2; added Sections 12.8, 13, 14
+  - Verification: spec file updated; all 5 D-decisions resolved (D-1/3/4/5/6 via FAD-3/5/1/4/2 respectively); D-2 classified as open Implementation concern; warehouse schema design unblocked
+  - Notes: Section 13 records all 6 FADs as authoritative and binding; Section 14 provides readiness assessment with authoritative dependency sequencing; warehouse schema Alembic migration (`0002_warehouse_schema.py`) is now unblocked
+
+---
+
 ## Phase 4 — Operational Outreach Command Center
 
 - [x] Priority scoring engine
