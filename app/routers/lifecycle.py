@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, or_, select
@@ -23,6 +22,10 @@ from app.models import (
     StudentCampaignActivity, StudentNote, StudentTriggerData,
 )
 from app.schemas import APIResponse
+from app.utils.date_utils import (
+    active_student_flag, hw_submitted_days, serialize_datetime_fields,
+    to_isostr, weeks_in_program,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lifecycle")
@@ -37,58 +40,6 @@ def _raw(s: StudentTriggerData) -> dict:
 
 def _name(d: dict) -> str:
     return f"{d.get('FirstName') or ''} {d.get('LastName') or ''}".strip() or f"#{d.get('UserID')}"
-
-
-def _isostr(v: Any) -> str | None:
-    if v is None:
-        return None
-    if hasattr(v, "isoformat"):
-        return v.isoformat()
-    return str(v)
-
-
-def _weeks_in_program(ipbc_start: Any) -> int | None:
-    if not ipbc_start:
-        return None
-    now = datetime.now(tz=timezone.utc)
-    if isinstance(ipbc_start, str):
-        try:
-            ipbc_start = datetime.fromisoformat(ipbc_start.replace("Z", "+00:00"))
-        except Exception:
-            return None
-    if ipbc_start.tzinfo is None:
-        ipbc_start = ipbc_start.replace(tzinfo=timezone.utc)
-    days = (now - ipbc_start).days
-    return max(0, days // 7)
-
-
-def _hw_submitted_days(last_submitted: Any, fallback_days: int | None) -> int | None:
-    """Parse LastSubmitted (ISO string or datetime) → days ago; fall back to LastActivityDays."""
-    if not last_submitted:
-        return fallback_days
-    now = datetime.now(tz=timezone.utc)
-    try:
-        s = str(last_submitted).strip()
-        # Handle "YYYY-MM-DD HH:MM:SS.ffffff" or ISO variants
-        s = s.split(".")[0].replace(" ", "T")
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return max(0, (now - dt).days)
-    except Exception:
-        return fallback_days
-
-
-def _active_student(active_status: Any) -> int:
-    raw = str(active_status or "").strip().lower()
-    return 1 if raw in ("1", "active", "true", "yes") else 0
-
-
-def _serialize_dates(d: dict, keys: tuple) -> None:
-    """In-place ISO-stringify selected datetime keys."""
-    for k in keys:
-        if d.get(k) and hasattr(d[k], "isoformat"):
-            d[k] = d[k].isoformat()
 
 
 async def _activity_map(user_ids: list[int], db: AsyncSession) -> dict[int, StudentCampaignActivity]:
@@ -129,7 +80,7 @@ def _merge_activity(rows: list[dict], acts: dict, notes: dict) -> list[dict]:
         uid = r.get("UserID")
         a = acts.get(uid)
         n = notes.get(uid)
-        r["last_campaign_activity_date"] = _isostr(a.activity_date) if a else None
+        r["last_campaign_activity_date"] = to_isostr(a.activity_date) if a else None
         r["last_campaign_activity_type"] = a.activity_type if a else None
         r["last_campaign_activity"] = a.activity_label if a else None
         r["campaign_notes"] = n.content if n else None
@@ -142,9 +93,9 @@ def _compute_common(rows: list[dict]) -> list[dict]:
     for i, r in enumerate(rows):
         r["row_id"] = i + 1
         r["student_name"] = _name(r)
-        r["weeks_in_program"] = _weeks_in_program(r.get("IPBCStartDate") or r.get("StudentStartDate"))
-        r["last_hw_submitted_days"] = _hw_submitted_days(r.get("LastSubmitted"), r.get("LastActivityDays"))
-        r["active_student"] = _active_student(r.get("ActiveStatus"))
+        r["weeks_in_program"] = weeks_in_program(r.get("IPBCStartDate") or r.get("StudentStartDate"))
+        r["last_hw_submitted_days"] = hw_submitted_days(r.get("LastSubmitted"), r.get("LastActivityDays"))
+        r["active_student"] = active_student_flag(r.get("ActiveStatus"))
         # Nulls for staff fields not yet sourced
         r.setdefault("mentor_name", None)
         r.setdefault("mentor_email", None)
@@ -172,7 +123,7 @@ def _compute_common(rows: list[dict]) -> list[dict]:
         r.setdefault("avg_interview_prep_score", None)
         r.setdefault("avg_interview_score", None)
         r.setdefault("chat_gpt_prompt", None)
-        _serialize_dates(r, ("IPBCStartDate", "StudentStartDate", "ClassStartDate"))
+        serialize_datetime_fields(r, ("IPBCStartDate", "StudentStartDate", "ClassStartDate"))
     return rows
 
 

@@ -66,6 +66,29 @@ def _level(score: int) -> str:
     return "LOW"
 
 
+def risk_level_for_display(profile: object | None) -> str:
+    """Map a student ORM row (or any object with priority fields) to a 3-tier risk label.
+
+    Collapses the 4-tier priority scale (URGENT/HIGH/MEDIUM/LOW) to 3 tiers
+    (HIGH/MEDIUM/LOW) for display.  URGENT folds into HIGH.
+    Returns "UNKNOWN" when profile is None.
+
+    Accepts any object with HWsBehind, AvgEffRating, LastActivityDays attributes —
+    no ORM import needed, no circular dependency risk.
+    """
+    if profile is None:
+        return "UNKNOWN"
+    d = {
+        "HWsBehind": getattr(profile, "HWsBehind", 0),
+        "AvgEffRating": getattr(profile, "AvgEffRating", 5.0),
+        "LastActivityDays": getattr(profile, "LastActivityDays", 0),
+    }
+    level = score_student(d).level
+    if level in ("URGENT", "HIGH"):
+        return "HIGH"
+    return level  # MEDIUM | LOW
+
+
 def _action(level: str, tracking: dict | None) -> str:
     state = (tracking or {}).get("state", "")
     if state == "INTERVENTION_REQUIRED":

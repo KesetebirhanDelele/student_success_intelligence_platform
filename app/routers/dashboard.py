@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import case, func, select, text
@@ -12,6 +12,7 @@ from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.models import OutreachHistory, StudentOutreachTracking
 from app.schemas import APIResponse
+from app.services.alerts import gather_alerts
 from app.services.scheduler import get_last_run_at, get_scheduler_status
 
 logger = logging.getLogger(__name__)
@@ -53,79 +54,12 @@ async def dashboard_health() -> APIResponse:
 
 @router.get("/alerts")
 async def dashboard_alerts(db: AsyncSession = Depends(get_db)) -> APIResponse:
-    alerts: list[dict] = []
-    now = datetime.now(tz=timezone.utc)
-
-    # CRITICAL — SQL Server not configured
-    if not settings.mssql_configured:
-        alerts.append({
-            "severity": "CRITICAL",
-            "message": "SQL Server not configured — student sync is unavailable.",
-            "student_id": None,
-            "recommended_action": "Add MSSQL_HOST, MSSQL_USER, MSSQL_PASS to .env and restart.",
-        })
-
-    # WARNING — students stuck in CONTACTED > 48 h
-    stuck_cutoff = now - timedelta(hours=48)
-    stuck_result = await db.execute(
-        select(StudentOutreachTracking.user_id)
-        .where(
-            StudentOutreachTracking.state == "CONTACTED",
-            StudentOutreachTracking.last_contact_at < stuck_cutoff,
-        )
+    alerts = await gather_alerts(
+        db,
+        is_shadow=settings.is_shadow,
+        mssql_configured=settings.mssql_configured,
+        last_run=get_last_run_at(),
     )
-    for row in stuck_result.fetchall():
-        alerts.append({
-            "severity": "WARNING",
-            "message": f"Student {row.user_id} has been in CONTACTED state for over 48 hours with no response recorded.",
-            "student_id": row.user_id,
-            "recommended_action": "Investigate student history or use Force Retry / Escalate.",
-        })
-
-    # WARNING — NO_RESPONSE with missed retry window
-    missed_result = await db.execute(
-        select(StudentOutreachTracking.user_id)
-        .where(
-            StudentOutreachTracking.state == "NO_RESPONSE",
-            StudentOutreachTracking.next_retry_at < now,
-        )
-    )
-    for row in missed_result.fetchall():
-        alerts.append({
-            "severity": "WARNING",
-            "message": f"Student {row.user_id} is in NO_RESPONSE and their retry window has passed — no retry was triggered.",
-            "student_id": row.user_id,
-            "recommended_action": "Use Force Retry or verify the scheduler is running.",
-        })
-
-    # WARNING — scheduler never ran or > 26 h ago
-    last_run = get_last_run_at()
-    if last_run is None:
-        alerts.append({
-            "severity": "WARNING",
-            "message": "Scheduler has not run since system start. No automated outreach has been executed.",
-            "student_id": None,
-            "recommended_action": "Verify scheduler is active and the daily cron is configured correctly.",
-        })
-    else:
-        last_run_dt = datetime.fromisoformat(last_run)
-        if (now - last_run_dt) > timedelta(hours=26):
-            alerts.append({
-                "severity": "WARNING",
-                "message": f"Scheduler last ran {last_run} — more than 26 hours ago.",
-                "student_id": None,
-                "recommended_action": "Check scheduler logs or trigger a manual batch via Trigger Outreach.",
-            })
-
-    # INFO — SHADOW mode active
-    if settings.is_shadow:
-        alerts.append({
-            "severity": "INFO",
-            "message": "System is running in SHADOW mode. No outbound calls, SMS, or emails are being sent.",
-            "student_id": None,
-            "recommended_action": "This is expected in shadow/testing mode. Set EXECUTION_MODE=LIVE to enable real outreach.",
-        })
-
     return APIResponse.ok({"alerts": alerts, "count": len(alerts)})
 
 

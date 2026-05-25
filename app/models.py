@@ -74,6 +74,7 @@ class StudentOutreachTracking(Base):
         UniqueConstraint("user_id", "checkpoint_type", name="uq_student_checkpoint"),
         Index("ix_sot_state", "state"),
         Index("ix_sot_user_id", "user_id"),
+        Index("ix_sot_updated_at", "updated_at"),   # incremental warehouse reads
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -103,6 +104,7 @@ class OutreachHistory(Base):
         Index("ix_oh_user_id", "user_id"),
         Index("ix_oh_tracking_id", "tracking_id"),
         Index("ix_oh_created_at", "created_at"),
+        Index("ix_oh_checkpoint", "checkpoint_type"),  # warehouse per-checkpoint aggregation
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -135,6 +137,7 @@ class StateTransitionLog(Base):
     __table_args__ = (
         Index("ix_stl_tracking_id", "tracking_id"),
         Index("ix_stl_user_id", "user_id"),
+        Index("ix_stl_created_at", "created_at"),   # time-bounded warehouse queries
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -223,7 +226,10 @@ class GHLMessage(Base):
 class StudentCampaignActivity(Base):
     """Operator-logged campaign activities per student (shadow-safe, append-only)."""
     __tablename__ = "student_campaign_activity"
-    __table_args__ = (Index("ix_sca_student_user_id", "student_user_id"),)
+    __table_args__ = (
+        Index("ix_sca_student_user_id", "student_user_id"),
+        Index("ix_sca_created_at", "created_at"),   # timeline and warehouse reads
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     student_user_id: Mapped[int] = mapped_column(Integer, nullable=False)

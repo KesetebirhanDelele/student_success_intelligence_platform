@@ -81,7 +81,17 @@ async def init_db() -> None:
         await conn.execute(text(
             "ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS visibility VARCHAR(50)"
         ))
-    logger.info("Database tables and column migrations applied")
+        # Warehouse-preparation indexes — safe to run on existing tables
+        # (CREATE TABLE IF NOT EXISTS only fires for new installs; these guards
+        #  cover existing deployments where the tables already exist.)
+        for idx_ddl in [
+            "CREATE INDEX IF NOT EXISTS ix_stl_created_at ON state_transition_log(created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_sot_updated_at ON student_outreach_tracking(updated_at)",
+            "CREATE INDEX IF NOT EXISTS ix_oh_checkpoint  ON outreach_history(checkpoint_type)",
+            "CREATE INDEX IF NOT EXISTS ix_sca_created_at ON student_campaign_activity(created_at)",
+        ]:
+            await conn.execute(text(idx_ddl))
+    logger.info("Database tables, column migrations, and indexes applied")
 
 
 # ── SQL Server sync connections (read-only) ────────────────────────────────────

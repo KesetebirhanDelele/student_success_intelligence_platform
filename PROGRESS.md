@@ -276,6 +276,43 @@
 
 ---
 
+---
+
+## Phase 7 — Architecture Hardening (Pre-Warehouse)
+
+- [x] Add Alembic migration support
+  - Date: 2026-05-24
+  - What changed: `requirements.txt` — added `alembic>=1.13.0`; `alembic.ini` created with placeholder URL overridden at runtime; `alembic/env.py` — async-compatible env using `create_async_engine` + `NullPool`, offline mode strips `+asyncpg` prefix for SQL script generation; `alembic/script.py.mako` — standard template; `alembic/versions/0001_baseline.py` — full baseline migration for all 11 tables and all indexes as-at Phase 5
+  - Verification: alembic.ini and env.py created; migration file covers all ORM models and indexes
+  - Notes: Existing deployments must run `alembic stamp head` before running `alembic upgrade` to skip DDL already applied by init_db(). `init_db()` kept intact for now — future schema changes use Alembic only.
+
+- [x] Add warehouse-preparation indexes
+  - Date: 2026-05-24
+  - What changed: `app/models.py` — added `ix_stl_created_at` to `StateTransitionLog` (was missing), `ix_sot_updated_at` to `StudentOutreachTracking`, `ix_oh_checkpoint` to `OutreachHistory`, `ix_sca_created_at` to `StudentCampaignActivity`; `app/database.py` — added four `CREATE INDEX IF NOT EXISTS` statements in `init_db()` to apply indexes to existing deployments on next restart
+  - Verification: indexes defined in model `__table_args__`; migration-lite guards in `init_db()` are idempotent
+
+- [x] Add `risk_level_for_display()` to priority service — consolidate risk scoring
+  - Date: 2026-05-24
+  - What changed: `app/services/priority.py` — added `risk_level_for_display(profile)`: accepts any object with priority fields (duck-typed, no ORM import), calls `score_student()`, maps URGENT→HIGH, returns HIGH/MEDIUM/LOW/UNKNOWN
+  - Verification: removed duplicate `_risk_level()` from `app/routers/students.py`; all three callers (students, work_queue, segments) now use canonical score via priority service
+
+- [x] Extract payment logic to `app/services/payment.py`
+  - Date: 2026-05-24
+  - What changed: `app/services/payment.py` (NEW) — `compute_balance(student_dict)` (bundle-fix), `payment_risk_label(balance)` (HIGH/MEDIUM/CLEAR), `build_payment_row(orm_row)` (full reconciliation row); `app/routers/payment.py` — removed `_compute_balance()` and `_payment_row()`, delegates to service; `app/routers/students.py` — drawer endpoint replaced inline bundle calculation with `compute_balance()` + `payment_risk_label()`
+  - Verification: API response shape unchanged; all payment fields still present
+
+- [x] Extract alert logic to `app/services/alerts.py`
+  - Date: 2026-05-24
+  - What changed: `app/services/alerts.py` (NEW) — `gather_alerts(db, *, is_shadow, mssql_configured, last_run)` — all five alert categories (CRITICAL: no MSSQL, WARNING: stuck CONTACTED, missed retry, scheduler stale, INFO: shadow mode); `app/routers/dashboard.py` — `dashboard_alerts()` replaced 50-line inline block with single `gather_alerts()` call; removed now-unused `timedelta` and `StudentOutreachTracking` imports from router
+  - Verification: API response shape unchanged; all alert severities and messages preserved
+
+- [x] Extract date utilities to `app/utils/date_utils.py`
+  - Date: 2026-05-24
+  - What changed: `app/utils/__init__.py` (NEW); `app/utils/date_utils.py` (NEW) — `to_isostr`, `weeks_in_program`, `hw_submitted_days`, `active_student_flag`, `serialize_datetime_fields` extracted from `lifecycle.py` private helpers; `app/routers/lifecycle.py` — removed 5 private `_*` functions, imports from `app.utils.date_utils`; `typing.Any` import removed (no longer needed)
+  - Verification: all lifecycle tab endpoints retain identical behavior; function logic unchanged during extraction
+
+---
+
 ## Phase 4 — Operational Outreach Command Center
 
 - [x] Priority scoring engine

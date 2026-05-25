@@ -9,19 +9,11 @@ from app.models import (
     StudentOutreachTracking, StudentTriggerData,
 )
 from app.schemas import APIResponse
+from app.services.payment import compute_balance, payment_risk_label
+from app.services.priority import risk_level_for_display
 from app.services.segmentation import classify_student
 
 router = APIRouter()
-
-
-def _risk_level(profile: StudentTriggerData | None) -> str:
-    if profile is None:
-        return "UNKNOWN"
-    if profile.HWsBehind >= 3 or profile.AvgEffRating < 2.5 or profile.LastActivityDays > 7:
-        return "HIGH"
-    if profile.HWsBehind >= 2 or profile.AvgEffRating < 3.0 or profile.LastActivityDays >= 5:
-        return "MEDIUM"
-    return "LOW"
 
 
 @router.get("/students/{user_id}")
@@ -75,7 +67,7 @@ async def get_student(user_id: int, db: AsyncSession = Depends(get_db)) -> APIRe
             "hws_behind": profile.HWsBehind if profile else None,
             "avg_eff_rating": profile.AvgEffRating if profile else None,
             "last_activity_days": profile.LastActivityDays if profile else None,
-            "risk_level": _risk_level(profile),
+            "risk_level": risk_level_for_display(profile),
         },
         "history": [
             {
@@ -144,15 +136,8 @@ async def get_student_drawer(user_id: int, db: AsyncSession = Depends(get_db)) -
         if d.get("IPBCStartDate") and hasattr(d["IPBCStartDate"], "isoformat"):
             d["IPBCStartDate"] = d["IPBCStartDate"].isoformat()
 
-        # Compute bundle-aware balance
-        total_payments = float(d.get("Total_Payments") or 0)
-        total_credits = float(d.get("Total_Credits") or 0)
-        class_value = float(d.get("ClassValue") or 0)
-        stored_balance = float(d.get("PaymentBalance") or 0)
-        is_bundle = total_credits > 0 and stored_balance == 0 and class_value > 0
-        actual_balance = max(0.0, class_value - total_payments - total_credits) if is_bundle else stored_balance
-
         segments = classify_student(d)
+        actual_balance = compute_balance(d)
 
         profile = {
             "user_id": profile_row.UserID,
@@ -167,9 +152,15 @@ async def get_student_drawer(user_id: int, db: AsyncSession = Depends(get_db)) -
             "attendance_pct": profile_row.AttendancePercentage,
             "past_10_days_logon": profile_row.Past10DaysLogon,
             "ipbc_start_date": d.get("IPBCStartDate"),
-            "risk_level": _risk_level(profile_row),
+            "risk_level": risk_level_for_display(profile_row),
             "segments": segments,
         }
+
+        total_payments = float(d.get("Total_Payments") or 0)
+        total_credits = float(d.get("Total_Credits") or 0)
+        class_value = float(d.get("ClassValue") or 0)
+        stored_balance = float(d.get("PaymentBalance") or 0)
+        is_bundle = total_credits > 0 and stored_balance == 0 and class_value > 0
 
         payment = {
             "class_value": class_value,
@@ -180,7 +171,7 @@ async def get_student_drawer(user_id: int, db: AsyncSession = Depends(get_db)) -
             "is_bundle_deal": is_bundle,
             "fee_paid": profile_row.FeePaid,
             "class_fees_paid": profile_row.ClassFeesPaid,
-            "payment_risk": "HIGH" if actual_balance > 1000 else ("MEDIUM" if actual_balance > 0 else "CLEAR"),
+            "payment_risk": payment_risk_label(actual_balance),
         }
 
     return APIResponse.ok({
