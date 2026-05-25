@@ -326,6 +326,11 @@
   - Verification: spec file updated; all 5 D-decisions resolved (D-1/3/4/5/6 via FAD-3/5/1/4/2 respectively); D-2 classified as open Implementation concern; warehouse schema design unblocked
   - Notes: Section 13 records all 6 FADs as authoritative and binding; Section 14 provides readiness assessment with authoritative dependency sequencing; warehouse schema Alembic migration (`0002_warehouse_schema.py`) is now unblocked
 
+- [x] State transition model evolution — extend from outreach-only to all 6 lifecycle domains
+  - Date: 2026-05-25
+  - What changed: `spec/03_state_transition_rules.md` — Section 1 (PURPOSE) expanded to multi-domain scope with domain overview table; Section 2 (SOURCE OF TRUTH) updated with new file references; appended Sections 14–45 covering: Domain 2 Snapshot Lifecycle (states, transitions, freezing points, compliance override path, retry semantics, invariants); Domain 3 Monthly Report Lifecycle (async generation, publication boundary, historical regeneration, operator review); Domain 4 AI Insight Lifecycle (force-refresh semantics, versioning, snapshot isolation, attribution guarantees); Domain 5 Configuration Version Governance (activation boundary, prospective-only enforcement, atomic activation, rollback prohibition); Domain 6 Compliance Governance (authorization gating, audit requirements, interaction with snapshot/report immutability); Section 39 Event Attribution Standard (origin_source, origin_authority, execution_mode, attribution fields per domain); Section 40 Cross-Domain Invariants (7 platform-wide invariants covering append-only reporting, reproducibility, AI snapshot isolation, auditability, source attribution, SQL Server authority, compliance override restriction); Section 41 Failure & Recovery Modeling per domain; Section 42 Scope-Specific Behavior (all domains × MVP/STANDARD/PRODUCTION); Section 43 Acceptance Criteria for new domains; Section 44 Combined Invariants; Section 45 Updated References
+  - Verification: specification document only (no code); consistent with FAD-1 through FAD-6; preserves all existing outreach lifecycle content unchanged
+
 ---
 
 ## Phase 4 — Operational Outreach Command Center
