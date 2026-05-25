@@ -656,8 +656,9 @@ The scope manifest captures the complete set of records in scope at APPROVED_FOR
 - `captured_at` — TIMESTAMPTZ; when the manifest was built
 - `manifest_version` — INTEGER; incremented if manifest is refreshed before execution
 - `tables_in_scope_json` — JSONB; full table-by-table enumeration with record IDs or query predicates
-- `is_current` — BOOLEAN; true for the most recent manifest for this workflow (older manifests retained)
 - `created_at` — TIMESTAMPTZ
+
+**Note:** `is_current` was removed. The compliance_audit schema is INSERT-only; an UPDATE to flip is_current=false on older manifests would require UPDATE privilege, violating the append-only invariant. The current manifest for a workflow is always `SELECT ... WHERE workflow_id = X ORDER BY manifest_version DESC LIMIT 1`. No UPDATE operations are required.
 
 ### 7.4 Survivability Guarantees
 
@@ -1040,6 +1041,15 @@ The migration that creates `warehouse` and `compliance_audit` schemas must ALSO 
 - GRANT INSERT on compliance_audit tables to compliance pathway service account
 
 These GRANT statements are part of the schema definition, not separate operational steps. They must be in the migration file.
+
+**Additional GRANT required (compliance deletion path):**
+The compliance pathway account must be able to set `status = 'COMPLIANCE_DELETED'` on `warehouse.student_snapshots` rows during compliance deletion workflows. This requires a column-level UPDATE grant — the only UPDATE grant on any warehouse table:
+
+```
+GRANT UPDATE (status) ON warehouse.student_snapshots TO compliance_pathway_user;
+```
+
+This is the sole exception to the warehouse INSERT-only model. The compliance pathway account has UPDATE privilege on the `status` column only, not on any other column. This grant must appear in the 0002 GRANT block alongside the INSERT grants.
 
 **Config version seed (critical):**
 Migration 0003 must include a seed INSERT for V1 with `status = 'ACTIVE'` and all threshold values from spec/01 Section 12. A deployment with no ACTIVE config version violates DATA-INVARIANT-4.
