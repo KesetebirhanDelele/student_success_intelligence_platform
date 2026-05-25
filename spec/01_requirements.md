@@ -8,25 +8,32 @@
 
 ## 1. SYSTEM PURPOSE
 
-The **Student Success Intelligence Platform (SSIP)** is designed to:
+The **Student Operational Intelligence Platform with Outreach Automation (SSIP)** is an enterprise intelligence system for monitoring, analyzing, and acting on the full operational lifecycle of enrolled students.
 
-* Identify students requiring intervention
-* Trigger outreach via GHL (GoHighLevel)
-* Analyze interaction outcomes using an LLM engine
-* Apply deterministic decision rules
-* Orchestrate interventions such as:
+Outreach automation is a **subsystem**, not the primary architectural identity.
 
-  * Follow-ups
-  * Meeting booking
-  * Resource delivery
-  * IPBC conversion tracking
+The platform is responsible for:
 
-* Maintain an immutable historical record of every student's academic, financial, and engagement state over time
-* Generate enterprise monthly reports and on-demand historical analyses
-* Surface AI-generated insights and intervention recommendations to operators and mentors
-* Support longitudinal analytics across student cohorts (IPBC, CAP, Launch, Placement)
+* **Operational student intelligence** — real-time risk classification, priority scoring, and alerting
+* **Lifecycle intelligence** — enrollment transitions, cohort membership, velocity metrics
+* **Coursework engagement intelligence** — homework pace, effort ratings, curriculum progress
+* **Financial and payment intelligence** — balance reconciliation, bundle deal detection, payment risk
+* **Placement-readiness intelligence** — interview prep, portfolio status, placement pipeline tracking
+* **Communication telemetry** — unified chronological timeline across all channels and sources
+* **AI-generated insights** — risk summaries, progress summaries, intervention recommendations, monthly narratives
+* **Immutable monthly reporting** — append-only student snapshots and enterprise cohort reports
+* **Operational dashboards** — role-differentiated views for operators and mentors
+* **Historical analytics** — longitudinal trend analysis and point-in-time report regeneration
 
-The system acts as the **central decision, orchestration, and intelligence layer**, while GHL executes communication workflows. SQL Server is the authoritative source of student academic and operational data; PostgreSQL is the system-owned intelligence database.
+The outreach automation subsystem:
+
+* Identifies students requiring intervention
+* Triggers outreach via GHL (GoHighLevel)
+* Analyzes interaction outcomes using an LLM engine
+* Applies deterministic decision rules
+* Orchestrates follow-ups, meeting booking, resource delivery, and IPBC conversion tracking
+
+The platform acts as the **central intelligence and orchestration layer**. GHL executes communication workflows. SQL Server is the authoritative read-only source of student academic and operational data. PostgreSQL is the exclusively platform-owned intelligence, operations, and reporting database.
 
 ---
 
@@ -36,16 +43,16 @@ The system acts as the **central decision, orchestration, and intelligence layer
 
 ### 2.1 Primary Objectives
 
-1. Increase student engagement
-2. Improve retention and completion rates
-3. Detect academic risk early
-4. Automate outreach at scale
-5. Drive IPBC conversion
-6. Provide full operational visibility
-7. Deliver monthly enterprise reports for each enrolled student cohort
+1. Increase student engagement and reduce academic risk
+2. Improve retention and program completion rates
+3. Detect academic, financial, and engagement risk early
+4. Automate outreach at scale, with deterministic safeguards
+5. Drive IPBC conversion and track attribution
+6. Provide full operational visibility for operators and mentors
+7. Deliver immutable monthly enterprise reports per student cohort
 8. Maintain append-only historical records enabling point-in-time reconstruction of any student's state
 9. Surface placement readiness signals to reduce time-to-hire
-10. Enable mentor and operator access to actionable intelligence without requiring database access
+10. Enable mentor and operator access to actionable intelligence without requiring direct database access
 11. Augment operator decision-making with AI-generated risk summaries and intervention recommendations
 
 ---
@@ -61,23 +68,86 @@ The system acts as the **central decision, orchestration, and intelligence layer
 * Historical report regeneration for any prior month completes in ≤ 60 seconds
 * AI insight generation latency ≤ 10 seconds per student
 * Payment reconciliation discrepancy rate ≤ 0.1%
+* Operator time-to-identify top 10 at-risk students ≤ 30 seconds
 
 ---
 
 ### 2.3 Operational Domains
 
-The platform recognizes and tracks the following student program cohorts. Each cohort has distinct eligibility rules, intervention triggers, and reporting requirements.
+The platform recognizes and tracks the following nine operational domains. Each domain is a first-class platform concept with distinct eligibility rules, intervention triggers, reporting requirements, and dashboard representation.
 
-| Domain | Description | Primary Risk Signal |
-|---|---|---|
-| **IPBC Enrollment** | Students enrolled in the Income-Based Payment Contract program | Payment balance deviations, attendance gaps |
-| **Coursework Engagement** | Students actively progressing through curriculum modules | HWsBehind, AvgEffRating, LastActivityDays |
-| **Homework Risk** | Students with ≥ 1 overdue assignment or falling EffRating | HWsBehind ≥ 1, AvgEffRating < 3.0 |
-| **CAP Hopefuls** | Students identified as candidates for the CAP program | Academic performance thresholds, mentor flags |
-| **Launch Hopefuls** | Students in late curriculum, ready for job launch preparation | Section completion percentage, mentor assessment |
-| **Placement Hopefuls** | Students actively in job search or interview pipeline | Interview prep completion, portfolio status |
-| **Payment Tracking** | Students with outstanding balances or payment plan deviations | PaymentBalance, ClassFeesPaid, bundle deal status |
-| **Access History** | Students whose platform access has been revoked or restored | Access state transitions, trigger events |
+| # | Domain | Description | Primary Signal |
+|---|---|---|---|
+| 1 | **New Signups / Newcomers** | Students newly enrolled; orientation and onboarding tracking | StudentStartDate, ClassStartDate, days since signup |
+| 2 | **Coursework Engagement** | Students actively progressing through curriculum modules | HWsBehind, AvgEffRating, CurrentSection, LastActivityDays |
+| 3 | **Homework Risk** | Students with overdue assignments or declining effort rating | HWsBehind ≥ 1, AvgEffRating < 3.0 |
+| 4 | **CAP Hopefuls** | Students approaching CAP program eligibility | PerComp_Act threshold, program start date flags |
+| 5 | **Launch Hopefuls** | Students in CAP, approaching launch preparation eligibility | PerComp_Act threshold, CAP enrollment confirmed |
+| 6 | **Placement Hopefuls** | Students in launch phase, actively in job search or interview pipeline | CurrentSection pattern, launch enrollment |
+| 7 | **Payment & Financial Tracking** | Students with outstanding balances or payment plan deviations | PaymentBalance, ClassFeesPaid, bundle deal flags |
+| 8 | **Access Revocation & Restoration** | Students whose platform access has been revoked or restored | Access state, trigger event, resolution time |
+| 9 | **Communication & Campaign Activity** | Aggregated outreach and campaign history per student | Last contact date, channel stats, response rate |
+
+---
+
+### 2.4 Cohort Identification Rules
+
+The following rules define cohort membership based on operational heuristics derived from SQL Server data.
+
+**These rules are CONFIGURABLE OPERATIONAL HEURISTICS.** They represent the current best-known derivation logic, not permanent hard-coded thresholds. All field references are read from the SQL Server mirror in PostgreSQL.
+
+---
+
+#### CAP Hopeful
+
+A student is classified CAP Hopeful when ALL of the following are true:
+
+* `PerComp_Act > 0.30`
+* `CAP_StartDate IS NULL`
+* `LaunchStartDate IS NULL`
+* `CurrentSection NOT LIKE '%launch%'` (case-insensitive)
+* `CurrentSection NOT LIKE '%CAP%'` (case-insensitive)
+
+---
+
+#### Launch Hopeful
+
+A student is classified Launch Hopeful when ALL of the following are true:
+
+* `PerComp_Act >= 0.59`
+* `CAP_StartDate IS NOT NULL`
+* `LaunchStartDate IS NULL`
+* `CurrentSection LIKE '%CAP%'` (case-insensitive)
+* `CurrentSection NOT LIKE '%launch%'` (case-insensitive)
+
+---
+
+#### Placement Hopeful
+
+A student is classified Placement Hopeful when:
+
+* `CurrentSection LIKE '%launch%'` (case-insensitive)
+
+---
+
+#### Configurable Rule Governance
+
+* Threshold values (`0.30`, `0.59`) are configurable; any change requires a documented operational decision
+* Section name patterns (`'%launch%'`, `'%CAP%'`) depend on SQL Server curriculum data conventions; they must be reviewed when curriculum naming changes
+* New cohort rules must be proposed as documented operational decisions before implementation begins
+* The platform MUST NOT hardcode these values in business logic; they must be resolved from a configurable rule store
+
+---
+
+#### Acceptance Criteria
+
+* **Given** a student satisfies all CAP Hopeful conditions
+* **When** cohort classification runs
+* **Then** the student is assigned to the CAP Hopeful cohort and this cohort membership is stored with timestamp
+
+* **Given** cohort threshold values change in configuration
+* **When** the next classification run executes
+* **Then** cohort membership is re-evaluated against the new thresholds without requiring a code deployment
 
 ---
 
@@ -106,7 +176,7 @@ The system MUST:
 
 * **MVP:** Basic eligibility filters only
 * **STANDARD:** Add checkpoint-specific thresholds
-* **PRODUCTION:** Full rule set + priority scoring
+* **PRODUCTION:** Full rule set + priority scoring + cohort-aware eligibility
 
 ---
 
@@ -136,7 +206,7 @@ The system MUST:
 #### Constraints
 
 * System MUST NOT directly initiate calls
-* GHL is the execution layer
+* GHL is the execution layer for all outreach communication
 
 ---
 
@@ -164,6 +234,8 @@ The system MUST support:
 * SMS fallback
 * Email fallback
 
+The communication provider is configurable; GHL is the current default.
+
 ---
 
 #### Scope Behavior
@@ -174,15 +246,14 @@ The system MUST support:
 
 ---
 
----
-
 ### 3.4 LLM-Based Analysis
 
 The system MUST:
 
 * Process conversation transcripts
-* Send data to LLM provider
+* Send data to LLM provider (provider is configurable; see Section 12)
 * Enforce strict structured output
+* Validate all structured output before storage
 
 ---
 
@@ -213,6 +284,15 @@ The system MUST:
 
 ---
 
+#### Required Output — Trend Interpretation
+
+* trend_direction (IMPROVING / STABLE / DECLINING)
+* trend_summary (plain text, ≤ 100 words)
+* trend_period_weeks
+* key_trend_drivers (list)
+
+---
+
 #### Required Output — Monthly Narrative
 
 * executive_summary (plain text, ≤ 200 words)
@@ -225,7 +305,7 @@ The system MUST:
 #### Scope Behavior
 
 * **MVP:** Basic sentiment only
-* **STANDARD:** Sentiment + issues + risk summarization
+* **STANDARD:** Sentiment + issues + risk summarization + trend interpretation
 * **PRODUCTION:** Full structured output + validation + progress + monthly narrative
 
 ---
@@ -246,12 +326,9 @@ The system MUST:
 
 The system MUST:
 
-* Combine:
-
-  * Academic metrics
-  * LLM output
+* Combine academic metrics and LLM output
 * Apply deterministic rules
-* Override LLM when necessary
+* Override LLM recommendations when deterministic rule conditions are met
 
 ---
 
@@ -265,9 +342,9 @@ The system MUST:
 
 #### Acceptance Criteria
 
-* **Given** conflicting data
+* **Given** conflicting data between LLM output and deterministic rules
 * **When** evaluated
-* **Then** deterministic rules prevail
+* **Then** deterministic rules prevail; LLM recommendation is logged but not applied
 
 ---
 
@@ -275,8 +352,8 @@ The system MUST:
 
 The system MUST:
 
-* Track outreach attempts
-* Retry when no response
+* Track outreach attempts per student per checkpoint
+* Retry when no response within configurable window
 
 ---
 
@@ -284,15 +361,15 @@ The system MUST:
 
 * **MVP:** No retry
 * **STANDARD:** 1–2 retries
-* **PRODUCTION:** 3-day retry cycle
+* **PRODUCTION:** 3-day retry cycle with configurable backoff
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** no response
-* **When** retry conditions met
-* **Then** next attempt is scheduled
+* **Given** no response to outreach
+* **When** retry conditions are met
+* **Then** next attempt is scheduled; the student is not re-triggered if max attempts have been reached
 
 ---
 
@@ -301,7 +378,7 @@ The system MUST:
 The system MUST:
 
 * Integrate with Google Calendar
-* Book meetings when criteria met
+* Book meetings when decision engine criteria are met
 
 ---
 
@@ -315,9 +392,9 @@ The system MUST:
 
 #### Acceptance Criteria
 
-* **Given** meeting required
-* **When** booking triggered
-* **Then** calendar event is created
+* **Given** a meeting is recommended
+* **When** booking is triggered
+* **Then** a calendar event is created and associated with the student's outreach record
 
 ---
 
@@ -325,8 +402,9 @@ The system MUST:
 
 The system MUST:
 
-* Store transcripts in database
-* Associate with outreach record
+* Store transcripts in PostgreSQL
+* Associate each transcript with the originating outreach record
+* Redact or exclude PII from any transcript segment passed to the LLM
 
 ---
 
@@ -334,24 +412,13 @@ The system MUST:
 
 * **MVP:** Store minimal transcript
 * **STANDARD:** Store full transcript
-* **PRODUCTION:** Store + index + analyze
-
----
+* **PRODUCTION:** Store + index + analyze; PII minimization enforced
 
 ---
 
 ### 3.9 Dashboard Support
 
-The system MUST expose APIs for:
-
-* Student history and outreach logs
-* Academic metrics and sentiment trends
-* Payment reconciliation and balance tracking
-* Lifecycle status and cohort membership
-* Placement readiness indicators
-* Campaign activity and GHL communication history
-* AI-generated insights per student
-* Operator and mentor operational views (filtered by role)
+The system MUST expose role-differentiated API endpoints for all dashboard tabs. All data served through dashboard APIs is read from PostgreSQL; no dashboard endpoint queries SQL Server directly.
 
 ---
 
@@ -363,10 +430,10 @@ The system MUST expose APIs for:
 | Lifecycle | Operator / Mentor | SQL Server mirror + transitions |
 | Coursework | Mentor | SQL Server mirror |
 | Payments | Operator | SQL Server mirror |
-| Placement | Mentor / Operator | SQL Server mirror + placement flags |
-| Communication | Operator | GHL messages + campaign activity |
-| History | Operator | Append-only snapshot store |
-| AI Insights | Operator / Mentor | AI insights table |
+| Placement | Mentor / Operator | SQL Server mirror + cohort flags |
+| Communication | Operator | GHL messages + campaign activity + outreach history |
+| History | Operator | Append-only snapshot store (`warehouse` schema) |
+| AI Insights | Operator / Mentor | `ai_insights` table |
 
 ---
 
@@ -378,27 +445,41 @@ The system MUST expose APIs for:
 
 ---
 
----
-
 ### 3.10 Data Architecture & Source System Separation
 
-The system MUST enforce a strict boundary between source systems and the intelligence database.
+The system MUST enforce a strict and inviolable boundary between the source system and the intelligence database.
+
+---
 
 #### Source System: SQL Server (READ-ONLY)
 
-* SQL Server is the authoritative source for all student academic and operational data
-* The system MUST NOT write to SQL Server under any circumstances
-* Data is read via the `AI_ChatBot_TriggerData` view and any additional approved read-only views
-* SQL Server data is mirrored into PostgreSQL on a scheduled sync cycle
-* Schema drift between SQL Server and the mirror table is detected and logged; the system does not fail silently on schema mismatch
+* SQL Server is the authoritative source for all student academic, enrollment, and operational data
+* The system MUST NOT write to SQL Server under any circumstances, for any reason
+* Data is read via `AI_ChatBot_TriggerData` and any additional approved read-only views
+* SQL Server may evolve independently; the platform must tolerate additive schema changes
+* Schema drift (missing or renamed columns) is detected at sync time, logged, and reported; partial sync completes for intact columns
+
+---
 
 #### Intelligence Database: PostgreSQL (READ-WRITE)
 
-* PostgreSQL is the system-owned database for all operational intelligence, outreach state, AI insights, and reporting data
-* All writes originate from the platform; no external system writes directly to PostgreSQL
-* Operational tables and reporting (snapshot) tables occupy separate schemas
-* Operational schema: live outreach state, GHL messages, campaign activity, student notes
-* Reporting schema (warehouse): append-only snapshots, never updated in-place
+PostgreSQL is the exclusively platform-owned database. ALL of the following must live ONLY in PostgreSQL and NEVER in SQL Server:
+
+* AI outputs (all insight types, sentiment, narratives)
+* Monthly snapshots
+* Historical reports
+* Operational intelligence (outreach state, tracking, history)
+* Communication history (GHL messages, campaign activity, outreach log)
+* Analytics and cohort classification records
+* Access history events (mirrored from SQL Server; extended by platform)
+* Student notes, operator actions, quick action logs
+
+---
+
+#### Schema Separation
+
+* Operational schema (default `public`): live mutable operational data
+* Reporting schema (`warehouse`): append-only snapshots and reports; no live table joins at report time
 
 ---
 
@@ -406,19 +487,19 @@ The system MUST enforce a strict boundary between source systems and the intelli
 
 * **Given** a sync job runs
 * **When** SQL Server is unreachable
-* **Then** the platform continues serving cached data and logs a CRITICAL alert; no writes to SQL Server are attempted
+* **Then** the platform serves cached mirror data; a CRITICAL alert is raised; no write to SQL Server is attempted
 
-* **Given** a schema mismatch is detected between SQL Server columns and the mirror model
+* **Given** a new column appears in SQL Server that the mirror model does not define
 * **When** the sync job executes
-* **Then** the mismatch is logged, the affected columns are skipped, and partial sync completes for intact columns
+* **Then** the new column is ignored; existing mapped columns sync normally; a schema drift warning is logged
 
 ---
 
 #### Scope Behavior
 
-* **MVP:** Single-schema PostgreSQL, SQL Server read via sync job
-* **STANDARD:** Schema separation (operational vs. warehouse); sync validation
-* **PRODUCTION:** Full schema isolation, mismatch alerting, incremental sync with change detection
+* **MVP:** Single-schema PostgreSQL; SQL Server read via sync job
+* **STANDARD:** Schema separation (operational vs. warehouse); sync validation and drift detection
+* **PRODUCTION:** Full schema isolation; incremental sync with change detection; automated drift alerting
 
 ---
 
@@ -429,9 +510,10 @@ The system MUST:
 * Track and surface the following lifecycle states for every student:
 
   * Active / Inactive / Paused / Dropped / Graduated / Placed
-* Record all lifecycle state transitions with timestamp, trigger, and actor
+* Detect lifecycle state changes by comparing consecutive SQL Server sync snapshots
+* Record all detected lifecycle transitions with: timestamp, detected prior state, new state, sync job ID
 * Expose lifecycle history as an ordered timeline per student
-* Derive lifecycle velocity metrics: days in current state, days since last transition
+* Derive lifecycle velocity metrics: days in current state, days since last transition, total days enrolled
 
 ---
 
@@ -449,15 +531,15 @@ The system MUST:
 
 * **MVP:** Current status display only
 * **STANDARD:** Status history + transition log
-* **PRODUCTION:** Full timeline + velocity metrics + AI lifecycle summary
+* **PRODUCTION:** Full timeline + velocity metrics + AI lifecycle summary + cohort membership history
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** a student's ActiveStatus changes in SQL Server
-* **When** the sync job runs
-* **Then** a lifecycle transition event is recorded with the prior and new state
+* **Given** a student's `ActiveStatus` changes between two sync runs
+* **When** the sync comparison runs
+* **Then** a lifecycle transition event is recorded with the detected prior and new state, timestamped at sync time
 
 ---
 
@@ -466,20 +548,22 @@ The system MUST:
 The system MUST:
 
 * Track homework submission pace against expected curriculum velocity
-* Flag students whose HWsBehind exceeds configurable thresholds
-* Track AvgEffRating trends over time (not just current snapshot)
+* Flag students whose HWsBehind exceeds configurable thresholds (see Section 12)
+* Track AvgEffRating trends over time; detect consecutive declining readings
 * Surface last submitted assignment with days-since metric
-* Surface current section and estimated section completion percentage
+* Surface current section and curriculum progress percentage
 
 ---
 
 #### Homework Risk Classification
 
-| Classification | Condition |
+These thresholds are configurable (see Section 12).
+
+| Classification | Default Condition |
 |---|---|
+| ON_TRACK | HWsBehind = 0 AND AvgEffRating ≥ 3.0 |
 | AT_RISK | HWsBehind ≥ 1 OR AvgEffRating < 3.0 |
 | CRITICAL | HWsBehind ≥ 3 OR AvgEffRating < 2.0 |
-| ON_TRACK | HWsBehind = 0 AND AvgEffRating ≥ 3.0 |
 
 ---
 
@@ -487,13 +571,13 @@ The system MUST:
 
 * **MVP:** HWsBehind + AvgEffRating display
 * **STANDARD:** Trend tracking + risk classification
-* **PRODUCTION:** Trend + classification + AI engagement summary + proactive alerting
+* **PRODUCTION:** Trend + classification + AI engagement summary + proactive outreach eligibility trigger
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** a student has HWsBehind ≥ 3
+* **Given** a student has HWsBehind ≥ 3 (or the configured CRITICAL threshold)
 * **When** the eligibility engine runs
 * **Then** the student is classified CRITICAL and included in the next outreach cycle
 
@@ -503,20 +587,22 @@ The system MUST:
 
 The system MUST:
 
-* Reconcile payment data sourced from SQL Server against expected class fee schedules
-* Detect and correctly handle bundle deal payment structures where `PaymentBalance = 0` but credits exist
-* Classify each student's payment risk (CLEAR / MEDIUM / HIGH)
+* Reconcile payment data sourced from SQL Server
+* Detect and correctly handle bundle deal payment structures
+* Classify each student's payment risk (CLEAR / MEDIUM / HIGH) — thresholds are configurable (see Section 12)
 * Surface payment history including total payments, credits, class value, and computed actual balance
-* Flag students whose actual balance deviates from the stored `PaymentBalance` by more than a configurable threshold
+* Flag students whose actual balance deviates from stored `PaymentBalance` by more than a configurable threshold
 
 ---
 
 #### Payment Risk Classification
 
-| Classification | Condition |
+These thresholds are configurable (see Section 12).
+
+| Classification | Default Condition |
 |---|---|
-| CLEAR | Actual balance ≤ 0 |
-| MEDIUM | 0 < Actual balance ≤ $1,000 |
+| CLEAR | Actual balance ≤ $0 |
+| MEDIUM | $0 < Actual balance ≤ $1,000 |
 | HIGH | Actual balance > $1,000 |
 
 ---
@@ -524,7 +610,8 @@ The system MUST:
 #### Bundle Deal Detection
 
 * A bundle deal is detected when: `Total_Credits > 0 AND PaymentBalance = 0 AND ClassValue > 0`
-* In this case, actual balance = `ClassValue − Total_Payments − Total_Credits`
+* In this case: `actual_balance = ClassValue − Total_Payments − Total_Credits`
+* This logic compensates for a known SQL Server data characteristic; it is not an error in the source data
 
 ---
 
@@ -542,7 +629,7 @@ The system MUST:
 * **When** payment reconciliation runs
 * **Then** the system computes the correct actual balance, not the stored `PaymentBalance`
 
-* **Given** a student's actual balance > $1,000
+* **Given** a student's actual balance exceeds the HIGH threshold
 * **When** the payment intelligence endpoint is queried
 * **Then** the student is classified HIGH risk
 
@@ -552,22 +639,22 @@ The system MUST:
 
 The system MUST:
 
+* Classify students into placement cohorts (CAP Hopeful, Launch Hopeful, Placement Hopeful) using the rules in Section 2.4
 * Track placement readiness indicators per student:
 
   * Interview prep completion status
   * Portfolio / GitHub activity flag
   * Resume submission status
-  * Placement hopeful flag
-  * Launch hopeful flag
+  * Active cohort membership (CAP / Launch / Placement)
 * Surface a composite placement readiness score
-* Track time-in-placement-pipeline from first placement flag to job offer
-* Alert when a placement hopeful has been inactive for ≥ 7 days
+* Track time-in-placement-pipeline from first Placement Hopeful classification to job offer
+* Alert operators when a Placement Hopeful has been inactive for ≥ 7 days
 
 ---
 
 #### Scope Behavior
 
-* **MVP:** Placement flag display only
+* **MVP:** Cohort classification display only
 * **STANDARD:** Composite readiness score + pipeline tracking
 * **PRODUCTION:** Full placement intelligence + AI readiness assessment + operator alerts
 
@@ -575,22 +662,25 @@ The system MUST:
 
 #### Acceptance Criteria
 
-* **Given** a student is flagged as a placement hopeful
-* **When** placement intelligence is queried
+* **Given** a student satisfies Placement Hopeful conditions (Section 2.4)
+* **When** cohort classification runs
 * **Then** a composite readiness score is returned based on available indicators
+
+* **Given** a Placement Hopeful student has no recorded activity for ≥ 7 days
+* **When** the daily intelligence job runs
+* **Then** an operator alert is generated
 
 ---
 
 ### 3.15 Operational Access-History Intelligence
 
+Access revocation and restoration events originate from SQL Server operational tables. The platform ingests and mirrors these events. The platform does not own the authoritative source initially; platform-owned access event extensions may be supported in a future phase.
+
 The system MUST:
 
-* Record every access revocation and restoration event with:
-
-  * Timestamp
-  * Trigger event (manual, automated, payment failure, graduation)
-  * Actor (operator username or system)
-  * Prior state and new state
+* Sync access revocation and restoration events from SQL Server on each sync cycle
+* Record each event with: timestamp, trigger event type, actor (operator or system), prior access state, new access state
+* Extend event records with platform-originated context (operator notes, manual restorations) where applicable
 * Surface a chronological access history per student
 * Alert operators when a student's access is revoked for > 48 hours without restoration or explicit closure
 
@@ -598,32 +688,44 @@ The system MUST:
 
 #### Scope Behavior
 
-* **MVP:** Current access status display
-* **STANDARD:** Access event log + timeline
-* **PRODUCTION:** Full history + alerting + AI access pattern analysis
+* **MVP:** Current access status display (from SQL Server mirror)
+* **STANDARD:** Access event timeline (mirrored from SQL Server)
+* **PRODUCTION:** Full history + platform-extended events + alerting + AI access pattern analysis
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** a student's access is revoked
-* **When** the access history endpoint is queried
-* **Then** the event appears with timestamp, trigger, and actor
+* **Given** a student's access is revoked in SQL Server
+* **When** the sync job runs
+* **Then** the event is mirrored into PostgreSQL and appears in the access history timeline
+
+* **Given** a student has been in a revoked access state for > 48 hours with no restoration
+* **When** the daily alert job runs
+* **Then** an operator alert is generated
 
 ---
 
 ### 3.16 Unified Communication Telemetry
 
-The system MUST:
+The system MUST maintain a unified, immutable, chronological communication record per student aggregating ALL of the following sources:
 
-* Maintain a unified communication record per student that aggregates:
+* GHL inbound and outbound messages (synced from GHL API)
+* Campaign activity records (email, SMS, campaign-triggered messages)
+* Platform-initiated outreach attempts (from `outreach_history`)
+* Operator-logged actions (calls, manual outreach notes)
+* AI-generated summaries (linked to the communication event that triggered them)
+* Student notes flagged as communication records
+* Future sources: direct SMS, direct email, call events (extensible by source type)
 
-  * Outreach history (platform-initiated via GHL)
-  * GHL inbound/outbound messages (synced from GHL API)
-  * Campaign activity log (email/SMS campaigns)
-  * Manual operator notes flagged as communication
-* Surface a chronological communication timeline per student
-* Surface aggregated channel statistics: total contacts, response rate, last contact date, days since last contact
+---
+
+#### Timeline Architecture Requirements
+
+* Events from all sources are merged into a single chronological timeline per student
+* Each event carries an immutable `source` attribution tag (ghl / campaign / platform / operator / ai)
+* Communication events are append-only; no existing event record is updated or deleted
+* Channel analytics are derived from the timeline: total contacts, response rate, last contact date, days since last contact, breakdown by channel
 
 ---
 
@@ -631,20 +733,20 @@ The system MUST:
 
 | Field | Source |
 |---|---|
-| direction | INBOUND / OUTBOUND |
-| channel | CALL / SMS / EMAIL / CAMPAIGN |
+| direction | INBOUND / OUTBOUND / INTERNAL |
+| channel | CALL / SMS / EMAIL / CAMPAIGN / NOTE / AI_SUMMARY |
 | body / subject | Message content |
-| status | DELIVERED / FAILED / NO_RESPONSE |
+| status | DELIVERED / FAILED / NO_RESPONSE / LOGGED |
 | activity_date | Event timestamp |
-| source | platform / ghl / campaign / operator |
+| source | platform / ghl / campaign / operator / ai |
 
 ---
 
 #### Scope Behavior
 
 * **MVP:** Platform-initiated outreach only
-* **STANDARD:** Platform + GHL message sync
-* **PRODUCTION:** Full unified timeline + channel analytics + AI communication summary
+* **STANDARD:** Platform + GHL message sync + campaign activity
+* **PRODUCTION:** Full unified timeline + channel analytics + AI communication summary + immutable event log
 
 ---
 
@@ -652,23 +754,17 @@ The system MUST:
 
 * **Given** a GHL message is received for a known student
 * **When** the communication timeline endpoint is queried
-* **Then** the message appears in chronological order with the correct channel and direction
+* **Then** the message appears in chronological order with correct channel, direction, and source attribution
+
+* **Given** a communication event is recorded
+* **When** any code path attempts to update or delete the event record
+* **Then** the operation is rejected; a new corrective event may be appended instead
 
 ---
 
 ### 3.17 AI-Generated Student Insights
 
-The system MUST:
-
-* Generate and store AI insights per student covering:
-
-  * Risk summary (academic, financial, engagement)
-  * Progress summary (curriculum velocity, estimated completion)
-  * Intervention recommendation (specific next action with rationale)
-  * Communication sentiment summary (aggregated from recent interactions)
-* Cache insights with a configurable TTL (default: 24 hours)
-* Allow on-demand refresh of any insight type
-* Store insight generation metadata: model used, generated_at, expires_at
+The system MUST generate, store, and serve AI insights per student covering all responsibility areas defined in Section 9.
 
 ---
 
@@ -680,15 +776,26 @@ The system MUST:
 | `progress_summary` | Daily or on-demand | Mentor |
 | `intervention_recommendation` | Post-outreach + daily | Operator |
 | `communication_sentiment` | Post-GHL sync | Operator |
+| `trend_interpretation` | Weekly or on-demand | Operator, Mentor |
 | `monthly_narrative` | Month-end scheduler | Admin |
+
+---
+
+#### Output Properties (apply to all insight types)
+
+* **Versioned:** each generation creates a new record; prior versions are retained
+* **Attributable:** model used, prompt version, generated_at timestamp stored on every record
+* **Reviewable:** operators can view the full insight record including metadata
+* **Reproducible:** same input metrics + same prompt version → same output (subject to LLM non-determinism tolerance)
 
 ---
 
 #### Constraints
 
-* AI insight prompts MUST NOT include PII beyond student ID and program context
-* AI insight generation MUST be idempotent for the same (student_id, insight_type, date) tuple
-* Cached insights are served until TTL; the requester can force refresh via an explicit parameter
+* AI insight prompts MUST NOT include PII; only anonymized student metrics and program context are permitted
+* AI insight generation MUST be idempotent for the same `(student_id, insight_type, date, prompt_version)` tuple
+* Cached insights are served until TTL expires (default: 24 hours; configurable)
+* Force-refresh is supported via an explicit API parameter
 
 ---
 
@@ -696,37 +803,52 @@ The system MUST:
 
 * **MVP:** No AI insights
 * **STANDARD:** Risk summary + intervention recommendation
-* **PRODUCTION:** Full insight suite + monthly narrative + sentiment analysis
+* **PRODUCTION:** Full insight suite + versioning + monthly narrative + trend interpretation
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** an insight request for a student
-* **When** a cached insight exists within TTL
-* **Then** the cached insight is returned without calling the LLM provider
+* **Given** an insight request for a student and a valid cached insight within TTL
+* **When** the endpoint is queried without `force_refresh`
+* **Then** the cached insight is returned; no LLM call is made
 
 * **Given** an insight request with `force_refresh=true`
 * **When** a cached insight exists
-* **Then** a new insight is generated, stored, and returned; the prior insight is retained in history
+* **Then** a new insight is generated with a new version record; the prior insight is retained in history
+
+* **Given** AI insight generation fails after max retries
+* **When** the endpoint is queried
+* **Then** the last valid cached insight is returned with a `stale: true` flag; the failure is logged
 
 ---
 
 ### 3.18 Monthly Snapshot & Enterprise Reporting
 
-The system MUST:
+The system MUST take an immutable monthly snapshot of every active student's full operational state on a scheduled month-end trigger.
 
-* Take an immutable monthly snapshot of every active student's full state on a scheduled month-end trigger
-* Each snapshot MUST include:
+---
 
-  * Lifecycle state at snapshot time
-  * Academic engagement metrics (HWsBehind, AvgEffRating, LastActivityDays, CurrentSection)
-  * Financial state (actual balance, payment risk, class fees paid)
-  * Outreach summary (attempts, responses, last contact date)
-  * Placement readiness indicators
-  * AI-generated monthly narrative
-* Snapshots are append-only: no existing snapshot row is updated or deleted after creation
-* Snapshots are keyed by `(student_id, snapshot_month)` — exactly one snapshot per student per month
+#### Snapshot Content Requirements
+
+Each snapshot MUST preserve the following — the snapshot is self-contained and must not require live table joins at report generation time:
+
+* **Lifecycle position:** active status, cohort memberships, days enrolled, current section
+* **Academic metrics:** HWsBehind, AvgEffRating, LastActivityDays, curriculum progress percentage
+* **Communication summary:** total outreach attempts, response count, last contact date, days since last contact, channel breakdown
+* **Financial summary:** actual balance, payment risk classification, class fees paid, bundle deal flag
+* **Placement summary:** current cohort (CAP / Launch / Placement), readiness score, interview prep status
+* **AI summaries:** last risk summary text, last progress summary text, monthly narrative text
+* **Snapshot metadata:** snapshot_month, generated_at, schema_version
+
+---
+
+#### Snapshot Integrity Rules
+
+* Snapshots are append-only: no existing snapshot row is updated or deleted after finalization
+* Keyed by `(student_id, snapshot_month)` — exactly one snapshot per student per month
+* Students with no activity in the snapshot month still receive a snapshot (zero-activity metrics; not silently excluded)
+* Snapshot finalization is a two-phase operation: draft → finalized; only finalized snapshots are used for reports
 
 ---
 
@@ -734,11 +856,12 @@ The system MUST:
 
 The system MUST generate enterprise monthly reports that:
 
-* Cover all students active in the snapshot month
-* Segment students by cohort (IPBC, CAP, Launch, Placement)
-* Surface aggregate statistics: engagement rate, payment compliance rate, placement pipeline count
+* Are generated entirely from finalized snapshot data; no live operational table queries at report time
+* Cover all students active in the snapshot month, segmented by cohort
+* Surface aggregate statistics: engagement rate, payment compliance rate, homework risk rate, placement pipeline count
 * Include a system-generated AI narrative summarizing cohort health
 * Are available as a structured API response and as a PDF-renderable JSON payload
+* Are versioned; a new report version is created if the report template changes after a report was generated
 
 ---
 
@@ -746,7 +869,7 @@ The system MUST generate enterprise monthly reports that:
 
 * **MVP:** No snapshots
 * **STANDARD:** Automated monthly snapshots; API endpoint for report retrieval
-* **PRODUCTION:** Full report generation + PDF rendering + cohort segmentation + AI narrative
+* **PRODUCTION:** Full report generation + PDF rendering + cohort segmentation + AI narrative + version history
 
 ---
 
@@ -754,88 +877,110 @@ The system MUST generate enterprise monthly reports that:
 
 * **Given** the month-end scheduler fires
 * **When** the snapshot job runs
-* **Then** exactly one snapshot row per active student exists for that month; rerunning the job produces no duplicate rows
+* **Then** exactly one finalized snapshot per active student exists for that month; rerunning produces no duplicates
 
-* **Given** a snapshot exists for month M
+* **Given** a finalized snapshot exists for month M
 * **When** the monthly report endpoint is queried for month M
-* **Then** the report is generated from immutable snapshot data, not from live operational tables
+* **Then** the report is generated exclusively from snapshot data; no SQL Server query is made
 
 ---
 
 ### 3.19 On-Demand Historical Report Regeneration
 
+The system MUST allow authorized operators to regenerate a monthly report for any prior month.
+
 The system MUST:
 
-* Allow authorized operators to request regeneration of a monthly report for any prior month
-* Historical report regeneration MUST use only the immutable snapshot data stored for that month
-* Regenerated reports MUST be deterministically identical to the original report for the same snapshot data
-* The system MUST NOT re-query SQL Server or live operational tables when generating a historical report
+* Use only the finalized snapshot data stored for the requested month
+* Produce output deterministically identical to the original report for the same snapshot data and report template version
+* NEVER re-query SQL Server or live operational tables when generating a historical report
+* Maintain an audit log of every historical regeneration request: who requested it, when, for which month, which report version was produced
 
 ---
 
 #### Scope Behavior
 
 * **MVP:** Not available
-* **STANDARD:** Historical report retrieval (read-only; no regeneration)
-* **PRODUCTION:** On-demand regeneration with idempotency guarantee + audit log of regeneration requests
+* **STANDARD:** Historical report retrieval (read-only; regeneration not yet supported)
+* **PRODUCTION:** On-demand regeneration with idempotency guarantee + audit log + version selection
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** a snapshot exists for month M
+* **Given** a finalized snapshot exists for month M
 * **When** a historical report is regenerated for month M
-* **Then** the output is byte-equivalent to the original report for the same snapshot data
+* **Then** the output matches the original report byte-for-byte when using the same report template version
 
-* **Given** no snapshot exists for month M (month was before snapshots were introduced)
+* **Given** no finalized snapshot exists for month M
 * **When** a historical report is requested for month M
-* **Then** the system returns a clear error indicating no snapshot data is available for that period; it does not attempt to reconstruct from operational tables
+* **Then** the system returns `NOT_AVAILABLE`; it does not attempt reconstruction from live data
 
 ---
 
 ### 3.20 Mentor & Operator Operational Visibility
 
-The system MUST:
+---
 
-* Provide role-differentiated views for operators and mentors
-* Operators MUST see: full student list, outreach state, payment risk, alert queue, system health
-* Mentors MUST see: assigned students only, coursework engagement, lifecycle status, placement readiness, AI insights, communication history
-* Mentors MUST NOT see: payment details, other mentors' students, raw system alerts
-* All views are read-only for mentors; operators may initiate quick actions
+#### Mentor Assignment Model
+
+The current assignment model is:
+
+* **One primary mentor** per student (1:N relationship — one mentor may have many students)
+* **One optional super mentor** per student (oversight role; access to all assigned students of supervised mentors)
+* **One optional instructor** per student (curriculum support role)
+
+A student has at most one active assignment per role at any given time. Role assignments are managed externally and provided to the platform via configuration or a future assignment management API.
+
+Future architecture may evolve to a many-to-many assignment history model. The current data model must be designed to accommodate this evolution without a breaking schema change.
+
+---
+
+#### Access Rules
+
+* Operators: full student roster, outreach state, payment risk, alert queue, system health, all quick actions
+* Primary Mentors: assigned students only, coursework engagement, lifecycle status, placement readiness, AI insights, communication history
+* Super Mentors: all students assigned to their supervised mentors; same data access as primary mentor per student
+* Instructors: assigned students only; coursework and lifecycle data; no payment or outreach data
+* Mentors and Instructors: read-only; no quick actions
 
 ---
 
 #### Role Permissions Matrix
 
-| Feature | Operator | Mentor |
-|---|---|---|
-| Full student roster | ✓ | ✗ (assigned only) |
-| Payment details | ✓ | ✗ |
-| Outreach queue | ✓ | ✗ |
-| AI insights | ✓ | ✓ |
-| Communication history | ✓ | ✓ |
-| Lifecycle timeline | ✓ | ✓ |
-| Coursework engagement | ✓ | ✓ |
-| Placement readiness | ✓ | ✓ |
-| Quick actions | ✓ | ✗ |
-| System alerts | ✓ | ✗ |
-| Historical reports | ✓ | ✗ |
+| Feature | Operator | Super Mentor | Primary Mentor | Instructor |
+|---|---|---|---|---|
+| Full student roster | ✓ | ✗ (supervised only) | ✗ (assigned only) | ✗ (assigned only) |
+| Payment details | ✓ | ✗ | ✗ | ✗ |
+| Outreach queue | ✓ | ✗ | ✗ | ✗ |
+| AI insights | ✓ | ✓ | ✓ | ✗ |
+| Communication history | ✓ | ✓ | ✓ | ✗ |
+| Lifecycle timeline | ✓ | ✓ | ✓ | ✓ |
+| Coursework engagement | ✓ | ✓ | ✓ | ✓ |
+| Placement readiness | ✓ | ✓ | ✓ | ✗ |
+| Quick actions | ✓ | ✗ | ✗ | ✗ |
+| System alerts | ✓ | ✗ | ✗ | ✗ |
+| Historical reports | ✓ | ✗ | ✗ | ✗ |
 
 ---
 
 #### Scope Behavior
 
-* **MVP:** Single operator role; no mentor views
-* **STANDARD:** Operator + mentor role separation; filtered student list for mentors
-* **PRODUCTION:** Full RBAC + mentor assignment management + audit log of all operator actions
+* **MVP:** Single operator role; no mentor or instructor views
+* **STANDARD:** Operator + primary mentor role separation; filtered student roster for mentors
+* **PRODUCTION:** Full RBAC + super mentor + instructor + assignment management + operator action audit log
 
 ---
 
 #### Acceptance Criteria
 
-* **Given** a mentor is authenticated
+* **Given** a primary mentor is authenticated
 * **When** the student roster endpoint is queried
-* **Then** only students assigned to that mentor are returned
+* **Then** only students with an active primary mentor assignment pointing to this mentor are returned
+
+* **Given** a student has no primary mentor assignment
+* **When** a mentor role user queries the student roster
+* **Then** the unassigned student is excluded from the response
 
 ---
 
@@ -849,7 +994,8 @@ The system MUST:
 * API latency ≤ 500 ms (p95) for operational endpoints
 * Historical report generation ≤ 60 seconds
 * Monthly snapshot job completion ≤ 10 minutes for 2,000 active students
-* LLM response ≤ 10 seconds per insight generation request
+* AI insight generation ≤ 10 seconds per student
+* Cohort classification job ≤ 30 seconds for full student population
 
 ---
 
@@ -857,7 +1003,7 @@ The system MUST:
 
 * Initial: 100–500 students/day
 * Target: 2,000+ students/day
-* Snapshot store: designed to retain at least 36 months of student snapshots without degradation
+* Snapshot store: designed to retain at least 36 months of student snapshots without query degradation
 
 ---
 
@@ -865,16 +1011,17 @@ The system MUST:
 
 * Uptime ≥ 99.5%
 * No missed scheduler runs
-* Idempotent operations required
-* Month-end snapshot job must self-recover from partial failure and resume without data loss
+* All scheduled operations are idempotent
+* Month-end snapshot job must self-recover from partial failure and resume from last successful checkpoint; no data loss on restart
 
 ---
 
 ### 4.4 Concurrency
 
 * Max 50 concurrent outreach triggers
-* No duplicate outreach
-* Snapshot writes are serialized per student; concurrent month-end jobs for different months are allowed
+* No duplicate outreach per student per checkpoint
+* Snapshot writes are serialized per student; concurrent month-end jobs for different months are permitted
+* Cohort classification is a read-then-write operation; concurrent runs must not produce duplicate classification records
 
 ---
 
@@ -882,41 +1029,46 @@ The system MUST:
 
 System MUST log:
 
-* Scheduler runs (start, end, duration, student count processed)
+* Scheduler runs: start, end, duration, student count processed, outcome
 * Outreach attempts and outcomes
-* LLM outputs and token counts
-* Snapshot job progress and completion
-* Failures with full context (error class, correlation ID, student ID if applicable)
-* All SQL Server sync operations (rows synced, schema mismatches, duration)
+* LLM outputs: model used, token count, latency, outcome
+* Snapshot job: progress per student, finalization status, total duration
+* Failures: error class, correlation ID, student ID if applicable, full context
+* SQL Server sync: rows synced, schema drifts detected, duration
+* Cohort classification: counts per cohort, threshold values used, run timestamp
+* All operator actions on student records: actor identity, action type, timestamp, student ID
 
 ---
 
 ### 4.6 Security
 
-* No secrets in code
-* Secure API communication
-* Data protection enforced
-* PII excluded from LLM prompts
-* Role-based access control enforced at the API layer
-* All operator actions on student records logged with actor identity and timestamp
+* No secrets in code or LLM prompts
+* Secure API communication (TLS required)
+* Data protection enforced at rest and in transit
+* PII excluded from LLM prompts; only anonymized metrics and program context are permitted
+* Role-based access control enforced at the API layer for every endpoint
+* All operator actions on student records are logged with actor identity and timestamp
+* Future compliance readiness must remain possible: FERPA, enterprise data contracts, audit requirements
+* The platform must be designed such that adding a data deletion path (for FERPA compliance) does not require a fundamental architectural change
 
 ---
 
 ### 4.7 Reporting Warehouse Immutability
 
-* Snapshot rows, once written, MUST NOT be updated or deleted by any application code path
-* Delete operations on snapshot tables require a manual DBA action with documented justification
-* The reporting schema exposes only SELECT access to the application service layer
-* Any process that would modify a snapshot row is a production defect, not a feature
+* Snapshot rows, once finalized, MUST NOT be updated or deleted by any application code path
+* Delete operations on snapshot tables require a manual DBA action with documented business justification
+* The `warehouse` schema exposes only SELECT access to the application service layer
+* Any code path that would issue an UPDATE or DELETE against a finalized snapshot row is a production defect, not a feature
+* Report records are similarly immutable after publication; a new report version must be created rather than modifying an existing one
 
 ---
 
 ### 4.8 Historical Reproducibility
 
-* A report generated for month M using snapshot data MUST produce identical output regardless of when it is run
-* The snapshot MUST capture all fields required to render the report at generation time; reports do not rely on live table joins
-* Snapshot schema changes require a versioning mechanism: new columns are nullable with defaults; prior snapshots remain valid
-* Any change to the report rendering logic that would change historical output MUST produce a new report version, not silently alter existing output
+* A report generated for month M using snapshot data MUST produce identical output regardless of when it is run and who runs it
+* Snapshots are self-contained: all fields required to render a report are captured at snapshot time; no live table joins are permitted at report generation time
+* Snapshot schema changes require a versioning mechanism: new columns are nullable with defaults; prior snapshots remain valid and renderable
+* Report template changes that would alter historical output MUST create a new template version; existing reports reference their original template version
 
 ---
 
@@ -927,32 +1079,32 @@ System MUST log:
 ASSUMPTION: GHL handles all outreach execution
 Alternative: Backend-controlled communication layer
 
-ASSUMPTION: LLM provider returns structured output
-Alternative: Implement validation and retry
+ASSUMPTION: LLM provider returns structured output reliably; rate limits and timeouts are possible
+Alternative: Implement fallback to last cached insight on provider failure
 
-ASSUMPTION: Transcript is available post-call
-Alternative: Handle missing transcript
+ASSUMPTION: Transcript is available post-call; may not be available for all call outcomes
+Alternative: Gracefully handle missing transcript; sentiment analysis is skipped, not errored
 
-ASSUMPTION: SQL Server schema for `AI_ChatBot_TriggerData` is stable; new columns may be added but existing columns are not renamed or removed without advance notice
-Alternative: Implement schema drift detection and column-level fallbacks
+ASSUMPTION: SQL Server schema for `AI_ChatBot_TriggerData` is stable with respect to column removals; additive changes (new columns) may occur without advance notice
+Alternative: Implement schema drift detection and column-level fallbacks (already designed in 3.10)
 
-ASSUMPTION: Month-end is defined as the last calendar day of each month; report generation triggers on the 1st of the following month
-Alternative: Configurable month-end cutoff date
+ASSUMPTION: Month-end is the last calendar day of each month; snapshot generation triggers on the 1st of the following month at a configured time; this cutoff is configurable
+Alternative: Business-defined fiscal month-end date
 
-ASSUMPTION: GHL message sync retrieves all messages via the GHL API, not only platform-initiated messages
-Alternative: Track only platform-initiated outreach
+ASSUMPTION: GHL message sync retrieves all messages via the GHL API, including messages not originated by this platform; completeness of GHL message history is subject to GHL API capabilities
+Alternative: Unified timeline reflects only platform-originated messages if GHL API cannot provide full history
 
-ASSUMPTION: Placement readiness data is derivable from fields already in SQL Server (interview prep completion, portfolio flags) with no additional external data source required
-Alternative: Integrate a separate placement tracking system
+ASSUMPTION: Placement readiness data is derivable from fields already available in SQL Server (interview prep, portfolio flags, section name); no external placement tracking system integration is required in the current phase
+Alternative: Integrate a separate placement tracking system in a future phase
 
-ASSUMPTION: Access revocation/restoration events are tracked within this platform, not sourced from SQL Server
-Alternative: SQL Server contains an access history table that can be mirrored
+ASSUMPTION: Access revocation and restoration events originate from SQL Server operational tables; the platform mirrors these events; the authoritative source is SQL Server
+Alternative: A future phase may introduce platform-owned access management extensions
 
-ASSUMPTION: Mentor-to-student assignment is managed externally (e.g., manually configured) and passed to the platform via configuration
-Alternative: Build mentor assignment management within the platform
+ASSUMPTION: Mentor assignment follows a 1:N model with one primary mentor, one optional super mentor, and one optional instructor per student; at most one active assignment per role at any time; management is external to the platform initially
+Alternative: Build in-platform mentor assignment management in a future phase
 
-ASSUMPTION: Financial data sourced from SQL Server represents the complete payment record; no reconciliation against an external payment processor (Stripe, etc.) is required
-Alternative: Integrate with payment processor API for independent verification
+ASSUMPTION: Financial data sourced from SQL Server represents the complete payment record; no independent verification against an external payment processor is required in the current phase
+Alternative: Integrate a payment processor API for independent reconciliation in a future phase
 
 ---
 
@@ -960,17 +1112,18 @@ Alternative: Integrate with payment processor API for independent verification
 
 ---
 
-* Must be local-first
-* Must be Azure-ready
-* Must use SQL Server as READ-ONLY source; direct writes to SQL Server are prohibited
-* Must not modify source table
-* Must enforce deterministic logic
-* PostgreSQL is the exclusive system-of-record for all platform-generated data
-* Operational and reporting concerns MUST occupy separate database schemas
+* Must be local-first deployable; must be Azure-ready
+* SQL Server is READ-ONLY; any write to SQL Server by this platform is a critical defect
+* Must not modify any source table in SQL Server
+* Must enforce deterministic logic; LLM outputs are advisory, never authoritative for eligibility or state transitions
+* PostgreSQL is the exclusively owned database for all platform-generated data, AI outputs, snapshots, and reports
+* Operational and reporting concerns MUST occupy separate database schemas (`public` and `warehouse`)
 * Snapshot tables are append-only; update and delete operations are prohibited at the application layer
-* LLM prompts MUST NOT contain PII beyond student program context and anonymized metrics
-* Historical reports MUST be generatable from snapshot data alone, with no dependency on live operational tables
-* Role-based access control is non-negotiable for any multi-user deployment
+* LLM prompts MUST NOT contain PII; only anonymized student metrics and program context are permitted
+* Historical reports MUST be generated from snapshot data alone; live table queries at report generation time are prohibited
+* Role-based access control is mandatory for any multi-user deployment; unauthenticated access to student data is prohibited
+* Cohort identification thresholds, scoring formulas, and risk thresholds are configurable; they must not be hardcoded in business logic
+* Communication provider (GHL) is configurable; the platform must not be architecturally coupled to a single provider
 
 ---
 
@@ -978,22 +1131,24 @@ Alternative: Integrate with payment processor API for independent verification
 
 ---
 
-* Missing contact information
-* GHL trigger failure
-* Transcript missing
-* LLM invalid response
-* Duplicate scheduler execution
-* Student becomes ineligible mid-cycle
-* SQL Server unreachable at sync time — cached data served; sync retried on next cycle
-* SQL Server schema mismatch detected at sync time — partial sync proceeds; mismatch logged; operator alerted
-* Month-end snapshot job interrupted mid-run — job resumes from last successful student checkpoint; no duplicate snapshots created
-* Student has no activity in the snapshot month — snapshot is still created with zero-activity metrics; student is not silently excluded
-* Payment bundle deal detected with inconsistent credit and payment fields — system computes actual balance; flags record for operator review
-* Historical report requested for a month before snapshots were introduced — system returns explicit NOT_AVAILABLE response; does not fallback to live data
-* AI insight generation fails (LLM timeout, provider error) — last valid cached insight is served with a staleness flag; error is logged; retry is scheduled
-* Mentor assignment is undefined for a student — student appears in operator view only; mentor view does not surface unassigned students
-* Two snapshot jobs for the same month are triggered concurrently — idempotency key prevents duplicate rows; second job detects existing snapshots and exits cleanly
-* GHL message sync returns a message for an unknown student (no matching UserID) — message is stored with a NULL user reference and flagged for manual review
+* Missing contact information — student excluded from outreach; alert surfaced
+* GHL trigger failure — logged; retry scheduled; no duplicate trigger
+* Transcript missing — sentiment analysis skipped; outreach record remains valid
+* LLM invalid response — retry up to 2 times; fallback to last valid cached insight; staleness flag set
+* Duplicate scheduler execution — idempotency keys prevent duplicate records for all scheduler-managed operations
+* Student becomes ineligible mid-cycle — state machine handles gracefully; no redundant outreach
+* SQL Server unreachable at sync time — cached mirror data served; CRITICAL alert raised; sync retried on next cycle
+* SQL Server schema drift at sync time — partial sync proceeds on intact columns; drift logged; operator alerted
+* Month-end snapshot job interrupted mid-run — job resumes from last successful student checkpoint; no duplicate finalized snapshots created
+* Student has no activity in snapshot month — snapshot created with zero-activity metrics; student not silently excluded
+* Bundle deal payment detected with inconsistent credit and payment fields — platform computes actual balance; record flagged for operator review
+* Historical report requested for a month before snapshots were introduced — `NOT_AVAILABLE` returned; no fallback to live data
+* AI insight generation fails after max retries — last valid cached insight served with `stale: true`; failure logged with correlation ID
+* Student has no mentor assignment — student visible to operators only; no error surfaced to mentor endpoints
+* Two snapshot jobs for the same month triggered concurrently — idempotency key prevents duplicate finalized rows; second job exits cleanly
+* GHL message sync returns a message for an unrecognized student ID — stored with NULL user reference; flagged for manual review
+* Cohort threshold configuration is updated mid-month — reclassification runs on next daily job; prior cohort records are retained as history; new classification is appended
+* LLM provider is switched (configurable) — prior insights retain the `model_used` attribution from the original generation; new insights use the new provider
 
 ---
 
@@ -1003,38 +1158,40 @@ Alternative: Integrate with payment processor API for independent verification
 
 System is successful when:
 
-* Outreach runs daily without failure
-* No duplicate outreach occurs
-* Decisions are deterministic
-* Meetings are booked correctly
-* Dashboard reflects accurate data
+* Outreach runs daily without failure; no duplicate outreach occurs; decisions are deterministic
+* Meetings are booked correctly and associated with student records
+* Dashboard accurately reflects real-time operational state for operators and filtered state for mentors
 * Monthly snapshots are generated automatically with zero manual intervention
-* Historical reports for any prior month are reproducible and deterministically identical on each generation
-* AI insights are available for every active student within 24 hours
+* Historical reports for any prior month are reproducible and output-identical across regenerations
+* AI insights are available for every active student within 24 hours of the nightly job
 * Operators can identify and act on the top 10 at-risk students in under 30 seconds
 * Mentors can review their assigned students' full lifecycle and engagement history without contacting operations
-* Payment reconciliation discrepancies are surfaced automatically, not discovered manually
-* SQL Server sync failures are detected and alerted within 5 minutes of occurrence
+* Payment reconciliation discrepancies are surfaced automatically; operators do not discover them manually
+* SQL Server sync failures are detected and alerted within 5 minutes
+* Cohort membership is correctly computed for CAP, Launch, and Placement Hopefuls using the configured rules
+* Access revocation events from SQL Server are mirrored and visible in the access history timeline within one sync cycle
 
 ---
 
 ## 9. AI AUGMENTATION RESPONSIBILITIES
 
-This section defines what the AI layer is responsible for, and what it is explicitly NOT responsible for.
+AI is an augmentation layer. It is never the final authority on student state, eligibility, financial decisions, or historical records.
 
 ---
 
 ### 9.1 Responsibilities
 
-| Responsibility | Trigger | Output |
+| Responsibility | Trigger | Output Storage |
 |---|---|---|
-| **Sentiment analysis** | Post-call transcript available | Structured sentiment object stored in `outreach_history.llm_analysis` |
-| **Risk summarization** | Daily for all active students | Stored in `ai_insights` with TTL |
-| **Progress summarization** | Daily for students on active program | Stored in `ai_insights` with TTL |
-| **Intervention recommendation** | Post-outreach + on-demand | Stored in `ai_insights`; surfaced to operator |
-| **Operator assistance** | On-demand via dashboard quick action | Real-time response; not persisted unless operator saves |
-| **Monthly narrative generation** | Month-end scheduler | Stored as part of monthly report record |
-| **Communication sentiment aggregation** | Post GHL-sync | Rolled up into `communication_sentiment` insight |
+| **Transcript summarization** | Post-call transcript stored | `outreach_history.llm_analysis` |
+| **Sentiment analysis** | Post-call or post-GHL sync | `outreach_history.llm_analysis`; rolled up to `communication_sentiment` insight |
+| **Risk summarization** | Daily for all active students | `ai_insights` (type: `risk_summary`) |
+| **Progress summarization** | Daily for students on active program | `ai_insights` (type: `progress_summary`) |
+| **Intervention recommendation** | Post-outreach + on-demand | `ai_insights` (type: `intervention_recommendation`) |
+| **Trend interpretation** | Weekly or on-demand | `ai_insights` (type: `trend_interpretation`) |
+| **Operator assistance** | On-demand via dashboard quick action | Real-time; persisted to `ai_insights` only if operator saves |
+| **Monthly narrative generation** | Month-end scheduler | Stored in monthly snapshot + report record |
+| **Communication sentiment aggregation** | Post GHL-sync | `ai_insights` (type: `communication_sentiment`) |
 
 ---
 
@@ -1042,19 +1199,33 @@ This section defines what the AI layer is responsible for, and what it is explic
 
 The AI layer MUST NOT:
 
-* Execute any outreach action directly (GHL is the execution layer)
-* Make final eligibility decisions (deterministic rules govern; AI informs only)
-* Modify student records in any database
-* Contain PII in model prompts beyond what is explicitly permitted
-* Replace operator judgment — AI output is advisory, not authoritative
+* Autonomously change any student state in the database
+* Autonomously trigger any financial action (payments, fee assessments, refunds)
+* Overwrite or bypass deterministic eligibility or decision rules
+* Mutate a historical snapshot or published report after finalization
+* Expose PII in prompt construction; prompts use only anonymized metrics and program context
+* Replace operator or mentor judgment; all AI output is advisory
 
 ---
 
-### 9.3 AI Output Validation
+### 9.3 AI Output Quality and Validation
 
-* All structured AI outputs are validated against the declared schema before storage
-* Invalid AI outputs trigger a retry (max 2 retries), then a fallback to the last valid cached insight
-* AI output schema changes require a migration to the `ai_insights` table; old records are not invalidated
+* All structured AI outputs are validated against the declared output schema before storage; invalid outputs trigger up to 2 retries
+* After max retries, the last valid cached insight is served with a `stale: true` flag
+* AI output schema changes require a versioned migration; old records are not invalidated and remain readable
+
+---
+
+### 9.4 AI Output Governance Properties
+
+Every stored AI output MUST carry the following metadata:
+
+| Property | Description |
+|---|---|
+| **Versioned** | Each generation creates a new record; prior versions are retained in history |
+| **Attributable** | `model_used`, `prompt_version`, `generated_at` stored on every record |
+| **Reviewable** | Full insight record including metadata is accessible via the AI insights API |
+| **Reproducible** | Same input metrics + same prompt version → same output (within LLM non-determinism tolerance) |
 
 ---
 
@@ -1064,61 +1235,156 @@ The AI layer MUST NOT:
 
 | Concern | Owned By | Storage | Update Pattern |
 |---|---|---|---|
-| **Source student data** | SQL Server | SQL Server (read-only mirror in PostgreSQL) | Synced read-only |
-| **Operational outreach state** | Platform | PostgreSQL `public` schema | Mutable; state machine governs transitions |
-| **GHL communication records** | Platform | PostgreSQL `public` schema | Append on sync |
-| **AI insights** | Platform | PostgreSQL `public` schema | Append + TTL-based invalidation |
-| **Monthly snapshots** | Platform | PostgreSQL `warehouse` schema | Append-only; never updated |
-| **Historical reports** | Platform | PostgreSQL `warehouse` schema | Append-only; versioned |
-| **Operator / mentor notes** | Platform | PostgreSQL `public` schema | Mutable |
+| **Source student data** | SQL Server (read-only) | SQL Server; mirrored to PostgreSQL `public` | Synced read-only; no platform writes |
+| **Operational outreach state** | Platform | PostgreSQL `public` | Mutable; state machine governs transitions |
+| **GHL communication records** | Platform | PostgreSQL `public` | Append-only on sync |
+| **Campaign activity** | Platform | PostgreSQL `public` | Append-only on record |
+| **Access history events** | SQL Server (source) + Platform (extensions) | PostgreSQL `public` | Append-only mirror + platform extensions |
+| **AI insights** | Platform | PostgreSQL `public` | Append + TTL-based staleness flag; prior versions retained |
+| **Operator / mentor notes** | Platform | PostgreSQL `public` | Mutable; author and timestamp recorded |
+| **Monthly snapshots** | Platform | PostgreSQL `warehouse` | Append-only; immutable after finalization |
+| **Historical reports** | Platform | PostgreSQL `warehouse` | Append-only; versioned; immutable after publication |
 
 ---
 
 ### Operational Outreach
 
-Concerns: eligibility, state machine, GHL trigger, retry logic, attempt tracking, shadow/live mode.
+Identity: GHL-integrated outreach automation subsystem.
+Concerns: eligibility classification, state machine transitions, GHL trigger, retry logic, shadow/live mode.
 Bounded scope: `student_outreach_tracking`, `outreach_history`, `state_transition_log`.
 
 ### Operational Intelligence
 
-Concerns: priority scoring, risk classification, lifecycle tracking, payment reconciliation, placement readiness, communication telemetry.
-Bounded scope: Live reads of SQL Server mirror + platform-generated records.
+Identity: Real-time student intelligence layer.
+Concerns: priority scoring, risk classification, lifecycle tracking, cohort membership, payment reconciliation, placement readiness, communication telemetry.
+Bounded scope: SQL Server mirror + platform-generated operational records.
 
 ### Reporting Intelligence
 
+Identity: Immutable historical record and enterprise reporting layer.
 Concerns: monthly snapshots, historical reports, longitudinal analytics, cohort trends.
-Bounded scope: `warehouse` schema — append-only, never joined against live operational tables in report generation.
+Bounded scope: `warehouse` schema — append-only; no live table joins at report generation time.
 
 ### AI Augmentation
 
-Concerns: insight generation, sentiment analysis, narrative generation, intervention recommendations.
-Bounded scope: `ai_insights` table; prompts draw from non-PII metrics only.
+Identity: Advisory intelligence layer.
+Concerns: insight generation, sentiment analysis, trend interpretation, narrative generation, intervention recommendations.
+Bounded scope: `ai_insights` table; prompts use non-PII metrics only; all outputs are versioned and attributable.
 
 ### Future Automation
 
+Identity: Not yet implemented.
 Concerns: mentor assignment automation, payment escalation automation, placement pipeline automation.
-Bounded scope: Not yet implemented; requires explicit business requirement sign-off before implementation begins.
+Bounded scope: Requires explicit business requirement sign-off before any implementation begins.
 
 ---
 
-## 11. UNRESOLVED BUSINESS ASSUMPTIONS
-
-The following assumptions require explicit business clarification before the features that depend on them are built.
+## 11. RESOLVED AND OPEN BUSINESS ASSUMPTIONS
 
 ---
 
-| # | Assumption | Impact if Wrong | Decision Needed From |
+### 11.1 Resolved Assumptions
+
+| # | Original Assumption | Resolution | Authority |
 |---|---|---|---|
-| U-1 | "CAP hopeful," "launch hopeful," and "placement hopeful" are derivable from existing SQL Server fields | These cohorts cannot be automatically segmented without new data | Product / Operations |
-| U-2 | Placement readiness is fully determined by fields already in SQL Server (`student_interview_prep`, `ActiveStatus`, etc.) | May require integration with a separate placement tracking system | Product |
-| U-3 | Access revocation/restoration events are tracked in this platform, not sourced from SQL Server | If sourced from SQL Server, a new read-only view is needed | Engineering / IT |
-| U-4 | "Month-end" is always the last calendar day; edge cases (student enrolled on the 31st, snapshot month with 28 days) are handled by the platform | Incorrect snapshot boundary causes reporting inaccuracies | Product |
-| U-5 | Mentor-to-student assignment is a 1:N relationship (one mentor, many students); a student has at most one mentor at a time | Many-to-many assignment requires a different data model | Operations |
-| U-6 | Financial data in SQL Server is the complete record; no external payment processor reconciliation is required | Bundle deal detection may be insufficient without payment processor confirmation | Finance / Operations |
-| U-7 | AI monthly narrative is for internal operator use only, not delivered to students | If student-facing, privacy review and tone guidelines are required | Product / Legal |
-| U-8 | All GHL message history is accessible via GHL API, including messages not initiated by this platform | If GHL API does not expose full message history, the unified communication timeline will be incomplete | Engineering |
-| U-9 | Snapshot retention policy is "indefinitely" (36+ months); there is no legal or compliance requirement to delete historical snapshots | If FERPA or contract terms require data deletion, the append-only model needs a compliant deletion path | Legal / Compliance |
-| U-10 | A "student" maps 1:1 to a `UserID` across all systems (SQL Server, GHL, platform); there are no duplicate or merged student records | Duplicate student handling requires explicit deduplication logic before intelligence can be trusted | Engineering / IT |
+| U-1 | CAP / Launch / Placement hopeful cohorts cannot be auto-derived | **RESOLVED.** Explicit SQL-derived heuristic rules now defined in Section 2.4. Rules are configurable and marked as operational heuristics. | Architecture decision |
+| U-3 | Access revocation/restoration source is unclear (platform vs. SQL Server) | **RESOLVED.** Events originate from SQL Server operational tables. Platform mirrors them into PostgreSQL. Platform does not own the authoritative source initially. Platform-owned extensions are a future-phase option. | Architecture decision |
+| U-5 | Mentor assignment model unclear (1:N vs. M:N) | **RESOLVED.** Current model: one primary mentor per student, one optional super mentor, one optional instructor. At most one active assignment per role per student. Future evolution to M:N history-based model must not require breaking schema change. | Architecture decision |
+
+---
+
+### 11.2 Remaining Open Assumptions
+
+These assumptions could not be resolved from available architectural context. They require business owner input before the dependent features are built.
+
+| # | Open Assumption | Dependent Features | Decision Needed From | Urgency |
+|---|---|---|---|---|
+| U-4 | "Month-end" default cutoff: is last calendar day of month correct? What happens for students enrolled on the final day of a month? | Monthly snapshot trigger, report period boundaries | Product / Operations | HIGH — needed before snapshot scheduler is built |
+| U-6 | Is SQL Server the complete financial record? No external payment processor (Stripe, etc.) needs to be reconciled? | Payment intelligence, bundle deal detection, HIGH risk alerting | Finance / Operations | HIGH — determines scope of payment intelligence |
+| U-7 | Is the AI monthly narrative for internal operator use only, or is any version delivered to students or external stakeholders? | Narrative prompt design, PII policies, tone guidelines | Product / Legal | MEDIUM — needed before monthly narrative generation is built |
+| U-8 | Does the GHL API provide complete message history including messages not initiated by this platform? What is the API's lookback limit? | Unified communication telemetry completeness, channel analytics accuracy | Engineering (GHL API audit required) | HIGH — determines whether unified timeline is complete or partial |
+| U-9 | What is the snapshot retention policy? Are there FERPA or contract-based requirements to delete student records after a defined period? | Snapshot immutability design, warehouse schema, compliance posture | Legal / Compliance | HIGH — determines whether a compliant deletion path must be built before snapshots launch |
+| U-10 | Is UserID a reliable 1:1 key across SQL Server, GHL, and the platform? Are there known cases of duplicate or merged student records? | Unified communication timeline accuracy, deduplication requirements | Engineering / IT | HIGH — if UserID is not reliable, unified timeline cannot be trusted without a deduplication layer |
+
+---
+
+## 12. CONFIGURABLE OPERATIONAL RULES
+
+The following values and rules MUST be externalized from business logic into a configurable rule store. No implementation may hardcode these values. Any change to a configurable rule must be documented as an operational decision.
+
+---
+
+### 12.1 Cohort Identification Thresholds
+
+| Rule | Default Value | Notes |
+|---|---|---|
+| CAP Hopeful: minimum PerComp_Act | 0.30 | Derived from SQL report heuristic |
+| Launch Hopeful: minimum PerComp_Act | 0.59 | Derived from SQL report heuristic |
+| CAP Hopeful: section name exclusion patterns | `%launch%`, `%CAP%` | Depends on SQL Server curriculum naming conventions |
+| Launch Hopeful: section inclusion pattern | `%CAP%` | Depends on SQL Server curriculum naming conventions |
+| Placement Hopeful: section inclusion pattern | `%launch%` | Depends on SQL Server curriculum naming conventions |
+
+---
+
+### 12.2 Homework Risk Thresholds
+
+| Rule | Default Value |
+|---|---|
+| AT_RISK: minimum HWsBehind | 1 |
+| AT_RISK: maximum AvgEffRating | 3.0 |
+| CRITICAL: minimum HWsBehind | 3 |
+| CRITICAL: maximum AvgEffRating | 2.0 |
+
+---
+
+### 12.3 Payment Risk Thresholds
+
+| Rule | Default Value |
+|---|---|
+| MEDIUM threshold (lower bound) | $0.01 |
+| HIGH threshold (lower bound) | $1,000.00 |
+| Payment deviation alert threshold | Configurable; default TBD |
+
+---
+
+### 12.4 Priority Scoring Formula
+
+The additive priority score (0–135) used by the outreach eligibility engine is configurable:
+
+| Component | Default Weight | Default Cap |
+|---|---|---|
+| HWsBehind × weight | ×10 | 50 |
+| EffRating deficit × weight | ×7 | 35 |
+| InactivityDays × weight | ×2 | 50 |
+
+---
+
+### 12.5 Operational Scheduling and Timing
+
+| Rule | Default Value |
+|---|---|
+| Month-end snapshot trigger time | 1st of following month, 02:00 local |
+| AI insight TTL (default) | 24 hours |
+| Outreach retry window | 3 days |
+| Placement Hopeful inactivity alert threshold | 7 days |
+| Access revocation unresolved alert threshold | 48 hours |
+
+---
+
+### 12.6 Provider Selection
+
+| Component | Default Provider | Notes |
+|---|---|---|
+| AI / LLM provider | Configurable (currently Anthropic / OpenAI) | Prompt versioning must account for provider changes |
+| Outreach / communication provider | GHL (GoHighLevel) | Communication layer abstracted for future provider substitution |
+
+---
+
+### 12.7 Report and Template Versioning
+
+* Report templates are versioned; each monthly report records the template version used at generation time
+* Prompt versions are stored with every AI insight; changing a prompt creates a new prompt version, not a modification of an existing one
+* Mentor hierarchy model configuration (role labels, assignment depth) is externalized for future evolution
 
 ---
 
