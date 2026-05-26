@@ -1425,135 +1425,688 @@ These assumptions require external input before dependent features can be built.
 
 ---
 
-## 12. CONFIGURABLE OPERATIONAL RULES
+## 12. CONFIG GOVERNANCE CATALOG
 
-The following values and rules MUST be externalized from business logic into a configurable rule store. No implementation may hardcode these values. Any change to a configurable rule must be documented as an operational decision.
+This section is the **authoritative canonical source** for all configurable operational rules in the Student Success Intelligence Platform. All directives, orchestration engines, rule-evaluation services, and migration seeds derive their variable names and default values exclusively from this catalog. Hardcoding any value defined here is a specification violation.
+
+This catalog supersedes the V1 threshold table (previous Sections 12.1–12.8). It introduces the V2 governance model with formal variable classification, replay-safe semantics, and a complete supersession architecture.
 
 ---
 
-### 12.1 Cohort Identification Thresholds
+### 12.1 Config V2 Governance Semantics
 
-| Rule | Default Value | Notes |
+These semantics govern all records in the `config_version_registry` table regardless of version number.
+
+---
+
+#### 12.1.1 V1 Immutability
+
+* The V1 record seeded by migration `0003_config_version_registry` is permanently immutable
+* No column value in the V1 row may be modified after the migration completes
+* V1 status transitions: `ACTIVE → SUPERSEDED` (when V2 activates); `SUPERSEDED → ARCHIVED` (after retention threshold)
+* V1 is never deleted; it is permanently queryable for historical fingerprint lookups
+
+---
+
+#### 12.1.2 Append-Only Evolution
+
+* Every configuration change creates a **new version record**; the prior record is never overwritten or modified
+* New records enter at `PROPOSED` status; they advance through the supersession lifecycle before activation
+* A version record is immutable after it reaches `ACTIVE` status
+* The chain `prior_version_id → prior_version_id → …` is complete and linked back to V1 with no gaps
+
+---
+
+#### 12.1.3 Exactly-One-ACTIVE Invariant
+
+* Exactly one version record has `status = 'ACTIVE'` at all times in the `config_version_registry`
+* Enforced by the partial unique index: `CREATE UNIQUE INDEX uq_cvr_active_singleton ON config_version_registry ((1)) WHERE status = 'ACTIVE'`
+* The atomic swap (`APPROVED → ACTIVE` for new; `ACTIVE → SUPERSEDED` for prior) is executed in a single transaction — there is no window where zero or two versions are simultaneously ACTIVE
+* Any code path that attempts to produce zero or two ACTIVE versions is a governance defect
+
+---
+
+#### 12.1.4 Prospective-Only Activation
+
+* A new ACTIVE version affects only classification runs, snapshot generations, and AI insight generations that begin **after** the activation timestamp (`effective_from`)
+* Historical snapshots retain the `configuration_registry_version` fingerprint component from the version that was ACTIVE at their `DRAFT → VALIDATING` content lock time
+* Activation of a new version MUST NOT trigger reprocessing of any historical snapshots, finalized reports, or prior cohort classification records
+* Any backfill or migration that reprocesses historical data under a new version requires explicit business owner sign-off and a `compliance_audit` entry
+
+---
+
+#### 12.1.5 Rollback Prohibition
+
+* Transitioning a `SUPERSEDED` or `ARCHIVED` version back to `ACTIVE` is **explicitly forbidden**
+* `SUPERSEDED → ACTIVE` is an invalid state transition (see Domain 5 in `spec/03_state_transition_rules.md` §31.1)
+* If a configuration error is discovered post-activation, the only lawful correction path is: create a new `PROPOSED` record with the corrected values → full supersession lifecycle → activate the new version
+* Historical snapshots generated under an erroneous version retain their attribution to that version permanently; retroactive correction is not permitted
+
+---
+
+#### 12.1.6 Lineage Preservation
+
+* Every version record carries `prior_version_id` linking it to its predecessor
+* The lineage chain is queryable from any version back to V1
+* `SUPERSEDED` and `ARCHIVED` records are permanently retained; no application code or scheduled job may delete them
+* Fingerprint lookups referencing a `SUPERSEDED` or `ARCHIVED` version MUST succeed and return the full `rule_set_snapshot` for that version
+
+---
+
+#### 12.1.7 Version Record Fields (Authoritative)
+
+| Field | Type | Description | Immutable After |
+|---|---|---|---|
+| `version_id` | UUID | Unique version identifier | Creation |
+| `version_number` | INT | Monotonically increasing (V1=1, V2=2, …) | Creation |
+| `status` | ENUM | `PROPOSED, UNDER_REVIEW, APPROVED, ACTIVE, SUPERSEDED, ARCHIVED` | ACTIVE |
+| `effective_from` | TIMESTAMPTZ | When this version became ACTIVE; NULL until activation | ACTIVE |
+| `activated_by` | TEXT | Identity of the operator who executed the activation | ACTIVE |
+| `proposed_by` | TEXT | Identity who submitted the PROPOSED record | Creation |
+| `approved_by` | TEXT | Identity who authorized APPROVED status | APPROVED |
+| `change_rationale` | TEXT | Required free-text description of the change motivation | APPROVED |
+| `rule_set_snapshot` | JSONB | Complete snapshot of **all** 41 canonical V2 variables; not a diff | ACTIVE |
+| `prior_version_id` | UUID | FK to the immediately preceding version | Creation |
+| `governance_approval_ref` | TEXT | Reference to the governance approval artifact | APPROVED |
+
+---
+
+### 12.2 Governance Classification Model
+
+Every configurable variable in this catalog belongs to exactly one governance class. The class governs the approval process required before a variable's value may change.
+
+| Class | Symbol | Approval Required | Replay Impact | Change Frequency |
+|---|---|---|---|---|
+| `ARCHITECTURAL_CONSTANT` | `AC` | Architecture board sign-off; rare | High — alters fundamental platform behavior | < 1/year |
+| `GOVERNANCE_CONFIGURABLE` | `GC` | Designated governance authority; documented decision | High — affects student-facing eligibility and outreach policy | Occasional |
+| `OPERATIONAL_TUNING` | `OT` | Operations lead approval; lighter process | Low-to-medium — affects operational mechanics, not policy | As needed |
+| `REPLAY_SENSITIVE_THRESHOLD` | `RST` | Governance authority; replay impact assessment required | High — changing the value alters historical replay classification results | Governed |
+| `AI_ADVISORY_THRESHOLD` | `AAT` | AI governance review; impact on AI context assessed | Medium — feeds AI prompt construction; alters AI output indirectly | Governed |
+| `ESCALATION_THRESHOLD` | `ET` | Operations lead + academic team | Medium — affects escalation triggers and intervention routing | Infrequent |
+| `PROVIDER_FAILURE_THRESHOLD` | `PFT` | Engineering + operations | Low — affects retry and cooldown mechanics; no student-facing policy | As needed |
+
+**Hard rules:**
+* A variable's classification is fixed at catalog publication; reclassification requires a governance decision documented in this file
+* No variable may receive a lower-approval-requirement classification to bypass review — escalation of classification is always valid; de-escalation requires written justification
+* `ARCHITECTURAL_CONSTANT` variables must appear in the `rule_set_snapshot` JSONB but changing them requires an architecture-level decision, not merely a new config version activation
+
+---
+
+### 12.3 Canonical V2 Variable Catalog
+
+These 41 variables are the **sole authoritative source** for all configurable thresholds, timing parameters, provider selections, and governance settings in the platform. All directive Rule 3 tables, all migration seed records, and all orchestration service default lookups must reference these canonical names.
+
+> **Unit abbreviations used:** `H` = integer hours, `C` = integer count, `D` = integer days, `DEC` = decimal (precision specified), `BOOL` = boolean, `TEXT` = string, `JSON` = JSON array/object, `NULL` = explicitly null (awaiting governance decision).
+
+---
+
+#### Group A — Outreach Timing (4 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `outreach_retry_window_hours` | `72` | H | GC | ✓ | — | — | Rolling or fixed window within which retry attempts are evaluated; canonical unit is HOURS (V1 used "3 days" — unit normalized per UG-2) |
+| `outreach_exclusion_window_hours` | `NULL` | H | GC | ✓ | — | — | Hours after a successful contact during which re-outreach is suppressed; NULL = not configured |
+| `outreach_max_attempts` | `3` | C | GC | ✓ | — | — | Maximum number of outreach attempts before the case is escalated or closed; recommended default = 3 (resolved per UG-5) |
+| `retry_window_behavior` | `ROLLING` | TEXT | AC | ✓ | — | — | Semantics of the retry window: `ROLLING` (window resets from last attempt) or `FIXED` (window from first attempt); ROLLING is the resolved recommendation (UG-1); change requires architecture sign-off |
+
+---
+
+#### Group B — Homework Risk Thresholds (4 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `hws_behind_at_risk_threshold` | `1` | C | GC | ✓ | ✓ | — | Minimum `HWsBehind` count to classify a student as AT_RISK; V1 alias: `hw_at_risk_min_behind` (normalized per UG-4) |
+| `hws_behind_high_risk_threshold` | `3` | C | GC | ✓ | ✓ | — | Minimum `HWsBehind` count to classify a student as HIGH_RISK; V1 alias: `hw_high_risk_min_behind` (normalized per UG-4) |
+| `avg_eff_rating_at_risk_threshold` | `3.0` | DEC(3,1) | GC | ✓ | ✓ | — | Maximum `AvgEffRating` for AT_RISK classification; values AT or BELOW this threshold trigger risk signal; V1 alias: `avg_eff_rating_low_risk_threshold` (name corrected — V1 name was directionally misleading) |
+| `avg_eff_rating_high_risk_threshold` | `2.0` | DEC(3,1) | GC | ✓ | ✓ | — | Maximum `AvgEffRating` for HIGH_RISK classification; values AT or BELOW this threshold trigger high-risk signal |
+
+---
+
+#### Group C — Activity Thresholds (3 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `last_activity_at_risk_days` | `NULL` | D | GC | ✓ | ✓ | — | Days of inactivity triggering AT_RISK classification; NULL = not configured in V1; governance decision required before activation |
+| `last_activity_high_risk_days` | `NULL` | D | GC | ✓ | ✓ | — | Days of inactivity triggering HIGH_RISK classification; NULL = not configured in V1 |
+| `placement_inactivity_alert_days` | `7` | D | OT | — | — | — | Days of inactivity on the placement pipeline before an alert is raised for a Placement Hopeful student |
+
+---
+
+#### Group D — Payment Risk Thresholds (3 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `payment_at_risk_balance_threshold` | `0.01` | DEC(10,2) | GC | ✓ | ✓ | — | Minimum outstanding balance (USD) to classify a student as AT_RISK for payment; V1 alias: `payment_balance_risk_threshold` lower tier (normalized per UG-3) |
+| `payment_high_risk_balance_threshold` | `1000.00` | DEC(10,2) | GC | ✓ | ✓ | — | Minimum outstanding balance (USD) to classify a student as HIGH_RISK for payment; V1 alias: `payment_balance_risk_threshold` upper tier (normalized per UG-3) |
+| `payment_deviation_alert_threshold` | `NULL` | DEC(10,2) | GC | ✓ | — | — | Payment deviation percentage or amount that triggers an alert; NULL = not configured in V1; governance decision required |
+
+---
+
+#### Group E — Escalation Thresholds (2 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `prior_escalation_repeat_threshold` | `NULL` | C | ET | ✓ | — | ✓ | Number of prior escalation events within the current enrollment before triggering an auto-escalation signal; NULL = not configured in V1 |
+| `consecutive_no_response_escalation_threshold` | `NULL` | C | ET | ✓ | — | ✓ | Number of consecutive NO_RESPONSE events before triggering an escalation advisory; NULL = not configured in V1 |
+
+---
+
+#### Group F — Provider Failure Thresholds (2 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `provider_failure_cooldown_extension_hours` | `NULL` | H | PFT | — | — | — | Hours added to the standard outreach cooldown when a provider failure is detected; NULL = no extension |
+| `provider_failure_retry_limit` | `NULL` | C | PFT | — | — | — | Maximum number of provider-failure retries before the outreach is deferred to human review; NULL = follows default retry policy |
+
+---
+
+#### Group G — Channel Advisory Thresholds (7 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `outreach_initial_channel_preference` | `NULL` | TEXT | GC | ✓ | ✓ | — | Preferred initial channel for outreach (`sms`, `email`, `call`); NULL = system default selection logic; all values LOWERCASE |
+| `channel_delivery_failure_suspension_threshold` | `NULL` | C | GC | ✓ | — | — | Number of delivery failures on a channel before that channel is suspended for a student; NULL = no suspension logic |
+| `call_engagement_score_threshold` | `NULL` | DEC(5,4) | GC | ✓ | ✓ | — | Engagement score (0.0000–1.0000) below which call channel is de-prioritized; NULL = engagement scoring not active |
+| `sms_engagement_score_threshold` | `NULL` | DEC(5,4) | GC | ✓ | ✓ | — | Engagement score (0.0000–1.0000) below which SMS channel is de-prioritized; NULL = engagement scoring not active |
+| `email_engagement_score_threshold` | `NULL` | DEC(5,4) | GC | ✓ | ✓ | — | Engagement score (0.0000–1.0000) below which email channel is de-prioritized; NULL = engagement scoring not active |
+| `channel_specific_cooldown_hours` | `NULL` | H | OT | — | — | — | Per-channel cooldown hours after a contact attempt; NULL = global cooldown applies |
+| `channel_opt_out_respect_period_hours` | `NULL` | H | GC | ✓ | — | — | Hours the platform respects a channel opt-out before re-evaluation; NULL = opt-out is permanent until reversed |
+
+---
+
+#### Group H — AI and Provider Configuration (3 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `ai_insight_ttl_hours` | `24` | H | OT | — | ✓ | — | Time-to-live in hours for a cached AI insight before it is considered stale and a refresh is triggered; classified OPERATIONAL (UG-6) |
+| `ai_llm_provider` | `'anthropic'` | TEXT | AC | ✓ | ✓ | — | Active AI/LLM provider identifier; change requires architecture sign-off; value is stored in `rule_set_snapshot` and in the Reproducibility Fingerprint |
+| `outreach_provider` | `'ghl'` | TEXT | AC | ✓ | — | — | Active outreach/communication provider identifier; change requires architecture sign-off |
+
+---
+
+#### Group I — System Timing (2 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `access_revocation_alert_hours` | `48` | H | OT | — | — | — | Hours after an access revocation event is detected before an unresolved alert is raised |
+| `sql_server_max_sync_age_hours` | `4` | H | AC | ✓ | — | — | Maximum age (hours) of the last SQL Server sync before snapshot content lock is blocked; classified ARCHITECTURAL_CONSTANT (UG-10); recommended default = 4 hours |
+
+---
+
+#### Group J — Cohort Classification Parameters (5 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `cap_hopeful_min_percomp` | `0.30` | DEC(5,4) | GC | ✓ | ✓ | — | Minimum `PerComp_Act` for CAP Hopeful cohort classification; derived from SQL report heuristic |
+| `launch_hopeful_min_percomp` | `0.59` | DEC(5,4) | GC | ✓ | ✓ | — | Minimum `PerComp_Act` for Launch Hopeful cohort classification |
+| `cap_section_exclusion_patterns_json` | `["launch%","CAP%"]` | JSON | GC | ✓ | — | — | JSON array of SQL LIKE patterns for section names that exclude a student from CAP Hopeful classification |
+| `launch_section_inclusion_pattern` | `'%CAP%'` | TEXT | GC | ✓ | — | — | SQL LIKE pattern for section names that qualify a student for Launch Hopeful classification |
+| `placement_section_inclusion_pattern` | `'%launch%'` | TEXT | GC | ✓ | — | — | SQL LIKE pattern for section names that qualify a student for Placement Hopeful classification |
+
+---
+
+#### Group K — Priority Scoring Weights (6 variables)
+
+| Canonical Key | Default | Unit | Class | RST | AAT | ET | Description |
+|---|---|---|---|---|---|---|---|
+| `priority_hw_weight` | `10.0` | DEC(5,1) | GC | ✓ | ✓ | — | Weight applied to `HWsBehind` in the additive priority score formula |
+| `priority_hw_cap` | `50.0` | DEC(5,1) | GC | ✓ | ✓ | — | Maximum contribution of the HW component to the priority score |
+| `priority_eff_weight` | `7.0` | DEC(5,1) | GC | ✓ | ✓ | — | Weight applied to `AvgEffRating` deficit in the priority score formula |
+| `priority_eff_cap` | `35.0` | DEC(5,1) | GC | ✓ | ✓ | — | Maximum contribution of the efficiency-rating component to the priority score |
+| `priority_inactivity_weight` | `2.0` | DEC(5,1) | GC | ✓ | ✓ | — | Weight applied to `InactivityDays` in the priority score formula |
+| `priority_inactivity_cap` | `50.0` | DEC(5,1) | GC | ✓ | ✓ | — | Maximum contribution of the inactivity component to the priority score |
+
+---
+
+#### 12.3.1 V1→V2 Naming Migration Map
+
+Variables renamed between V1 and V2. All directive Rule 3 tables must use the V2 canonical name. V1 names are preserved here as migration reference only; they MUST NOT appear in new code or directives.
+
+| V1 Name (deprecated) | V2 Canonical Name | Normalization Reason |
 |---|---|---|
-| CAP Hopeful: minimum PerComp_Act | 0.30 | Derived from SQL report heuristic |
-| Launch Hopeful: minimum PerComp_Act | 0.59 | Derived from SQL report heuristic |
-| CAP Hopeful: section name exclusion patterns | `%launch%`, `%CAP%` | Depends on SQL Server curriculum naming conventions |
-| Launch Hopeful: section inclusion pattern | `%CAP%` | Depends on SQL Server curriculum naming conventions |
-| Placement Hopeful: section inclusion pattern | `%launch%` | Depends on SQL Server curriculum naming conventions |
+| `hw_at_risk_min_behind` | `hws_behind_at_risk_threshold` | Canonical naming alignment per UG-4 |
+| `hw_high_risk_min_behind` | `hws_behind_high_risk_threshold` | Canonical naming alignment per UG-4 |
+| `avg_eff_rating_low_risk_threshold` | `avg_eff_rating_at_risk_threshold` | Directional correction: V1 name was misleading |
+| `payment_balance_risk_threshold` | `payment_at_risk_balance_threshold` + `payment_high_risk_balance_threshold` | Semantic split: V1 had ambiguous single-tier reference; V2 has explicit two-tier names per UG-3 |
+| `hws_behind_minimum_threshold` | `hws_behind_at_risk_threshold` | Alias used in eligibility directive; normalized |
+| `avg_eff_rating_minimum_threshold` | `avg_eff_rating_at_risk_threshold` | Alias used in eligibility directive; normalized |
+| `last_activity_max_days` | `last_activity_at_risk_days` | Alias used in eligibility directive; normalized |
+
+> V1 seeded 24 variables (migration `0003`). V2 introduces 41 canonical variables — an expansion of 17 new variables covering escalation governance, provider failure, channel advisory, and replay-safe configuration. The V1→V2 migration seed (migration `0007`) must populate all 41 variables.
 
 ---
 
-### 12.2 Homework Risk Thresholds
+### 12.4 Replay-Safe Config Requirements
 
-| Rule | Default Value |
+These requirements govern how the configuration registry is resolved during replay and historical regeneration operations. A replay is any execution with `execution_mode = SHADOW` and `is_replay = true` sourced from a historical `correlation_id`.
+
+---
+
+#### 12.4.1 Replay Threshold Resolution
+
+* Replays MUST resolve thresholds from the `rule_set_snapshot` of the config version that was `ACTIVE` at the **original execution's content lock time** — not from the current `ACTIVE` version
+* The config version reference is carried in the Snapshot Reproducibility Fingerprint (`configuration_registry_version` component)
+* If the referenced version is `SUPERSEDED` or `ARCHIVED`, the `rule_set_snapshot` remains fully queryable; the replay proceeds using the historical snapshot without downgrade
+
+---
+
+#### 12.4.2 CONFIG_THRESHOLD_MISSING Behavior
+
+When a threshold key is present in a directive's Rule 3 table but is absent from the resolved `rule_set_snapshot` (e.g., a V1 snapshot missing V2-only keys):
+
+1. **Substitute** `UNKNOWN_V0` as the resolved value
+2. **Log** a `WARN`-level event with the missing key name and the config version being resolved
+3. **Add** the reason code `CONFIG_THRESHOLD_MISSING_{KEY}` to the evaluation's `reason_codes` array
+4. **Exclude** all dependent rules that require this threshold from the evaluation pass
+5. **Continue** evaluation with remaining independent rules
+6. **Set** `degraded_evaluation: true` on the evaluation record
+
+> `UNKNOWN_V0` is a governance-reserved sentinel value. It means "this key did not exist in the config version that governed this execution." It is not an error; it is a documented audit gap.
+
+---
+
+#### 12.4.3 Degraded Replay Semantics
+
+When a replay execution resolves one or more `CONFIG_THRESHOLD_MISSING` conditions:
+
+* The replay output is annotated with `degraded_evaluation: true`
+* The `reason_codes` array enumerates all `CONFIG_THRESHOLD_MISSING_{KEY}` entries
+* The replay result is classified as `REPLAY_PARTIAL` rather than `REPLAY_COMPLETE`
+* Escalation advisory flags produced by the replay are logged but are NOT actioned in `SHADOW` mode (per UG-8)
+* The audit log records both the historical config version reference and the specific keys that were missing
+
+---
+
+#### 12.4.4 Fingerprint Mismatch Handling
+
+When the current system's config version fingerprint differs from the fingerprint recorded in a historical snapshot:
+
+* The regeneration proceeds using the **physically stored snapshot data** — it does not re-evaluate under the current config
+* The divergence is logged as `POTENTIALLY_DIVERGENT` with both fingerprint versions recorded
+* The regenerated report is marked `POTENTIALLY_DIVERGENT` (see `spec/03_state_transition_rules.md` §22.3)
+* A `SEVERITY: MEDIUM` governance alert is raised (see `spec/06_observability_operations.md` §10.9)
+
+---
+
+#### 12.4.5 Replay Determinism Requirements
+
+The following invariants must hold for any replay or historical regeneration:
+
+| Invariant | Requirement |
 |---|---|
-| AT_RISK: minimum HWsBehind | 1 |
-| AT_RISK: maximum AvgEffRating | 3.0 |
-| CRITICAL: minimum HWsBehind | 3 |
-| CRITICAL: maximum AvgEffRating | 2.0 |
+| R-EXEC-1 | Replay always executes in `SHADOW` mode; `LIVE` replay is prohibited |
+| R-EXEC-2 | Replay resolves config from the historical version at original content lock time |
+| R-EXEC-3 | Replay scope is limited to `REPLAY_CANDIDATE` students only; no new eligibility expansion |
+| R-EXEC-4 | Replay does not create new idempotency keys; it references the original execution's keys |
+| R-EXEC-5 | Replay output is annotated with `replay: true` and the source `correlation_id` |
 
 ---
 
-### 12.3 Payment Risk Thresholds
+### 12.5 AI Governance Requirements
 
-| Rule | Default Value |
-|---|---|
-| MEDIUM threshold (lower bound) | $0.01 |
-| HIGH threshold (lower bound) | $1,000.00 |
-| Payment deviation alert threshold | Configurable; default TBD |
+AI behavior in this platform is governed by config-bound thresholds. These requirements define the boundaries of AI authority, the governance of stale AI serving, and the replay semantics for AI-generated content.
 
 ---
 
-### 12.4 Priority Scoring Formula
+#### 12.5.1 AI Authority Boundaries
 
-The additive priority score (0–135) used by the outreach eligibility engine is configurable:
+* AI outputs are **advisory only** — they do not override deterministic threshold evaluation, eligibility decisions, or state transitions
+* No AI output may autonomously change student state, trigger financial actions, or bypass the Rule 3 config-bound threshold evaluation
+* AI outputs that exceed their advisory ceiling (see §12.5.3) are flagged and not surfaced as actionable recommendations
 
-| Component | Default Weight | Default Cap |
+---
+
+#### 12.5.2 Stale AI Governance
+
+* An AI insight is stale when its `generated_at` age exceeds `ai_insight_ttl_hours` (Group H)
+* Stale AI serving is permitted but annotated: `stale: true`, `stale_for_hours: N` in the API response
+* A snapshot finalized with stale AI content must carry `ai_content_stale: true` in the finalization record
+* Unplanned staleness exceeding 48 hours triggers a `SEVERITY: HIGH` alert (see `spec/06_observability_operations.md` §10.4)
+* The TTL threshold (`ai_insight_ttl_hours`) is classified `OPERATIONAL_TUNING`; changing it does not require replay impact assessment
+
+---
+
+#### 12.5.3 AI Advisory Ceilings
+
+* AI advisory outputs must not be weighted above the deterministic rule outputs in any scoring or eligibility model
+* The engagement score thresholds (Group G) that feed AI prompt context are classified `AI_ADVISORY_THRESHOLD`; changing them requires an AI governance review to assess downstream prompt context impact
+* AI outputs that reference config-bound thresholds in their prompt context must use the threshold values from the ACTIVE config version at AI generation time — not hardcoded values
+
+---
+
+#### 12.5.4 FINALIZED Snapshot AI Immutability
+
+* AI text physically copied into a FINALIZED snapshot (`warehouse.snapshot_ai_narratives`) is immutable
+* Post-finalization operations — force-refresh, AI version archival, AI provider change, compliance deletion of `ai_insights` records — MUST NOT affect frozen snapshot AI text (FAD-1)
+* The `ai_prompt_version` and `ai_model_version` components of the Snapshot Reproducibility Fingerprint are captured at finalization and are immutable thereafter
+
+---
+
+#### 12.5.5 AI Replay Semantics
+
+* Historical report regeneration MUST NOT make new AI provider calls
+* AI narrative content in regenerated reports is sourced exclusively from the physical text copies in `warehouse.snapshot_ai_narratives`
+* Any regeneration path that calls an AI provider for content is a specification violation
+* LIVE vs REPLAY behavioral distinction: in LIVE mode, fresh AI is generated; in REPLAY mode, frozen AI text is read from the snapshot row
+
+---
+
+### 12.6 Provider Failure Governance
+
+Provider failure governance defines how the platform behaves when an outreach or AI provider is unavailable. These requirements are config-bound via Group F variables.
+
+---
+
+#### 12.6.1 Provider Outage Handling
+
+* When `outreach_provider` (GHL) is unavailable, outreach transitions are placed in the platform retry queue; no data corruption occurs; in-flight outreach state is preserved
+* When `ai_llm_provider` is unavailable, AI generation is deferred with exponential backoff; snapshot finalization is not blocked; stale AI serving applies
+* Provider unavailability does not corrupt platform state; all read operations continue regardless of provider availability
+
+---
+
+#### 12.6.2 Retry Degradation Behavior
+
+* When a provider failure is detected, the cooldown extension (`provider_failure_cooldown_extension_hours`) is added to the standard outreach cooldown
+* When provider retry attempts reach `provider_failure_retry_limit`, the outreach is escalated to human review rather than silently dropped
+* Both variables default to `NULL` (no extension, follows default retry policy); activation requires an explicit governance decision with documented values
+
+---
+
+#### 12.6.3 Cooldown Semantics
+
+* Provider failure cooldown operates independently of the outreach retry window
+* Cooldown extension is additive: `effective_cooldown = standard_cooldown + provider_failure_cooldown_extension_hours`
+* The extended cooldown is logged in the outreach history record with `provider_failure_induced: true` annotation
+
+---
+
+#### 12.6.4 Exhaustion Handling
+
+* When all retries are exhausted and the provider is still unavailable:
+  * Outreach: transition to `INTERVENTION_REQUIRED` via the manual escalation path; do not auto-close
+  * AI generation: serve last `AI_REVIEWED` insight with `stale: true`; log `AI_GENERATION_FAILED`
+* Exhaustion events always produce an audit log entry regardless of execution mode
+
+---
+
+#### 12.6.5 Replay-Safe Provider Attribution
+
+* Provider attribution in historical records reflects the provider that was active at original execution time
+* Changing `ai_llm_provider` or `outreach_provider` does not retroactively modify attribution in prior `ai_insights` records, snapshot rows, or outreach history records
+* The `model_used` field on `ai_insights` records is immutable after `AI_GENERATED` state (see `spec/03_state_transition_rules.md` §27.5)
+
+---
+
+### 12.7 Escalation Governance Foundations
+
+Escalation threshold governance defines the config-bound rules that determine when automated advisory escalation signals are produced. These requirements are served by Group E variables.
+
+---
+
+#### 12.7.1 Escalation Threshold Governance
+
+* `prior_escalation_repeat_threshold` and `consecutive_no_response_escalation_threshold` are classified `ESCALATION_THRESHOLD`
+* Both default to `NULL` in V1 and V2 initial seed; activation requires an explicit governance decision with reviewed default values
+* These variables feed the escalation advisory logic in `directives/core_decision_engine.md` Rule 3 and `directives/outreach_retry_policy.md` Rule 3
+
+---
+
+#### 12.7.2 Escalation Replay Behavior
+
+* Escalation advisory flags produced during replay are logged but are **not actionable** in `SHADOW` mode (per UG-8)
+* This means: replay produces the escalation signal so it can be audited, but no escalation workflow is triggered, no operator notification is sent, and no state transition is made
+* In LIVE mode, escalation advisory signals are fully actionable per the escalation directive
+
+---
+
+#### 12.7.3 AI-Assist Boundaries in Escalation
+
+* AI insights MAY inform but do not override deterministic escalation threshold evaluation
+* A student meets the escalation threshold based on `consecutive_no_response_escalation_threshold` and `prior_escalation_repeat_threshold` values from the config; AI risk summary is advisory context, not the decision trigger
+* AI inputs to escalation are classified `AI_ADVISORY_THRESHOLD`; they require the AI governance review for changes
+
+---
+
+#### 12.7.4 Cooldown and Lineage Expectations
+
+* Escalation cooldown behavior (if configured) follows the same cooldown semantics as outreach retry cooldown
+* Every escalation advisory event produced by the orchestration engine is recorded in the audit log with: config version ID, threshold values used, reason codes, student ID (opaque), correlation ID
+* The lineage chain from config version → threshold value → escalation signal must be reconstructable from the audit log alone
+
+---
+
+### 12.8 Config Evolution Strategy
+
+This section defines the complete process for introducing new configuration versions, from initial governance proposal through activation and historical lineage preservation.
+
+---
+
+#### 12.8.1 Supersession Activation Workflow
+
+1. **Propose:** Operator creates a new `PROPOSED` version record in `config_version_registry`; `rule_set_snapshot` must contain all 41 canonical V2 variables (including unchanged ones); `change_rationale` is required
+2. **Review:** Designated governance authority reviews the proposed change; reviews include: variable classification compliance, replay impact assessment for `RST`-classified variables, AI governance review for `AAT`-classified variables
+3. **Approve:** Governance authority transitions the record to `APPROVED`; `approved_by` identity and `governance_approval_ref` are recorded
+4. **Activate:** Authorized operator executes the activation; the atomic swap transitions `APPROVED → ACTIVE` (new) and `ACTIVE → SUPERSEDED` (prior); `effective_from` is set to the activation timestamp
+5. **Verify:** Post-activation singleton check confirms exactly one `ACTIVE` version; activation log entry is emitted to the governance operations dashboard
+6. **Audit:** Both the superseded and new active version records are permanently retained and fully queryable
+
+---
+
+#### 12.8.2 Governance Approval Chain
+
+| Variable Class | Approval Chain | Minimum Review Time |
 |---|---|---|
-| HWsBehind × weight | ×10 | 50 |
-| EffRating deficit × weight | ×7 | 35 |
-| InactivityDays × weight | ×2 | 50 |
+| `ARCHITECTURAL_CONSTANT` | Architecture board → CTO/Product sign-off | 5 business days |
+| `GOVERNANCE_CONFIGURABLE` | Governance authority + academic team | 2 business days |
+| `REPLAY_SENSITIVE_THRESHOLD` | Governance authority + replay impact assessment | 3 business days |
+| `AI_ADVISORY_THRESHOLD` | AI governance review + governance authority | 2 business days |
+| `ESCALATION_THRESHOLD` | Operations lead + academic team | 1 business day |
+| `OPERATIONAL_TUNING` | Operations lead | Same-day |
+| `PROVIDER_FAILURE_THRESHOLD` | Engineering + operations | Same-day |
 
 ---
 
-### 12.5 Operational Scheduling and Timing
+#### 12.8.3 Activation Audit Requirements
 
-| Rule | Default Value |
-|---|---|
-| Month-end snapshot trigger time | 1st of following month, 02:00 local |
-| AI insight TTL (default) | 24 hours |
-| Outreach retry window | 3 days |
-| Placement Hopeful inactivity alert threshold | 7 days |
-| Access revocation unresolved alert threshold | 48 hours |
-
----
-
-### 12.6 Provider Selection
-
-| Component | Default Provider | Notes |
-|---|---|---|
-| AI / LLM provider | Configurable (currently Anthropic / OpenAI) | Prompt versioning must account for provider changes |
-| Outreach / communication provider | GHL (GoHighLevel) | Communication layer abstracted for future provider substitution |
+Every activation event must produce both a database audit record and a structured governance log entry containing:
+* Prior version ID and version number
+* New version ID and version number
+* `activated_by` identity
+* `effective_from` timestamp
+* One-line `change_rationale`
+* List of changed variable keys (diff between prior and new `rule_set_snapshot`)
+* `governance_approval_ref` linking to the approval artifact
 
 ---
 
-### 12.7 Report and Template Versioning
+#### 12.8.4 Historical Lineage Guarantees
 
-* Report templates are versioned; each monthly report records the template version used at generation time
-* Prompt versions are stored with every AI insight; changing a prompt creates a new prompt version, not a modification of an existing one
-* Mentor hierarchy model configuration (role labels, assignment depth) is externalized for future evolution
-
----
-
-### 12.8 Configuration Version Registry
-
-The Configuration Version Registry is a platform-managed, append-only record of all changes to configurable operational rules. It gives every classification run, snapshot, and AI insight generation a verifiable historical anchor in the Snapshot Reproducibility Fingerprint (Section 4.8).
+* Every version record carries `prior_version_id`; the chain is complete and unbroken back to V1
+* No version record is ever deleted by any application code or scheduled job
+* Any historical snapshot fingerprint that references a version ID must be resolvable to the full `rule_set_snapshot` for that version, even if the version is `ARCHIVED`
+* If a version is unavailable at fingerprint lookup time (corrupted, manually deleted — a compliance defect), the fingerprint notes it as `ARCHIVED`; regeneration proceeds with a `SEVERITY: HIGH` alert
 
 ---
 
-#### Governance Principles
+#### 12.8.5 Future Extensibility
 
-* Every change to any value in Sections 12.1–12.7 creates a new version record; the prior version is retained and never overwritten or modified
-* Version records are append-only; no existing version record is modified after creation
-* A version change requires a documented operational decision and authorization before the new version is activated; undocumented changes are prohibited
-* The registry records both the proposing identity and the activating identity
-* Configuration changes are **prospective only**: historical snapshots, finalized reports, and prior cohort classification records remain attributed to the version active when they were generated (see FAD-3)
+* New variables added in a future V3+ catalog update must follow the same classification process
+* New variables are added to the `rule_set_snapshot` schema; prior version records carry `NULL` for new keys (interpreted as `UNKNOWN_V0` during replay resolution)
+* Removing variables from the catalog requires a governance decision; removed variables remain in historical `rule_set_snapshot` JSONB for replay purposes but are no longer active in new evaluations
 
 ---
 
-#### Version Record Fields (conceptual)
-
-| Field | Description |
-|---|---|
-| version_id | Unique version identifier (monotonically increasing) |
-| effective_from | Timestamp when this version became the active version |
-| activated_by | Identity of the operator who activated this version |
-| change_rationale | Required free-text description of why this change was made |
-| rule_set_snapshot | Complete snapshot of all configurable rule values at this version (not just the diff) |
-| prior_version_id | Reference to the immediately preceding version |
+### 12.9 Acceptance Criteria (Governance-Focused)
 
 ---
 
-#### Lifecycle of a Configuration Change
+**AC-GOV-1 — Exactly-One-ACTIVE Invariant**
 
-1. **Propose:** operator documents the proposed change with rationale
-2. **Review:** change is reviewed and approved by designated authority
-3. **Activate:** new version record is created in the registry; activation timestamp is recorded
-4. **Classify:** next classification run uses the new version; prior runs attributed to the old version remain unchanged
-5. **Snapshot:** next monthly snapshot captures the active version in its fingerprint
-6. **Audit:** version history is queryable; any classification run or snapshot can be traced to its active version
+**Given** a new configuration version is activated
+**When** the activation transaction commits
+**Then** exactly one record in `config_version_registry` has `status = 'ACTIVE'`; the prior ACTIVE record is now `SUPERSEDED`; this invariant holds at all times including mid-batch snapshot runs
 
 ---
 
-#### Acceptance Criteria
+**AC-GOV-2 — Prospective-Only Semantics**
 
-* **Given** a configurable threshold is changed
-* **When** a new version is created in the registry
-* **Then** all subsequent classification runs use the new version; all prior snapshots retain their original version attribution unchanged
+**Given** a new configuration version is activated during a monthly snapshot batch run
+**When** the batch completes
+**Then** snapshots that locked content before the activation carry the prior version in their `configuration_registry_version` fingerprint component; snapshots that locked content after the activation carry the new version; no snapshot carries both or neither
 
-* **Given** a historical snapshot is queried with its Reproducibility Fingerprint
-* **When** the `configuration_registry_version` in the fingerprint is looked up
-* **Then** the complete rule set active at snapshot generation time is retrievable
+---
+
+**AC-GOV-3 — Historical Lineage Queryability**
+
+**Given** a historical snapshot with fingerprint `configuration_registry_version = V1`
+**When** the V1 version record is queried (regardless of its current status)
+**Then** the complete `rule_set_snapshot` for V1 is returned; all 24 V1 threshold values are accessible; the query succeeds even if V1 is `SUPERSEDED` or `ARCHIVED`
+
+---
+
+**AC-GOV-4 — CONFIG_THRESHOLD_MISSING Behavior**
+
+**Given** a replay execution resolves config from a V1 snapshot fingerprint
+**And** the replay directive references `consecutive_no_response_escalation_threshold` (a V2-only key absent from V1)
+**When** the threshold is resolved
+**Then** the value `UNKNOWN_V0` is substituted; a `WARN` log entry is emitted; `CONFIG_THRESHOLD_MISSING_CONSECUTIVE_NO_RESPONSE_ESCALATION_THRESHOLD` is added to `reason_codes`; `degraded_evaluation: true` is set; dependent rules are excluded; the evaluation continues with independent rules
+
+---
+
+**AC-GOV-5 — Rollback Prohibition**
+
+**Given** a configuration version is `SUPERSEDED`
+**When** any code path attempts to transition it to `ACTIVE`
+**Then** the transition is rejected by the database-level state machine; a `GovernanceViolation` error is raised and logged; the prior ACTIVE version remains unchanged
+
+---
+
+**AC-GOV-6 — Replay Isolation**
+
+**Given** a replay execution is triggered for a historical month
+**When** the replay runs
+**Then** `execution_mode = SHADOW` is enforced; the resolved config is from the historical version, not the current ACTIVE version; no new idempotency keys are created; all output is annotated with `replay: true`
+
+---
+
+**AC-GOV-7 — Degraded Replay Annotation**
+
+**Given** a replay resolves one or more `CONFIG_THRESHOLD_MISSING` conditions
+**When** the replay evaluation completes
+**Then** the evaluation record carries `degraded_evaluation: true`; the `reason_codes` array lists all `CONFIG_THRESHOLD_MISSING_{KEY}` entries; the result is classified `REPLAY_PARTIAL`; escalation advisory flags are logged but not actioned
+
+---
+
+**AC-GOV-8 — V2 Variable Count and Naming Integrity**
+
+**Given** migration `0007` has executed and seeded the V2 config version record
+**When** the `rule_set_snapshot` JSONB is inspected
+**Then** all 41 canonical V2 variable keys (Groups A through K) are present; no V1 deprecated names are present; all `NULL`-default variables have `NULL` values; all numeric defaults match the Group tables in §12.3
+
+---
+
+**AC-GOV-9 — AI Snapshot Isolation in Config Context**
+
+**Given** a new configuration version changes `ai_insight_ttl_hours`
+**When** the new version is activated
+**Then** finalized snapshots produced before the activation retain their physically copied AI text unchanged; no AI re-generation or snapshot row mutation occurs; the change is prospective only
+
+---
+
+**AC-GOV-10 — Provider Attribution Immutability**
+
+**Given** `ai_llm_provider` is changed from `'anthropic'` to a new provider in a new config version
+**When** the new version is activated
+**Then** existing `ai_insights` records retain `model_used` values from the original provider; `warehouse.snapshot_ai_narratives` records retain AI text from the original model; the new provider is used only for AI generations that begin after the activation timestamp
+
+---
+
+### 12.10 Open Governance Decisions (Resolved)
+
+These governance decisions were unresolved in V1. All are now resolved as binding governance policy. Each resolution is annotated with its rationale and constraint class.
+
+---
+
+**UG-1 — retry_window_behavior: ROLLING vs FIXED**
+
+**Resolution:** `retry_window_behavior = ROLLING` is the authoritative platform default.
+**Rationale:** ROLLING semantics (window resets from last attempt) more accurately models the operational intent of "student has had N days to respond since we last tried." FIXED semantics can cause premature case closure if attempts cluster at the start of the window.
+**Constraint:** Classified `ARCHITECTURAL_CONSTANT`. Changing to FIXED requires architecture board sign-off. The resolved default is seeded in V2 migration `0007`.
+
+---
+
+**UG-2 — outreach retry window canonical unit**
+
+**Resolution:** Canonical unit is **HOURS**. The canonical variable name is `outreach_retry_window_hours`. The V2 default is `72` hours (equivalent to the V1 "3 days" expressed as hours).
+**Rationale:** Hour-based units eliminate ambiguity around "day" definition (calendar day vs. 24-hour period), support sub-day precision, and align with all other timing variables in the catalog.
+**Constraint:** All directive Rule 3 tables must use `outreach_retry_window_hours` and specify values in hours.
+
+---
+
+**UG-3 — Payment threshold semantic normalization**
+
+**Resolution:** The single V1 `payment_balance_risk_threshold` is replaced by two canonical names: `payment_at_risk_balance_threshold` (`0.01` default) and `payment_high_risk_balance_threshold` (`1000.00` default). The two-tier model is authoritative.
+**Rationale:** A single variable conflated two distinct risk tiers. Separate variables make the risk classification logic unambiguous and auditable independently per tier.
+**Constraint:** V1 alias `payment_balance_risk_threshold` is deprecated. All directives must use the canonical two-tier names.
+
+---
+
+**UG-4 — HW risk threshold naming normalization**
+
+**Resolution:** Canonical names are `hws_behind_at_risk_threshold` and `hws_behind_high_risk_threshold` (Group B). V1 aliases (`hw_at_risk_min_behind`, `hws_behind_minimum_threshold`) are deprecated.
+**Rationale:** V1 had inconsistent naming across directives. The canonical names use the `_at_risk_` and `_high_risk_` suffix pattern uniformly across all risk threshold variables.
+**Constraint:** All directives must update Rule 3 tables to the V2 canonical names.
+
+---
+
+**UG-5 — outreach_max_attempts default and classification**
+
+**Resolution:** `outreach_max_attempts = 3` is the recommended default. Classification is `GOVERNANCE_CONFIGURABLE`.
+**Rationale:** Max attempts directly affects student outreach policy — more attempts increases contact rate but risks student fatigue. This is a student-facing policy decision that requires governance authority approval to change.
+**Constraint:** Seeded at `3` in V2. Changes require governance authority documentation.
+
+---
+
+**UG-6 — AI sensitivity governance tier**
+
+**Resolution:**
+* `ai_insight_ttl_hours`: classified `OPERATIONAL_TUNING`. TTL is a system mechanics variable; changing it does not alter student-facing policy.
+* Variables that feed AI prompt context (engagement score thresholds, risk thresholds, activity thresholds): classified `AI_ADVISORY_THRESHOLD`. Changing them requires AI governance review because they affect AI output quality and context.
+**Rationale:** Not all AI-adjacent variables have the same governance weight. Operational TTL is a system knob; threshold values that change what AI "sees" in its context are policy decisions.
+
+---
+
+**UG-7 — Channel advisory governance split**
+
+**Resolution:**
+* Student-facing channel policy variables (`channel_opt_out_respect_period_hours`, `outreach_initial_channel_preference`, `channel_delivery_failure_suspension_threshold`): classified `GOVERNANCE_CONFIGURABLE`
+* System mechanics variables (`channel_specific_cooldown_hours`, `provider_failure_cooldown_extension_hours`): classified `OPERATIONAL_TUNING`
+**Rationale:** Channel opt-out periods and suspension thresholds are student-facing policy; changes require governance review. Cooldown mechanics are system-level tuning.
+
+---
+
+**UG-8 — Escalation flags in replay**
+
+**Resolution:** Escalation advisory flags produced during replay executions are **logged but not actioned** in `SHADOW` mode.
+**Rationale:** Replay is a diagnostic and audit tool, not a live orchestration path. Producing escalation signals during replay without actioning them allows operators to assess "what would have happened" without creating false escalation workflows.
+**Constraint:** The runtime must enforce: `if execution_mode == SHADOW and is_replay == true, then escalation_flags.log_only = true`.
+
+---
+
+**UG-9 — Config version record retention**
+
+**Resolution:** Config version records are **permanently retained** — no version record is ever deleted by any application code, scheduled job, or administrative action.
+**Rationale:** Any FINALIZED snapshot fingerprint that references a version ID must be resolvable forever. Deleting version records breaks historical fingerprint lookups and destroys reproducibility guarantees.
+**Constraint:** No delete path exists for `config_version_registry` records. Manual deletion is a compliance defect.
+
+---
+
+**UG-10 — sql_server_max_sync_age_hours classification and default**
+
+**Resolution:** `sql_server_max_sync_age_hours = 4` hours is the recommended default. Classification is `ARCHITECTURAL_CONSTANT`.
+**Rationale:** The maximum acceptable age of the SQL Server sync before snapshot content lock should block is a fundamental platform data freshness guarantee. It is not operational tuning — it is an architectural constraint on data integrity. Changing it requires architecture board sign-off.
+**Constraint:** Seeded at `4` in V2. Changes require architecture-level review. The value must be enforced as a hard gate at snapshot content lock time (`DRAFT → VALIDATING` transition).
 
 ---
 
