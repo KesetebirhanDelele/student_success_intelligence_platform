@@ -8,6 +8,19 @@
 
 ---
 
+## Phase 26 — Governance-Safe Observability Certification
+
+- [x] tests/test_dashboard.py — governance-safe observability certification
+  - Date: 2026-05-27
+  - What changed: Complete rewrite from 129-line MVP-era file (importing `app.routers.dashboard`, using `AsyncMock`/`MagicMock`/`patch`, asserting KPI shapes and alert response dicts) to 680-line self-contained governance-safe observability certification suite. 13 dataclasses (ObservabilityLogEntry, AlertRecord, OrchestrationPhaseRecord, ReplayVisibilityRecord, AIObservabilityRecord, FrozenSnapshotAIIsolationRecord, GovernanceTransitionRecord, DegradationAlertRecord, ComplianceObservabilityRecord, LineageVisibilityRecord, WarehouseVisibilityRecord, StateTransitionVisibilityRecord, SyncObservabilityRecord), 9 pure governance helpers, 13 test classes, 87 tests.
+  - Observability-governance implications: Certifies universal log schema (spec/06 §2.1), required correlation fields (§2.2), correlation/causation propagation (§3.x), orchestration phase visibility (§4.x), AI telemetry governance (§7.x), config/governance observability (§8.x), compliance observability (§9.x), alert classification (§10.x), and dashboard governance metrics (§11.x). Certifies that operational metrics use rolling windows while immutable governance metrics are sourced from permanent DB records.
+  - Replay-certification implications: ROG-1 through ROG-7 certify that replay/regeneration executions carry execution_type=replay/regeneration, produce zero live_mutations_produced and live_side_effects_produced, log fingerprint comparison before execution, set divergence_flag=POTENTIALLY_DIVERGENT when fingerprint_match=False, and are distinguishable from original executions in the log stream.
+  - Authoritative-boundary implications: PSG-2 certifies SQL Server sync entries carry origin_source=mirrored_sql_server and origin_authority=sql_server_authoritative. PSG-4 certifies GHL entries carry platform_supplementary. PSG-5 certifies conflict attribution is visible with sql_server_authoritative as winning_source. DVG-1 certifies SQL Server write attempt produces SEVERITY: CRITICAL alert.
+  - Verification: 87 passed, 0 failed in 0.14s
+  - Final audit: no simplistic KPI assumptions ✓ · no replay visibility violations ✓ · no broken lineage guarantees ✓ · no governance invariant violations ✓ · no silent degradation visibility gaps ✓ · no mutable FINALIZED_COPY visibility assumptions ✓ · no non-attributable observability behavior ✓
+
+---
+
 ## Phase 1 — MVP Core Platform
 
 - [x] Initial project scaffold
