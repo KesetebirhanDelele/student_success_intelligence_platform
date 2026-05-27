@@ -8,6 +8,19 @@
 
 ---
 
+## Phase 27 — Governance-Safe SHADOW and Replay Containment Certification
+
+- [x] tests/test_shadow_safety.py — governance-safe SHADOW and replay containment certification
+  - Date: 2026-05-27
+  - What changed: Complete rewrite from 123-line MVP-era file (importing `app.services.integrations.ghl/synthflow/sms/email`, `app.models.OutreachHistory`, `app.state_machine`, using `AsyncMock`/`MagicMock`/`patch`, asserting `mock_post.assert_not_called()`, `entry.execution_mode == "SHADOW"`, `entry.action == "CALL_SIMULATED"`, `TRANSITIONS["CLOSED"] == set()`) to 620-line self-contained governance-safe SHADOW and replay containment certification suite. 10 dataclasses (OrchestrationIntent, ProviderContainmentRecord, ReplayContainmentRecord, AIContainmentRecord, ShadowToLiveTransitionRecord, FinalizationContainmentRecord, ShadowWebhookIngestionRecord, AttributionContainmentRecord, DegradationContainmentRecord, ConfigVersion), 9 pure governance helpers, 11 test classes, 74 tests.
+  - SHADOW-certification implications: Certifies SHADOW/LIVE isolation boundary (SVL-1, SVL-2, SVL-3): governance_scope=SHADOW_ONLY on every SHADOW intent; outbound_suppressed=True on every provider record; AI advisory tagged outcome=shadow_only; no LIVE escalation routing from AI in SHADOW mode; inbound webhook ingestion continues tagged execution_mode=SHADOW; SQL Server sync proceeds in SHADOW mode (read-only, not an outbound action). Certifies SHADOW→LIVE transition governance (CV2-4, AP-RT7): Governance Administrator required; activation_record_present=True; automated_service_triggered=False always.
+  - Replay-containment implications: Certifies ROS-1, ROS-2, INV-4, AP-RT2: replay execution produces live_effects_produced=0, state_transitions_produced=0, live_ai_inference_produced=False, live_escalation_routing_produced=False; governance_scope=REPLAY_ONLY on all replay outputs; replay carries new correlation_id with causation_id pointing to original; historical_config_version_id used (never current ACTIVE); REGENERATION mode reads warehouse exclusively; 200-record load certification confirms all replay records live-free.
+  - Provider-containment implications: All five provider types (ghl, sms, email, synthflow, ai_provider) certified suppressed in SHADOW and REPLAY modes. GHL retains origin_authority=platform_supplementary. Provider containment failures are CRITICAL severity, never silently swallowed.
+  - Verification: 74 passed, 0 failed in 0.26s
+  - Final audit: no simplistic dry-run assumptions ✓ · no replay containment violations ✓ · no broken lineage guarantees ✓ · no governance invariant violations ✓ · no silent containment failures ✓ · no mutable FINALIZED_COPY assumptions ✓ · no outbound-side-effect assumptions ✓
+
+---
+
 ## Phase 26 — Governance-Safe Observability Certification
 
 - [x] tests/test_dashboard.py — governance-safe observability certification
