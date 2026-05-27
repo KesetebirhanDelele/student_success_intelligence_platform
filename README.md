@@ -1,22 +1,136 @@
 # Student Success Intelligence Platform (SSIP)
 
-Automated student outreach decision engine. Reads student risk signals from SQL Server, applies eligibility and priority logic, and orchestrates outreach via GHL, Synthflow, SMS, and email.
+A **governance-safe orchestration and operational intelligence platform** for monitoring, analyzing, and acting on the full operational lifecycle of enrolled students.
 
-**Execution mode: SHADOW** — all outbound calls are no-ops until `.env` credentials are filled and `EXECUTION_MODE=LIVE` is explicitly set.
+Outreach automation is a **subsystem** of this platform — not its primary architectural identity. The platform's central responsibility is **orchestration-intent governance**: evaluating student risk signals, emitting governed orchestration intents, and maintaining immutable lineage across all lifecycle transitions.
+
+**Execution mode: SHADOW** — all outbound provider calls are suppressed until `EXECUTION_MODE=LIVE` is explicitly set via Governance Administrator authorization. SHADOW mode is a mandatory operational tier, not a debugging convenience (governed by `runtime/system_loop.md §3.5`).
 
 ---
 
-## Stack
+## Governance Model
+
+The SSIP governance model establishes non-negotiable baseline guarantees across all execution modes and scope tiers.
+
+### Core Principles
+
+| Principle | Governance contract |
+|---|---|
+| Orchestration emits intents, not actions | Runtime coordinates governance-safe intent delegation; no loop directly dispatches to providers |
+| Providers are `platform_supplementary` | GHL, Synthflow, SMS, and email are delivery vehicles; they are not authority boundaries |
+| Replay and SHADOW are isolated from LIVE | Replay outputs carry `execution_type = replay` and `governance_scope = REPLAY_ONLY`; no LIVE effects permitted |
+| Immutable lineage is foundational | FINALIZED snapshots, REPORT_PUBLISHED reports, and archived AI narratives are permanently read-only |
+| Config V2 governs orchestration behavior | Retry thresholds, timing windows, and concurrency limits are Config Version Registry values; no hardcoded constants permitted |
+| Attribution continuity is mandatory | Every record carries `correlation_id`, `execution_mode`, `execution_type`, and `config_version_id`; null fields surface `ATTRIBUTION_INCOMPLETE` |
+| SQL Server is read-only authoritative | No platform service may write to SQL Server; SQL Server data wins on field conflicts with `origin_authority = sql_server_authoritative` |
+
+### Governance Invariants (INV-1 through INV-7)
+
+Defined authoritatively in `spec/03_state_transition_rules.md`. Enforced across all execution layers. Certified by `tests/test_shadow_safety.py` and `tests/test_dashboard.py`.
+
+| Invariant | Rule |
+|---|---|
+| INV-1 | FINALIZED snapshot is immutable — no update, overwrite, or deletion |
+| INV-2 | Exactly one Config Version is ACTIVE at all times |
+| INV-3 (FAD-3) | Config Version activation is prospective-only — no backdated activation |
+| INV-4 (AP-RT2) | No LIVE effects from replay — `live_effects_produced = 0` on all replay outputs |
+| INV-5 | Attribution continuity — `correlation_id`, `execution_mode`, `execution_type` mandatory on every record |
+| INV-6 (FAD-1) | FINALIZED_COPY AI narrative immutability — `allows_update = false` after FINALIZED state |
+| INV-7 | No hardcoded thresholds — all orchestration parameters governed by Config Version Registry |
+
+### Foundational Architecture Decisions (FAD-1 through FAD-6)
+
+Defined authoritatively in `spec/01_requirements.md`.
+
+| FAD | Decision |
+|---|---|
+| FAD-1 | Frozen AI copy — AI narrative is deep-copied at snapshot FINALIZED time and remains immutable |
+| FAD-2 | Snapshot-centric historical — all longitudinal analysis uses warehouse snapshots, not live operational data |
+| FAD-3 | Prospective-only config activation — no retroactive config version changes |
+| FAD-4 | Append-only audit log — `student_timeline_events` and `state_transition_log` are append-only; no deletions |
+| FAD-5 | SQL Server read-only boundary — no write grants provisioned; write attempt produces `ArchitecturalViolation` |
+| FAD-6 | Three-schema privilege separation — `public`, `warehouse`, `compliance_audit` with distinct service accounts |
+
+---
+
+## Architecture
+
+### Governance Layers
+
+| Layer | Location | Role |
+|---|---|---|
+| **Specifications** | `/spec/` | Canonical governance contracts, state machine rules, API contracts, data model |
+| **Directives** | `/directives/` | Advisory intent and evaluation criteria — no business logic, no hardcoded thresholds |
+| **Runtime** | `/runtime/`, `/failure/` | Governance-safe orchestration coordination, resilience governance, replay-safe sequencing |
+| **Execution** | `/app/` | Deterministic service implementations; SHADOW mode until Phase 12 certification |
+| **UX** | `/frontend/`, `/ux/` | Governance-safe visibility surfaces — governed state display + governed API invocations only |
+| **Verification** | `/tests/` | Governance-safe certification suite — certifies invariants and containment, not feature outputs |
+
+### What Each Layer Does NOT Do
+
+| Layer | Explicitly prohibited |
+|---|---|
+| Directives | Contains no business logic, no execution code, no hardcoded thresholds |
+| Runtime | Directly dispatches to providers; owns provider API credentials; mutates orchestration state directly |
+| UX | Executes business logic; calculates thresholds; triggers live effects through replay pathways |
+| Verification | Substitutes for database constraints; validates UI rendering details |
+
+### Orchestration Architecture
+
+```
+SQL Server (read-only, origin_authority: sql_server_authoritative)
+    │
+    ▼  read-only ingestion with attribution fields
+SQL Server Ingestion Service ─── UPSERT public.student_trigger_data
+    │                         └── origin_source: mirrored_sql_server
+    │                         └── idempotency key: processed_events
+    ▼
+Eligibility + Priority Evaluation ─── Config V2 governed thresholds
+    │
+    ▼
+Orchestration Intent Emission ─── governance_scope, execution_mode, correlation_id
+    │
+    ├── SHADOW: outbound_suppressed=true — no HTTP — governance_scope=SHADOW_ONLY
+    └── LIVE:   governed provider delegation — governance_scope=LIVE
+    │
+    ▼
+Provider Orchestration Services ─── origin_authority: platform_supplementary
+    │
+    ▼
+Append-Only Persistence ─── warehouse.student_snapshots (FINALIZED = immutable)
+                         └── student_timeline_events (append-only, FAD-4)
+                         └── state_transition_log (append-only, FAD-4)
+```
+
+**Replay path:** Replay orchestration produces `governance_scope = REPLAY_ONLY`, `execution_type = replay`, `live_effects_produced = 0`, and uses `historical_config_version_id` — never the current ACTIVE config. Replay outputs never enter LIVE provider paths (INV-4, AP-RT2).
+
+---
+
+## Execution Mode Governance
+
+| Behavior | SHADOW | LIVE | REPLAY |
+|---|---|---|---|
+| SQL Server sync | Reads normally | Reads normally | Reads warehouse snapshots |
+| Outbound provider calls | `outbound_suppressed = true`; no HTTP | Dispatches via governed provider services | `outbound_suppressed = true`; `governance_scope = REPLAY_ONLY` |
+| Orchestration intents | `governance_scope = SHADOW_ONLY` | `governance_scope = LIVE` | `governance_scope = REPLAY_ONLY` |
+| Live effects produced | 0 (containment invariant) | ≥ 0 | 0 (invariant; non-zero → CRITICAL governance alert) |
+| Dashboard mode badge | `SHADOW MODE` | `LIVE MODE` | `REPLAY MODE` |
+
+**SHADOW → LIVE transition:** Requires Governance Administrator authorization, `activation_record_present = true` in Config Version Registry, and explicit acknowledgement checkbox. Automated services may not trigger this transition (AP-RT7, `runtime/system_loop.md`).
+
+---
+
+## Technology Stack
 
 | Layer | Technology |
 |---|---|
-| API | Python 3.12 · FastAPI |
-| Database | PostgreSQL 16 (via SQLAlchemy async + asyncpg) |
-| Source data | SQL Server (read-only, via pyodbc) |
-| Scheduler | APScheduler (daily batch) |
-| LLM | OpenAI GPT-4o |
+| API | Python 3.11 · FastAPI |
+| Database | PostgreSQL 16 (via SQLAlchemy async + asyncpg) — three-schema: `public`, `warehouse`, `compliance_audit` |
+| Source data | SQL Server (read-only, `origin_authority: sql_server_authoritative`, via pyodbc) |
+| Scheduler | APScheduler (daily batch, governance-safe orchestration coordination) |
+| LLM | Anthropic Claude API (advisory only; outputs labeled `ai_governance_tier`) |
 | Container | Docker Compose |
-| Frontend | Single-page dashboard (`frontend/index.html`) |
+| Frontend | Single-page dashboard (`frontend/index.html`) — governance-safe visibility surface |
 
 ---
 
@@ -27,12 +141,14 @@ Automated student outreach decision engine. Reads student risk signals from SQL 
 cp .env.example .env
 # edit .env — fill MSSQL_HOST, MSSQL_USER, MSSQL_PASS, MSSQL_DATABASE
 
-# 2. Build and start
+# 2. Build and start (SHADOW mode — all outbound calls suppressed)
 docker compose up -d --build
 
 # 3. Open dashboard
 open http://localhost:8080
 ```
+
+The platform starts in SHADOW mode by default. SQL Server sync and eligibility evaluation run normally. All outbound provider calls are suppressed — no real communications occur.
 
 ---
 
@@ -43,216 +159,132 @@ open http://localhost:8080
 | `DATABASE_URL` | Yes | Set automatically by Docker Compose (`postgresql+asyncpg://ssip:ssip@db:5432/ssip`) |
 | `MSSQL_HOST` | Yes | SQL Server hostname or IP |
 | `MSSQL_PORT` | No | Default: `1433` |
-| `MSSQL_USER` | Yes | SQL Server login (read-only account) |
+| `MSSQL_USER` | Yes | SQL Server login — read-only account; no write grants (FAD-5) |
 | `MSSQL_PASS` | Yes | SQL Server password |
-| `MSSQL_DATABASE` | Yes | Database name containing `AI_ChatBot_TriggerData` |
-| `OPENAI_API_KEY` | No | GPT-4o key for LLM analysis (stubbed in SHADOW mode) |
-| `GHL_API_KEY` | No | GoHighLevel API key (no-op in SHADOW mode) |
+| `MSSQL_DATABASE` | Yes | Database name containing source student data |
+| `ANTHROPIC_API_KEY` | No | Claude API key for LLM advisory generation (suppressed in SHADOW mode) |
+| `GHL_API_KEY` | No | GoHighLevel API key (suppressed in SHADOW mode) |
 | `GHL_BASE_URL` | No | GHL base URL |
 | `GHL_LOCATION_ID` | No | GHL location ID |
-| `SYNTHFLOW_API_KEY` | No | Synthflow API key (no-op in SHADOW mode) |
+| `SYNTHFLOW_API_KEY` | No | Synthflow API key (suppressed in SHADOW mode) |
 | `SYNTHFLOW_PHONE_NUMBER` | No | Outbound caller ID for Synthflow |
-| `EXECUTION_MODE` | No | `SHADOW` (default) or `LIVE`. LIVE requires all credentials filled. |
+| `EXECUTION_MODE` | No | `SHADOW` (default) or `LIVE`. LIVE requires Governance Administrator authorization and Phase 12 certification. |
 
 ---
 
-## SQL Server Sync
+## Governance-Safe Certification Suite
 
-The sync pulls every row from `AI_ChatBot_TriggerData` on the source SQL Server and upserts them into the local PostgreSQL mirror table `ai_chatbot_triggerdata`.
+Tests certify governance invariants and containment behavior — not feature outputs. All test files are self-contained and require no imports of production implementation modules.
 
-### How to run a sync
-
-**From the dashboard:** Open the SQL Server Sync card and click **Sync Now**, or expand the card inline and click **Sync Now**.
-
-**Via API:**
-```bash
-curl -X POST http://localhost:8080/sync/mssql
-```
-
-### Sync result shape
-
-```json
-{
-  "status": "success",
-  "rows_scanned": 90,
-  "rows_successful": 90,
-  "rows_failed": 0,
-  "added": 5,
-  "updated": 85,
-  "connected": true,
-  "error": null,
-  "failures": []
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `status` | `success` — all rows synced; `partial_success` — some rows skipped; `connection_error` — SQL Server unreachable |
-| `rows_scanned` | Total rows returned from SQL Server |
-| `rows_successful` | Rows that were inserted or updated in PostgreSQL |
-| `rows_failed` | Rows skipped due to data quality issues |
-| `added` | New rows inserted |
-| `updated` | Existing rows updated |
-| `failures` | List of `{user_id, reason}` for each skipped row |
-
-### Partial sync (WARNING status)
-
-If some source rows have `NULL` in `HWsBehind` or `AvgEffRating` (which are NOT NULL in PostgreSQL), those rows are **skipped** rather than crashing the entire sync. All valid rows still persist.
-
-The dashboard shows:
-- A **WARNING** badge when any rows were skipped
-- The count of skipped rows
-- Each skipped UserID and the reason (e.g., `Missing required fields: HWsBehind, AvgEffRating`)
-
-Valid rows always land regardless of how many invalid rows are present.
-
-### Data quality rules
-
-| Field | Rule |
-|---|---|
-| `UserID` | Must not be NULL (primary key) |
-| `HWsBehind` | Must not be NULL (NOT NULL integer column) |
-| `AvgEffRating` | Must not be NULL (NOT NULL float column) |
-
-NULL values are never silently replaced with defaults. If source data is NULL, the row is quarantined and the operator sees the reason.
-
-### Troubleshooting sync errors
-
-| Symptom | Likely cause | Fix |
+| File | What it certifies | Certified tests |
 |---|---|---|
-| `SQL Server not configured` | `MSSQL_HOST`, `MSSQL_USER`, or `MSSQL_DATABASE` is empty in `.env` | Fill the missing env vars and restart: `docker compose up -d` |
-| `Connection error: Login failed` | Wrong credentials | Check `MSSQL_USER` / `MSSQL_PASS` |
-| `Connection error: TCP Provider` | Wrong host or port, firewall | Verify `MSSQL_HOST` and `MSSQL_PORT`; check network access |
-| `partial_success` with skipped rows | Source data has NULL in `HWsBehind` or `AvgEffRating` | Review the skipped UserIDs in the dashboard; fix upstream data and re-sync |
+| `tests/test_shadow_safety.py` | SHADOW containment (SVL-1–3), replay isolation (ROS-1–2, INV-4, AP-RT2), SHADOW→LIVE transition governance (CV2-4, AP-RT7), provider containment, attribution continuity | 74 |
+| `tests/test_dashboard.py` | Observability governance, correlation/causation propagation, governance transition visibility, AI telemetry governance, replay observability (ROG-1–7), provider authority (PSG-2–5, DVG-1) | 87 |
+| `tests/test_sync.py` | SQL Server sync governance, data quality quarantine, origin authority attribution, dedup gate, no outbound HTTP | 12 |
+| `tests/test_actions.py` | Manual action state-machine guards, Config V2 ceiling enforcement, rejection path visibility | 8 |
+| `tests/test_work_queue.py` | Priority engine governance, source router, work queue, batch preview | 14 |
 
----
-
-## Dashboard
-
-The dashboard at `http://localhost:8080` is a single-page Bootstrap 5 app. It auto-refreshes every 60 seconds.
-
-### Sections
-
-| Section | What it shows |
-|---|---|
-| System Health | DB connection, MSSQL config status, scheduler last run, execution mode |
-| Operational Alerts | Active warnings (unconfigured MSSQL, stuck students, shadow mode reminder) |
-| Funnel KPIs | Conversion and response rate metrics |
-| State Distribution | Count of students per outreach state |
-| Channel Performance | Per-channel attempt / response / resolution rates |
-| Student Lookup | Search by UserID — profile, risk badge, outreach history |
-| Source Analysis | Per-path breakdown of tracked/untracked/risk-distribution students |
-| Work Queue | 7 named queues (all source, untracked, eligible, contacted, intervention, retry due, resolved/closed) with priority-sorted student lists |
-| Batch Preview | Dry-run: see what the batch job would do before running |
-| Manual Actions | Close / Force Retry / Resolve / Escalate a student case |
-| SQL Server Sync | Trigger manual sync; shows last sync result with skipped rows |
-| Recent Activity | Latest outreach history entries |
-
-### Expand All
-
-Click **⊞ Expand All** in the navbar to open all cards inline. Each open panel auto-refreshes every 60 seconds.
-
----
-
-## Running Tests
+**Run the certification suite:**
 
 ```bash
 docker compose run --rm api python -m pytest tests/ -v
 ```
 
-Expected: **45 passed** (as of 2026-05-12).
+---
 
-Test files:
+## Implementation Status
 
-| File | Coverage |
+### Governance Architecture — Stabilized
+
+The full governance contract layer has been stabilized as of 2026-05-27. No implementation service may be moved to LIVE mode without satisfying Phase 12 certification checkpoints (`execution/build_phases.md`).
+
+| Contract | Status |
 |---|---|
-| `tests/test_actions.py` | Manual action state-machine guards (8 tests) |
-| `tests/test_dashboard.py` | Alert generation rules (5 tests) |
-| `tests/test_shadow_safety.py` | SHADOW mode — no outbound HTTP for all 4 channels (6 tests) |
-| `tests/test_sync.py` | Sync service — validation, partial sync, skip invariants, no HTTP (12 tests) |
-| `tests/test_work_queue.py` | Priority engine, source router, work queue, batch preview (14 tests) |
+| Requirements, 10 operational domains, 6 FADs, NFRs | Stabilized — `spec/01_requirements.md` |
+| State transition rules — all 6 domains, INV-1–INV-7 | Stabilized — `spec/03_state_transition_rules.md` |
+| Idempotency and concurrency model | Stabilized — `spec/04_idempotency_concurrency.md` |
+| External integrations governance | Stabilized — `spec/05_external_integrations.md` |
+| Observability and operational governance | Stabilized — `spec/06_observability_operations.md` |
+| API contracts — all 6 API domains | Stabilized — `spec/07_api_contracts.md` |
+| Data model — warehouse architecture, three-schema | Stabilized — `spec/08_data_model.md` |
+| Security and privacy governance | Stabilized — `spec/09_security_privacy.md` |
+| Runtime orchestration architecture | Stabilized — `runtime/system_loop.md` |
+| Scheduler governance | Stabilized — `runtime/scheduler_design.md` |
+| Daily outreach flow governance | Stabilized — `runtime/daily_outreach_flow.md` |
+| Retry cycle governance | Stabilized — `runtime/retry_cycle_flow.md` |
+| Resilience: canonical parent contract | Stabilized — `failure/failure_playbook.md` |
+| Resilience: scheduler, GHL, LLM failure domains | Stabilized — `failure/scheduling_failures.md`, `failure/ghl_failures.md`, `failure/llm_failures.md` |
+| UX governance contract | Stabilized — `ux/user_experience.md` |
+| Operator workflow governance | Stabilized — `ux/operator_workflows.md` |
+| Dashboard visibility architecture | Stabilized — `ux/admin_dashboard.md` |
+| Governance-safe SHADOW/replay certification | Stabilized — `tests/test_shadow_safety.py` (74 tests) |
+| Governance-safe observability certification | Stabilized — `tests/test_dashboard.py` (87 tests) |
+| Build phases (governance-first sequencing) | Stabilized — `execution/build_phases.md` |
+| Implementation plan (service implementation order) | Stabilized — `execution/implementation_plan.md` |
+
+### Execution Services (Phases 1–5) — Operational in SHADOW Mode
+
+The following services were delivered in Phases 1–5 and are operational in SHADOW mode. They predate the stabilized governance architecture and require alignment with finalized governance contracts before LIVE activation:
+
+- SQL Server ingestion and sync service
+- Eligibility, priority, and decision engine services
+- Outreach service (all outbound suppressed in SHADOW mode)
+- Student outreach tracking and APScheduler-based state machine
+- AI insights and LLM integration service (advisory; `ai_governance_tier` labeling pending)
+- Unified timeline, student notes, and lifecycle drawer
+- Source routing, batch processing, work queue, and priority scoring
+- Six lifecycle tabs with action bars
+
+### Next Phase — Governance-Architecture Alignment
+
+Per `execution/implementation_plan.md §5`, implementation services are next for governance alignment in the following order: SQL Server ingestion (lineage fields), unified timeline ingestion (append-only enforcement), snapshot orchestration (DRAFT→VALIDATING), AI enrichment (AI_REVIEWED gate), snapshot finalization (FINALIZED boundary), report publication, config governance activation, compliance workflow, observability validation, operational dashboards alignment, production governance readiness.
 
 ---
 
-## Architecture
+## Canonical References
 
-```
-SQL Server (read-only)
-    │
-    ▼  pyodbc / asyncio.to_thread
-app/database.py — fetch_students_from_mssql()
-    │
-    ▼
-app/services/sync.py — validate → upsert → return structured result
-    │
-    ▼
-PostgreSQL — ai_chatbot_triggerdata (local mirror)
-    │
-    ▼
-app/services/eligibility.py + priority.py + decision_engine.py
-    │
-    ▼
-app/services/outreach.py — SHADOW: logs only; LIVE: calls GHL / Synthflow / SMS / email
-    │
-    ▼
-app/models.py — StudentOutreachTracking, OutreachHistory, StateTransitionLog
-```
+### Governance Specifications
 
-**Execution mode gate:** Every outbound call checks `settings.is_shadow`. In SHADOW mode, integrations return a simulated response and make no HTTP calls. To flip to LIVE, set `EXECUTION_MODE=LIVE` in `.env` — this is a strategic decision requiring explicit approval.
+| Document | Contents |
+|---|---|
+| `spec/01_requirements.md` | Platform purpose, 10 operational domains, 6 FADs, NFRs, success metrics |
+| `spec/03_state_transition_rules.md` | Valid/invalid transitions across all 6 lifecycle domains; INV-1–INV-7 |
+| `spec/04_idempotency_concurrency.md` | Multi-domain idempotency model, concurrency governance |
+| `spec/05_external_integrations.md` | Provider governance boundaries, SQL Server authority, GHL supplementary model |
+| `spec/06_observability_operations.md` | Two-category telemetry, governance-aware observability, universal log schema |
+| `spec/07_api_contracts.md` | API contracts across all 6 API domains; idempotency patterns; governance isolation |
+| `spec/08_data_model.md` | Warehouse entity model, three-schema architecture, lineage attribution fields |
+| `spec/09_security_privacy.md` | Security governance, compliance access model |
 
----
+### Runtime Contracts
 
-## Deployment (Production VPS)
+| Document | Contents |
+|---|---|
+| `runtime/system_loop.md` | Six runtime modes, AP-RT7, degradation governance, canonical orchestration lifecycle |
+| `runtime/scheduler_design.md` | Scheduler governance, recovery cycle attribution |
+| `runtime/daily_outreach_flow.md` | Daily orchestration cycle governance, SHADOW mode behavior |
+| `runtime/retry_cycle_flow.md` | Retry governance, Config V2 Group A, retry orchestration lifecycle |
 
-```bash
-ssh root@<vps-ip>
-cd /opt/ssip
-git pull origin main
-docker compose -f docker-compose.production.yml up -d --build api
-```
+### Resilience Contracts
 
-Check logs:
-```bash
-docker compose logs -f api
-```
+| Document | Contents |
+|---|---|
+| `failure/failure_playbook.md` | Canonical parent resilience contract; AP-FP1–AP-FP8; SUPPRESSED vs UNAVAILABLE |
+| `failure/scheduling_failures.md` | Scheduler failure governance |
+| `failure/ghl_failures.md` | Provider failure governance |
+| `failure/llm_failures.md` | AI governance failure context |
 
----
+### UX Governance Contracts
 
-## Follow-up: Data Quality Issues Table (not yet implemented)
+| Document | Contents |
+|---|---|
+| `ux/user_experience.md` | Canonical UX governance contract; interaction model; UX governance invariants |
+| `ux/operator_workflows.md` | Operator workflow governance; governed manual actions; replay investigation |
+| `ux/admin_dashboard.md` | Governance-safe dashboard visibility architecture; §16–21 governance invariant mapping |
 
-A `data_quality_issues` table has been proposed as a follow-up to persist sync failure history across runs. Fields: `id`, `source_table`, `user_id`, `issue_type`, `issue_message`, `raw_payload` (JSONB), `created_at`, `resolved_at`. This would let operators query historical skipped rows without re-running the sync. Requires a Alembic migration. Not blocking current operation — the failures are already visible in the dashboard per-sync.
+### Execution Sequencing
 
-# Rebuild the API image and restart the container
-docker compose up -d --build api
-
-# Verify it's running and healthy
-docker compose ps
-
-# Tail logs to confirm startup (Ctrl+C to exit)
-docker compose logs -f api
-
-If you want to run tests inside the freshly built container before bringing it up:
-
-
-# Build first, run tests, then start
-docker compose build api && docker compose run --rm api python -m pytest tests/ -v && docker compose up -d api
-# To restart without rebuilding (e.g. after an .env change only):
-
-docker compose up -d api
-
-# to fix/add
-missing source tables and columns for CAP, launch, and placement
-
-payment source
-
-backlog data for all tabs as applicable
-
-apply correct filter after getting back log data since students not in IPBC should not appear in all current tabs
-
-build email independently
-build SMS message with WhatsApp link embeded at the bottom
-Calendar integartion, and other production use cases
-
-Pull previous communications from GHL before drafting message for student
-
-CSV download not working and the action buttons are active but need to be populated with draft message to be sent out to student or mentor as applicable which should be verified/edited as applicable and sent by operator. Right now, when clicked it simply logs the action.
+| Document | Contents |
+|---|---|
+| `execution/build_phases.md` | Governance-first phase architecture; 12-phase dependency map; validation checkpoints |
+| `execution/implementation_plan.md` | Service implementation order; governance blocker analysis; SHADOW→LIVE rollout model |
