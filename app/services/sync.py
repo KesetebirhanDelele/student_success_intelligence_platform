@@ -1,179 +1,338 @@
-"""SQL Server → PostgreSQL sync service (TriggerData + InterviewPrep)."""
+"""
+Governance-safe synchronization orchestration coordination layer.
+
+Public API: coordinate_sync_cycle(ctx) -> SyncCoordinationRecord
+
+Advisory contract only — never writes to SQL Server, never dispatches providers,
+never mutates FINALIZED artifacts, never executes ETL business logic.
+Returns SyncCoordinationRecord. Consuming services (scheduler, API handlers) act on
+the returned record; this module never acts directly.
+Attribution propagated immutably from input.
+
+Architecture preservation prohibitions (MUST NOT):
+  FAD-5   / ABG-1   — no write operations to SQL Server (read-only authoritative source)
+  INV-1   / FAD-1   — no mutation of FINALIZED warehouse records or snapshot_ai_narratives
+  INV-4   / AP-RT2  — no LIVE effects from replay/regeneration execution types
+  INV-5             — no governance record without correlation_id and attribution
+  INV-6   / FAD-1   — no overwrite of allows_update=false AI narratives
+  FAD-4             — no mutation of append-only audit/lineage tables
+  AP-RT9  / ABG-5   — no hardcoded Config V2 threshold fallbacks; UNKNOWN_V0 only
+  AP-RT10           — no duplicate LIVE execution of the same sync intent
+  AP-RT13           — no raw PII in observability records
+  AP-RT14           — no silent failure swallowing; every exception classified
+  AP-RT15           — no orphaned coordination cycles without completion log
+  ABG-2             — no platform enrichment overwriting SQL Server authoritative values
+  ABG-3             — no silent conflict resolution; conflicts preserved with both values
+  RSV-1   / ABG-4   — no replay-triggered LIVE mutations or downstream side-effects
+  AOWG-1            — no sync path produces warehouse schema INSERT/UPDATE/DELETE
+"""
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
-from typing import Any
+import time
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.database import fetch_interview_prep_from_mssql, fetch_students_from_mssql
-from app.models import StudentInterviewPrep, StudentTriggerData
+from app.services._sync_helpers import (
+    _make_blocked_record,
+    _make_coordination_record,
+    _make_maintenance_record,
+    _make_replay_record,
+    emit_sync_event_log,
+)
+from app.services._sync_types import (
+    CB_OPEN,
+    INTENT_DEFER_STALE,
+    INTENT_HOLD,
+    INTENT_INGEST_AUTHORITATIVE,
+    INTENT_RECONCILE_CONFLICTS,
+    K_SQL_MAX_SYNC_AGE_HOURS,
+    MODE_SHADOW,
+    OUTCOME_DEGRADED,
+    OUTCOME_SHADOW_ONLY,
+    REQUIRED_SYNC_ATTRIBUTION,
+    SCOPE_SHADOW_ONLY,
+    SCOPE_UNAVAILABLE,
+    TYPE_ORIGINAL,
+    UNKNOWN_V0,
+    _REPLAY_TYPES,
+    _SYNC_THRESHOLD_KEYS,
+    _VALID_EXECUTION_MODES,
+    _VALID_EXECUTION_TYPES,
+    SyncCoordinationRecord,
+    SyncOrchestrationContext,
+)
 
 logger = logging.getLogger(__name__)
 
-# Only UserID is truly required — HWsBehind/AvgEffRating default to 0 for students
-# who haven't submitted homework yet (common in early weeks of the class).
-_REQUIRED_FIELDS: tuple[str, ...] = ("UserID",)
+# In-memory idempotency store for sync deduplication (AP-RT10, spec/04 §4.1)
+_sync_idempotency_keys: set[str] = set()
 
 
-def _validate_row(row: dict[str, Any]) -> list[str]:
-    return [f for f in _REQUIRED_FIELDS if row.get(f) is None]
+# ── Pure helpers ──────────────────────────────────────────────────────────────
+
+def _attribution_complete(ctx: SyncOrchestrationContext) -> bool:
+    """Returns True only if all required sync attribution fields are populated."""
+    return all(getattr(ctx, f, None) for f in REQUIRED_SYNC_ATTRIBUTION)
 
 
-_DATE_COLS = ("IPBCStartDate", "StudentStartDate", "ClassStartDate")
+def _governance_precondition_gate(
+    ctx: SyncOrchestrationContext,
+    codes: List[str],
+) -> bool:
+    """
+    RULE 0: Governance precondition gate. All conditions must pass before evaluation
+    proceeds. Never bypassed (INV-5, spec/04 §4.1, spec/05 §4.4).
+    Returns True if all preconditions pass; False if coordination must stop.
+    """
+    ok = True
+    if ctx.execution_mode not in _VALID_EXECUTION_MODES:
+        codes.append("INVALID_EXECUTION_MODE")
+        ok = False
+    if ctx.execution_type not in _VALID_EXECUTION_TYPES:
+        codes.append("INVALID_EXECUTION_TYPE")
+        ok = False
+    if not ctx.config_version_id:
+        codes.append("CONFIG_VERSION_ID_MISSING")
+        ok = False
+    if not ctx.correlation_id:
+        codes.append("CORRELATION_ID_MISSING")
+        ok = False
+    if not ctx.origin_source:
+        codes.append("ORIGIN_SOURCE_MISSING")
+        ok = False
+    if not ctx.origin_authority:
+        codes.append("ORIGIN_AUTHORITY_MISSING")
+        ok = False
+    if not ctx.actor_identity:
+        codes.append("ACTOR_IDENTITY_MISSING")
+        ok = False
+    if ctx.idempotency_key and ctx.idempotency_key in _sync_idempotency_keys:
+        codes.append("IDEMPOTENCY_DUPLICATE_DETECTED")
+        ok = False
+    return ok
 
 
-def _coerce_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Convert SQL Server–specific types to Python/PostgreSQL-compatible ones."""
-    result = dict(row)
-    # SQL Server date → datetime (PostgreSQL DateTime needs datetime, not date)
-    for col in _DATE_COLS:
-        v = result.get(col)
-        if isinstance(v, date) and not isinstance(v, datetime):
-            result[col] = datetime.combine(v, datetime.min.time())
-    # LastSubmitted may be date/datetime — normalise to ISO string for VARCHAR storage
-    ls = result.get("LastSubmitted")
-    if ls is not None and not isinstance(ls, str):
-        result["LastSubmitted"] = ls.isoformat() if hasattr(ls, "isoformat") else str(ls)
-    # Convert bit/pyodbc booleans if needed
-    fee_paid = result.get("FeePaid")
-    if fee_paid is not None and not isinstance(fee_paid, bool):
-        result["FeePaid"] = bool(fee_paid)
-    # Default fields that are NULL for students without homework data yet
-    if result.get("HWsBehind") is None:
-        result["HWsBehind"] = 0
-    if result.get("AvgEffRating") is None:
-        result["AvgEffRating"] = 0.0
-    # SQL Server stores AttendancePercentage as a 0–1 fraction; normalize to 0–100 scale
-    att = result.get("AttendancePercentage")
-    if att is not None:
-        att_float = float(att)
-        result["AttendancePercentage"] = att_float * 100.0 if att_float <= 1.0 else att_float
-    # ClassSignupsID is INTEGER in SQL Server but VARCHAR(100) in the PG model
-    csi = result.get("ClassSignupsID")
-    if csi is not None and not isinstance(csi, str):
-        result["ClassSignupsID"] = str(csi)
-    # Ensure float columns from SQL Server money/numeric types are cast correctly
-    for float_col in ("Total_Credits", "ClassValue", "PaymentBalance", "ClassFeesPaid", "FeePaid"):
-        v = result.get(float_col)
-        if v is not None and float_col != "FeePaid":
-            result[float_col] = float(v)
+def _resolve_sync_thresholds(
+    rule_set: Dict[str, Any],
+    missing_keys: List[str],
+) -> Dict[str, Any]:
+    """
+    Resolve Config V2 Group A / K sync thresholds from rule_set.
+    Missing or UNKNOWN_V0 inputs resolve to UNKNOWN_V0 sentinel — never hardcoded (AP-RT9).
+    """
+    result: Dict[str, Any] = {}
+    for k in _SYNC_THRESHOLD_KEYS:
+        if k in rule_set and rule_set[k] != UNKNOWN_V0:
+            result[k] = rule_set[k]
+        else:
+            result[k] = UNKNOWN_V0
+            missing_keys.append(k)
     return result
 
 
-def _serialize_for_jsonb(row: dict[str, Any]) -> dict[str, Any]:
-    """Make a dict safe for JSONB storage (convert dates/datetimes to ISO strings)."""
-    out: dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, datetime):
-            out[k] = v.isoformat()
-        elif isinstance(v, date):
-            out[k] = v.isoformat()
-        elif isinstance(v, (str, int, float, bool)) or v is None:
-            out[k] = v
-        else:
-            out[k] = str(v)
-    return out
-
-
-async def sync_from_mssql(db: AsyncSession) -> dict:
+def _classify_sync_intent(
+    ctx: SyncOrchestrationContext,
+    threshold_bindings: Dict[str, Any],
+    sync_blocked: bool,
+) -> str:
     """
-    Upsert all rows from AI_ChatBot_TriggerData into the local PostgreSQL mirror.
-    Invalid rows are quarantined in failures[]; valid rows always commit.
+    Classify the synchronization intent based on provider state and Config V2 thresholds.
+    Never re-implements directive logic; classifies from observable state only.
     """
-    students, error = await fetch_students_from_mssql()
-    if not students:
-        logger.warning("No students from SQL Server — %s", error or "unknown reason")
-        return {
-            "status": "connection_error",
-            "rows_scanned": 0, "rows_successful": 0, "rows_failed": 0,
-            "added": 0, "updated": 0, "connected": False,
-            "error": error, "failures": [],
-        }
+    if sync_blocked:
+        return INTENT_HOLD
 
-    added = updated = 0
-    failures: list[dict] = []
+    # SQL Server unavailable → defer until available
+    if not ctx.sql_server_available:
+        return INTENT_DEFER_STALE
 
-    for raw_row in students:
-        missing = _validate_row(raw_row)
-        if missing:
-            user_id = raw_row.get("UserID")
-            reason = f"Missing required fields: {', '.join(missing)}"
-            failures.append({"user_id": user_id, "reason": reason})
-            logger.warning("Skipping UserID=%s — %s", user_id, reason)
-            continue
+    # Sync lag check — governed by Config V2, never hardcoded (AP-RT9)
+    lag_threshold = threshold_bindings.get(K_SQL_MAX_SYNC_AGE_HOURS)
+    if lag_threshold not in (UNKNOWN_V0, None):
+        try:
+            if ctx.sync_lag_hours > float(lag_threshold):
+                return INTENT_DEFER_STALE
+        except (ValueError, TypeError):
+            pass  # malformed threshold treated as UNKNOWN_V0
 
-        row = _coerce_row(raw_row)
-        existing = await db.get(StudentTriggerData, row["UserID"])
-        if existing:
-            for key, val in row.items():
-                if hasattr(existing, key):
-                    setattr(existing, key, val)
-            updated += 1
-        else:
-            db.add(StudentTriggerData(**{k: v for k, v in row.items() if hasattr(StudentTriggerData, k)}))
-            added += 1
+    # Conflicts present → govern reconciliation (spec/05 §4.6)
+    if ctx.rows_invalid > 0:
+        return INTENT_RECONCILE_CONFLICTS
 
-    try:
-        await db.commit()
-    except Exception as exc:
-        logger.error("Sync commit failed: %s", exc)
-        await db.rollback()
-        return {
-            "status": "connection_error",
-            "rows_scanned": len(students), "rows_successful": 0,
-            "rows_failed": len(students), "added": 0, "updated": 0,
-            "connected": True, "error": str(exc),
-            "failures": [{"user_id": None, "reason": f"Database commit failed: {exc}"}],
-        }
+    # Normal path — ingest authoritative data from SQL Server
+    return INTENT_INGEST_AUTHORITATIVE
 
-    rows_scanned = len(students)
-    rows_successful = added + updated
-    rows_failed = len(failures)
-    status = "partial_success" if failures else "success"
 
-    logger.info(
-        "MSSQL TriggerData sync: status=%s scanned=%d added=%d updated=%d failed=%d",
-        status, rows_scanned, added, updated, rows_failed,
+# ── Public coordination API ───────────────────────────────────────────────────
+
+def coordinate_sync_cycle(
+    ctx: SyncOrchestrationContext,
+) -> SyncCoordinationRecord:
+    """
+    Evaluate synchronization orchestration governance for one sync cycle.
+
+    Coordination contract: returns SyncCoordinationRecord only.
+    Never writes to SQL Server, never mutates FINALIZED artifacts,
+    never dispatches providers (FAD-5, INV-1, INV-6, FAD-1).
+    Attribution propagated immutably from input (INV-5).
+    Every path emits a structured observability record (AP-RT15).
+    """
+    t0 = time.monotonic()
+    codes: List[str] = []
+    rule_path: List[str] = []
+    degradation_flags: List[str] = []
+    rule_set = ctx.config_rule_set or {}
+
+    # ── RULE 0: Governance precondition gate (INV-5, spec/04 §4.1) ───────────
+    rule_path.append("RULE_0")
+    gate_codes: List[str] = []
+    if not _governance_precondition_gate(ctx, gate_codes):
+        codes.extend(gate_codes)
+        record = _make_blocked_record(
+            ctx, codes, rule_path, t0, {},
+            gate_codes[0] if gate_codes else "GOVERNANCE_PRECONDITION_FAILED",
+        )
+        emit_sync_event_log(record)
+        return record
+
+    # Register idempotency key after gate passes; only for original execution (AP-RT10)
+    if ctx.idempotency_key and ctx.execution_type == TYPE_ORIGINAL:
+        _sync_idempotency_keys.add(ctx.idempotency_key)
+
+    # ── RULE 1: MAINTENANCE mode suspension ───────────────────────────────────
+    rule_path.append("RULE_1")
+    if ctx.maintenance_mode_active:
+        codes.append("MAINTENANCE_MODE_ACTIVE")
+        record = _make_maintenance_record(ctx, codes, rule_path, t0)
+        emit_sync_event_log(record)
+        return record
+
+    # ── RULE 2: Replay/regeneration containment (INV-4, AP-RT2) ─────────────
+    rule_path.append("RULE_2")
+    is_replay = ctx.execution_type in _REPLAY_TYPES
+    if is_replay:
+        codes.append("REPLAY_MODE_ACTIVE")
+        if not ctx.source_artifact_id:
+            codes.append("REPLAY_SOURCE_ARTIFACT_MISSING")
+        record = _make_replay_record(ctx, codes, rule_path, t0, {})
+        emit_sync_event_log(record)
+        return record
+
+    # ── RULE 3: Config V2 threshold resolution (AP-RT9, spec/01 §12) ─────────
+    rule_path.append("RULE_3")
+    missing_threshold_keys: List[str] = []
+    threshold_bindings = _resolve_sync_thresholds(rule_set, missing_threshold_keys)
+    for k in missing_threshold_keys:
+        flag = f"CONFIG_THRESHOLD_MISSING_{k.upper()}"
+        codes.append(flag)
+        degradation_flags.append(flag)
+
+    # ── RULE 4: SHADOW mode detection ─────────────────────────────────────────
+    rule_path.append("RULE_4")
+    shadow_mode = ctx.execution_mode == MODE_SHADOW
+
+    # ── RULE 5: SQL Server authoritative boundary enforcement (FAD-5, ABG-1) ──
+    # SQL Server is always read-only. No write path exists. Inbound-only: SQL Server
+    # → platform mirror. This rule annotates the invariant on every coordination output.
+    rule_path.append("RULE_5")
+    codes.append("SQL_SERVER_READ_ONLY_BOUNDARY_ENFORCED")
+
+    # ── RULE 6: FINALIZED artifact immutability protection (INV-1, INV-6, FAD-1)
+    rule_path.append("RULE_6")
+    sync_blocked = False
+    sync_blocked_reason: Optional[str] = None
+
+    if ctx.finalized_artifacts_detected > 0:
+        # Sync coordination never modifies FINALIZED records; protective annotation
+        codes.append(f"FINALIZED_ARTIFACTS_PROTECTED_{ctx.finalized_artifacts_detected}")
+
+    # ── RULE 7: Provider availability and circuit breaker (spec/05 §11) ───────
+    rule_path.append("RULE_7")
+    if ctx.circuit_breaker_state == CB_OPEN:
+        sync_blocked = True
+        sync_blocked_reason = "CIRCUIT_BREAKER_OPEN"
+        codes.append("CIRCUIT_BREAKER_OPEN")
+        degradation_flags.append("CIRCUIT_BREAKER_OPEN")
+
+    if not ctx.sql_server_available:
+        if not sync_blocked:
+            sync_blocked = True
+            sync_blocked_reason = "SQL_SERVER_UNAVAILABLE"
+        codes.append("SQL_SERVER_UNAVAILABLE")
+        degradation_flags.append("SQL_SERVER_UNAVAILABLE")
+
+    # Sync lag degradation annotation (spec/05 §4.2 / staleness policy U-2)
+    lag_threshold = threshold_bindings.get(K_SQL_MAX_SYNC_AGE_HOURS)
+    if lag_threshold not in (UNKNOWN_V0, None):
+        try:
+            if ctx.sync_lag_hours > float(lag_threshold):
+                codes.append("SYNC_LAG_EXCEEDED")
+                degradation_flags.append("SYNC_LAG_EXCEEDED")
+        except (ValueError, TypeError):
+            pass
+
+    # ── RULE 8: Compliance hold (spec/05 §10.6) ────────────────────────────────
+    rule_path.append("RULE_8")
+    if ctx.compliance_hold_flag:
+        if not sync_blocked:
+            sync_blocked = True
+            sync_blocked_reason = "COMPLIANCE_HOLD_ACTIVE"
+        codes.append("COMPLIANCE_HOLD_SYNC_BLOCKED")
+        degradation_flags.append("COMPLIANCE_HOLD_SYNC_BLOCKED")
+
+    # ── RULE 9: Conflict preservation governance (spec/05 §4.6, ABG-3) ───────
+    # Conflicts between SQL Server authoritative values and platform-supplementary
+    # estimates must preserve both values — never silent overwrite (ABG-3).
+    rule_path.append("RULE_9")
+    conflict_preservation_required = ctx.rows_invalid > 0
+
+    # ── RULE 10: Sync intent classification ───────────────────────────────────
+    rule_path.append("RULE_10")
+    sync_intent = _classify_sync_intent(ctx, threshold_bindings, sync_blocked)
+    codes.append(f"INTENT_{sync_intent}")
+
+    # ── RULE 11: Governance scope assignment ──────────────────────────────────
+    # AUTHORIZED scope requires Phase-12 certification.
+    # Current deployment: both LIVE and SHADOW produce SHADOW_ONLY.
+    rule_path.append("RULE_11")
+    if sync_blocked:
+        governance_scope = SCOPE_UNAVAILABLE
+        outcome = OUTCOME_DEGRADED
+    elif ctx.execution_mode == MODE_SHADOW:
+        governance_scope = SCOPE_SHADOW_ONLY
+        outcome = OUTCOME_SHADOW_ONLY
+    else:
+        # LIVE mode: Phase-12 cert gate — maps to SHADOW_ONLY until cert is granted
+        codes.append("LIVE_SCOPE_SHADOW_ONLY_PHASE11")
+        governance_scope = SCOPE_SHADOW_ONLY
+        outcome = OUTCOME_SHADOW_ONLY
+
+    # ── RULE 12: Dispatch authorization ───────────────────────────────────────
+    rule_path.append("RULE_12")
+    # Dispatch authorized only when governance_scope is AUTHORIZED (Phase-12 cert).
+    # Under current SHADOW deployment, dispatch_authorized is unconditionally False.
+    dispatch_authorized = False    # Phase-12 cert required for True; see RULE 11
+
+    # ── RULE 13: Terminal output ───────────────────────────────────────────────
+    rule_path.append("RULE_13")
+    degraded = bool(degradation_flags)
+    degradation_cause = degradation_flags[0] if degraded else None
+
+    record = _make_coordination_record(
+        ctx=ctx,
+        codes=codes,
+        rule_path=rule_path,
+        t0=t0,
+        threshold_bindings=threshold_bindings,
+        governance_scope=governance_scope,
+        sync_intent=sync_intent,
+        dispatch_authorized=dispatch_authorized,
+        sync_blocked_reason=sync_blocked_reason,
+        conflict_preservation_required=conflict_preservation_required,
+        degraded=degraded,
+        degradation_flags=degradation_flags,
+        degradation_cause=degradation_cause,
+        outcome=outcome,
     )
-    return {
-        "status": status,
-        "rows_scanned": rows_scanned, "rows_successful": rows_successful,
-        "rows_failed": rows_failed, "added": added, "updated": updated,
-        "connected": True, "error": None, "failures": failures,
-    }
-
-
-async def sync_interview_prep(db: AsyncSession) -> dict:
-    """
-    Upsert all rows from AI_ChatBot_TriggerData_InterviewPrep as JSONB blobs.
-    Schema is unknown so entire row is stored raw.
-    """
-    rows, error = await fetch_interview_prep_from_mssql()
-    if not rows:
-        logger.warning("No InterviewPrep rows from SQL Server — %s", error or "unknown")
-        return {"status": "connection_error", "rows_scanned": 0, "upserted": 0, "error": error}
-
-    upserted = 0
-    for raw in rows:
-        user_id = raw.get("UserID")
-        if user_id is None:
-            continue
-        serialized = _serialize_for_jsonb(raw)
-        existing = await db.get(StudentInterviewPrep, user_id)
-        if existing:
-            existing.raw_data = serialized
-        else:
-            db.add(StudentInterviewPrep(user_id=user_id, raw_data=serialized))
-        upserted += 1
-
-    try:
-        await db.commit()
-    except Exception as exc:
-        logger.error("InterviewPrep sync commit failed: %s", exc)
-        await db.rollback()
-        return {"status": "error", "rows_scanned": len(rows), "upserted": 0, "error": str(exc)}
-
-    logger.info("InterviewPrep sync: upserted=%d", upserted)
-    return {"status": "success", "rows_scanned": len(rows), "upserted": upserted, "error": None}
+    emit_sync_event_log(record)
+    return record
