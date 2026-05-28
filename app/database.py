@@ -37,8 +37,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+# ── Migration-lite column additions (safe to run repeatedly) ──────────────────
+# Phase 4/5 trigger data columns
 _NEW_TRIGGER_COLS = [
-    # Phase 4
     ('AttendancePercentage', 'DOUBLE PRECISION'),
     ('CurrentSection', 'VARCHAR(200)'),
     ('IPBCStartDate', 'TIMESTAMP'),
@@ -49,7 +50,6 @@ _NEW_TRIGGER_COLS = [
     ('ClassValue', 'DOUBLE PRECISION'),
     ('FeePaid', 'BOOLEAN'),
     ('ClassFeesPaid', 'DOUBLE PRECISION'),
-    # Phase 5 — additional SQL Server source columns
     ('ClassName', 'VARCHAR(200)'),
     ('ClassSignupsID', 'VARCHAR(100)'),
     ('ActiveStatus', 'VARCHAR(50)'),
@@ -62,11 +62,82 @@ _NEW_TRIGGER_COLS = [
     ('LastSubmitted', 'VARCHAR(200)'),
 ]
 
+# Phase 48 — governance attribution columns per table
+# Format: (table_name, column_name, column_type, default_expression_or_None)
+_GOVERNANCE_COLS = [
+    # student_outreach_tracking (mutable operational state — only correlation_id + mode)
+    ("student_outreach_tracking", "correlation_id", "VARCHAR(36)", None),
+
+    # outreach_history (append-only lineage — full attribution)
+    ("outreach_history", "correlation_id", "VARCHAR(36)", None),
+    ("outreach_history", "causation_id", "VARCHAR(36)", None),
+    ("outreach_history", "config_version_id", "VARCHAR(100)", None),
+    ("outreach_history", "execution_type", "VARCHAR(30)", "'original'"),
+    ("outreach_history", "governance_scope", "VARCHAR(30)", "'SHADOW_ONLY'"),
+    ("outreach_history", "orchestration_cycle_id", "VARCHAR(36)", None),
+    ("outreach_history", "origin_source", "VARCHAR(100)", None),
+    ("outreach_history", "origin_authority", "VARCHAR(100)", None),
+    ("outreach_history", "is_replay", "BOOLEAN", "FALSE"),
+    ("outreach_history", "attribution_complete", "BOOLEAN", "FALSE"),
+    ("outreach_history", "idempotency_key", "VARCHAR(200)", None),
+    ("outreach_history", "replay_context", "JSONB", None),
+
+    # state_transition_log (append-only audit — full attribution)
+    ("state_transition_log", "correlation_id", "VARCHAR(36)", None),
+    ("state_transition_log", "causation_id", "VARCHAR(36)", None),
+    ("state_transition_log", "config_version_id", "VARCHAR(100)", None),
+    ("state_transition_log", "execution_mode", "VARCHAR(20)", "'SHADOW'"),
+    ("state_transition_log", "execution_type", "VARCHAR(30)", "'original'"),
+    ("state_transition_log", "governance_scope", "VARCHAR(30)", "'SHADOW_ONLY'"),
+    ("state_transition_log", "origin_source", "VARCHAR(100)", None),
+    ("state_transition_log", "origin_authority", "VARCHAR(100)", None),
+    ("state_transition_log", "is_replay", "BOOLEAN", "FALSE"),
+    ("state_transition_log", "attribution_complete", "BOOLEAN", "FALSE"),
+
+    # processed_events (idempotency store — attribution for lineage tracing)
+    ("processed_events", "correlation_id", "VARCHAR(36)", None),
+    ("processed_events", "execution_mode", "VARCHAR(20)", "'SHADOW'"),
+    ("processed_events", "execution_type", "VARCHAR(30)", "'original'"),
+    ("processed_events", "governance_scope", "VARCHAR(30)", "'SHADOW_ONLY'"),
+
+    # ai_insights (FINALIZED protection + full attribution)
+    ("ai_insights", "is_finalized", "BOOLEAN", "FALSE"),
+    ("ai_insights", "finalized_at", "TIMESTAMPTZ", None),
+    ("ai_insights", "correlation_id", "VARCHAR(36)", None),
+    ("ai_insights", "causation_id", "VARCHAR(36)", None),
+    ("ai_insights", "config_version_id", "VARCHAR(100)", None),
+    ("ai_insights", "execution_mode", "VARCHAR(20)", "'SHADOW'"),
+    ("ai_insights", "execution_type", "VARCHAR(30)", "'original'"),
+    ("ai_insights", "governance_scope", "VARCHAR(30)", "'SHADOW_ONLY'"),
+    ("ai_insights", "origin_source", "VARCHAR(100)", None),
+    ("ai_insights", "origin_authority", "VARCHAR(100)", None),
+    ("ai_insights", "is_replay", "BOOLEAN", "FALSE"),
+
+    # student_campaign_activity (append-only operational log — governance attribution)
+    ("student_campaign_activity", "correlation_id", "VARCHAR(36)", None),
+    ("student_campaign_activity", "causation_id", "VARCHAR(36)", None),
+    ("student_campaign_activity", "config_version_id", "VARCHAR(100)", None),
+    ("student_campaign_activity", "execution_type", "VARCHAR(30)", "'original'"),
+    ("student_campaign_activity", "governance_scope", "VARCHAR(30)", "'SHADOW_ONLY'"),
+    ("student_campaign_activity", "is_replay", "BOOLEAN", "FALSE"),
+    ("student_campaign_activity", "attribution_complete", "BOOLEAN", "FALSE"),
+
+    # student_quick_action_log (append-only operational log — governance attribution)
+    ("student_quick_action_log", "correlation_id", "VARCHAR(36)", None),
+    ("student_quick_action_log", "causation_id", "VARCHAR(36)", None),
+    ("student_quick_action_log", "config_version_id", "VARCHAR(100)", None),
+    ("student_quick_action_log", "execution_type", "VARCHAR(30)", "'original'"),
+    ("student_quick_action_log", "governance_scope", "VARCHAR(30)", "'SHADOW_ONLY'"),
+    ("student_quick_action_log", "is_replay", "BOOLEAN", "FALSE"),
+    ("student_quick_action_log", "attribution_complete", "BOOLEAN", "FALSE"),
+]
+
 
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Migration-lite: add new columns if absent (safe to run repeatedly)
+
+        # Phase 4/5 trigger data columns (safe repeated)
         for col_name, col_type in _NEW_TRIGGER_COLS:
             await conn.execute(
                 text(
@@ -74,23 +145,45 @@ async def init_db() -> None:
                     f'ADD COLUMN IF NOT EXISTS "{col_name}" {col_type}'
                 )
             )
-        # Expand student_notes with note_type and visibility
+
+        # student_notes legacy columns
         await conn.execute(text(
             "ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS note_type VARCHAR(50)"
         ))
         await conn.execute(text(
             "ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS visibility VARCHAR(50)"
         ))
-        # Warehouse-preparation indexes — safe to run on existing tables
-        # (CREATE TABLE IF NOT EXISTS only fires for new installs; these guards
-        #  cover existing deployments where the tables already exist.)
+
+        # Phase 48 — governance attribution columns (safe repeated; ADD IF NOT EXISTS)
+        for table, col, col_type, default in _GOVERNANCE_COLS:
+            if default is not None:
+                ddl = (
+                    f'ALTER TABLE {table} '
+                    f'ADD COLUMN IF NOT EXISTS {col} {col_type} NOT NULL DEFAULT {default}'
+                )
+            else:
+                ddl = f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}'
+            await conn.execute(text(ddl))
+
+        # Warehouse-preparation indexes (safe repeated)
         for idx_ddl in [
             "CREATE INDEX IF NOT EXISTS ix_stl_created_at ON state_transition_log(created_at)",
             "CREATE INDEX IF NOT EXISTS ix_sot_updated_at ON student_outreach_tracking(updated_at)",
             "CREATE INDEX IF NOT EXISTS ix_oh_checkpoint  ON outreach_history(checkpoint_type)",
             "CREATE INDEX IF NOT EXISTS ix_sca_created_at ON student_campaign_activity(created_at)",
+            # Phase 48 — governance queryability indexes
+            "CREATE INDEX IF NOT EXISTS ix_oh_is_replay ON outreach_history(is_replay)",
+            "CREATE INDEX IF NOT EXISTS ix_oh_correlation_id ON outreach_history(correlation_id)",
+            "CREATE INDEX IF NOT EXISTS ix_stl_is_replay ON state_transition_log(is_replay)",
+            "CREATE INDEX IF NOT EXISTS ix_stl_correlation_id ON state_transition_log(correlation_id)",
+            "CREATE INDEX IF NOT EXISTS ix_ai_is_finalized ON ai_insights(is_finalized)",
+            "CREATE INDEX IF NOT EXISTS ix_ai_is_replay ON ai_insights(is_replay)",
+            "CREATE INDEX IF NOT EXISTS ix_ai_correlation_id ON ai_insights(correlation_id)",
+            "CREATE INDEX IF NOT EXISTS ix_sca_is_replay ON student_campaign_activity(is_replay)",
+            "CREATE INDEX IF NOT EXISTS ix_sqal_is_replay ON student_quick_action_log(is_replay)",
         ]:
             await conn.execute(text(idx_ddl))
+
     logger.info("Database tables, column migrations, and indexes applied")
 
 
