@@ -12,7 +12,6 @@ from app.config import settings
 from app.database import AsyncSessionLocal, get_db
 from app.models import OutreachHistory, StudentOutreachTracking
 from app.schemas import APIResponse
-from app.services.alerts import gather_alerts
 from app.services.scheduler import get_last_run_at, get_scheduler_status
 
 logger = logging.getLogger(__name__)
@@ -53,14 +52,25 @@ async def dashboard_health() -> APIResponse:
 
 
 @router.get("/alerts")
-async def dashboard_alerts(db: AsyncSession = Depends(get_db)) -> APIResponse:
-    alerts = await gather_alerts(
-        db,
-        is_shadow=settings.is_shadow,
-        mssql_configured=settings.mssql_configured,
-        last_run=get_last_run_at(),
-    )
-    return APIResponse.ok({"alerts": alerts, "count": len(alerts)})
+async def dashboard_alerts() -> APIResponse:
+    """
+    Alert classification endpoint.
+    Degradation classification is governance-gated and requires a classification context
+    (classify_degradation_alert in app.services.alerts). Callers must supply an
+    AlertClassificationContext via the POST /alerts/classify endpoint once Phase-12
+    cert is issued. Until then this endpoint signals that alerts are classified but
+    live emission is not authorized.
+    """
+    return APIResponse.ok({
+        "alerts": [],
+        "count": 0,
+        "classification_status": "GOVERNANCE_GATED",
+        "note": (
+            "Alert classification requires an AlertClassificationContext. "
+            "Use classify_degradation_alert() from app.services.alerts directly. "
+            "Live alert emission gated on Phase-12 certification."
+        ),
+    })
 
 
 @router.get("/channel-performance")
