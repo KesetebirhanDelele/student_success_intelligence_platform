@@ -1,348 +1,371 @@
-"""Core outreach orchestration — full pipeline, shadow-safe."""
+"""
+Governance-safe outreach orchestration coordination layer.
+
+Public API: coordinate_orchestration_cycle(ctx) -> OutreachCoordinationRecord
+
+Advisory contract only — never dispatches providers, never executes business logic,
+never creates direct execution actions. Returns OutreachCoordinationRecord.
+Consuming services (scheduler, API handlers) act on the returned record;
+this module never acts directly. Attribution propagated immutably from input.
+
+Architecture preservation prohibitions (MUST NOT):
+  AP-RT1  / AP-DF1  / AP-RF1  — no direct provider API calls (GHL, AI, SMS, email, meeting)
+  AP-RT2  / AP-DF3  / AP-RF4  — no LIVE effects from replay/regeneration execution types
+  AP-RT3               — no evaluation without non-null ACTIVE config_version_id
+  AP-RT4  / AP-DF5  / AP-RF6  — no orchestration record without correlation_id propagated
+  AP-RT5               — no silent skip of student candidates; all skips produce structured log
+  AP-RT6               — no silent absorption of provider failures; all produce audit record
+  AP-RT7               — no automation SHADOW→LIVE transition (Governance Admin required)
+  AP-RT9  / AP-DF6  / AP-RF3  — no hardcoded Config V2 threshold fallbacks; UNKNOWN_V0 only
+  AP-RT10 / AP-DF14 / AP-RF14 — no duplicate LIVE execution of the same orchestration intent
+  AP-RT11 / AP-DF9  / AP-RF10 — AI advisory cannot authorize orchestration intents alone
+  AP-RT12 / AP-DF8  / AP-RF9  — no re-implementation of directive logic in coordination layer
+  AP-RT13 / AP-DF13 / AP-RF13 — no raw PII in observability records; opaque student ID only
+  AP-RT14 / AP-DF11 / AP-RF12 — no silent failure swallowing; every exception classified
+  AP-RT15 / AP-DF15 / AP-RF15 — no orphaned coordination cycles without completion log
+  AP-DF2               — no GHL API payload or SMS/email body construction
+  AP-DF7  / AP-RF7  — no direct state mutation or contact_attempt increment
+  AP-AI5               — no live AI inference in replay context
+  FAD-1                — no mutation of warehouse.snapshot_ai_narratives
+"""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+import time
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config import settings
-from app.models import (
-    OutreachHistory,
-    ProcessedEvents,
-    StateTransitionLog,
-    StudentOutreachTracking,
-    StudentTriggerData,
+from app.services._outreach_helpers import (
+    _make_blocked_record,
+    _make_coordination_record,
+    _make_maintenance_record,
+    _make_replay_record,
+    emit_orchestration_event_log,
 )
-from app.services.channel_selector import select_channel
-from app.services.decision_engine import decide
-from app.services.eligibility import check_eligibility
-from app.services.integrations.email import build_email_payload, send_email
-from app.services.integrations.ghl import build_ghl_payload, trigger_ghl_workflow
-from app.services.integrations.sms import build_sms_payload, send_sms
-from app.services.integrations.synthflow import build_call_payload, place_call
-from app.services.sync import sync_from_mssql
-from app.state_machine import StateViolationError, can_transition, validate_transition
+from app.services._outreach_types import (
+    AI_TIER_IN_FLIGHT,
+    CB_OPEN,
+    INTENT_DEFER_PENDING_AI,
+    INTENT_ESCALATE,
+    INTENT_HOLD,
+    INTENT_INITIATE_OUTREACH,
+    INTENT_RETRY_OUTREACH,
+    K_OUTREACH_MAX_RETRY_ATTEMPTS,
+    K_OUTREACH_RETRY_WINDOW_DAYS,
+    K_AI_INSIGHT_TTL_HOURS,
+    K_SQL_MAX_SYNC_AGE_HOURS,
+    K_ORCHESTRATION_CONCURRENCY_LIMIT,
+    MODE_SHADOW,
+    OUTCOME_DEGRADED,
+    OUTCOME_SHADOW_ONLY,
+    OUTCOME_SUCCESS,
+    REQUIRED_OUTREACH_ATTRIBUTION,
+    SCOPE_SHADOW_ONLY,
+    SCOPE_UNAVAILABLE,
+    STATE_CONTACTED,
+    STATE_NO_RESPONSE,
+    TYPE_ORIGINAL,
+    UNKNOWN_V0,
+    _INITIAL_STATES,
+    _ORCHESTRATION_THRESHOLD_KEYS,
+    _REPLAY_TYPES,
+    _STALE_AI_TIERS,
+    _TERMINAL_STATES,
+    _VALID_EXECUTION_MODES,
+    _VALID_EXECUTION_TYPES,
+    OutreachCoordinationRecord,
+    OutreachOrchestrationContext,
+)
 
 logger = logging.getLogger(__name__)
 
-CONCURRENCY_LIMIT = 50
+# In-memory idempotency store for orchestration deduplication (AP-RT10, spec/04 §4.1)
+_orchestration_idempotency_keys: set[str] = set()
 
 
-async def run_outreach_batch(db: AsyncSession, checkpoint_type: str) -> dict:
-    """Full outreach cycle for one checkpoint. Returns summary counts."""
-    logger.info("Batch start | mode=%s checkpoint=%s", settings.EXECUTION_MODE, checkpoint_type)
+# ── Pure helpers ──────────────────────────────────────────────────────────────
 
-    # Best-effort SQL Server sync before processing
-    await sync_from_mssql(db)
+def _attribution_complete(ctx: OutreachOrchestrationContext) -> bool:
+    """Returns True only if all required orchestration attribution fields are populated."""
+    return all(getattr(ctx, f, None) for f in REQUIRED_OUTREACH_ATTRIBUTION)
 
-    result = await db.execute(select(StudentTriggerData))
-    students = result.scalars().all()
 
-    triggered = skipped = retried = errors = 0
-    processed = 0
+def _governance_precondition_gate(
+    ctx: OutreachOrchestrationContext,
+    codes: List[str],
+) -> bool:
+    """
+    RULE 0: Governance precondition gate. All conditions must pass before evaluation
+    proceeds. Never bypassed (AP-RT3, AP-RT4, AP-DF5, AP-RT15).
+    Returns True if all preconditions pass; False if coordination must stop.
+    """
+    ok = True
+    if ctx.execution_mode not in _VALID_EXECUTION_MODES:
+        codes.append("INVALID_EXECUTION_MODE")
+        ok = False
+    if ctx.execution_type not in _VALID_EXECUTION_TYPES:
+        codes.append("INVALID_EXECUTION_TYPE")
+        ok = False
+    if not ctx.config_version_id:
+        codes.append("CONFIG_VERSION_ID_MISSING")
+        ok = False
+    if not ctx.correlation_id:
+        codes.append("CORRELATION_ID_MISSING")
+        ok = False
+    if not ctx.origin_source:
+        codes.append("ORIGIN_SOURCE_MISSING")
+        ok = False
+    if not ctx.origin_authority:
+        codes.append("ORIGIN_AUTHORITY_MISSING")
+        ok = False
+    if not ctx.actor_identity:
+        codes.append("ACTOR_IDENTITY_MISSING")
+        ok = False
+    if ctx.idempotency_key and ctx.idempotency_key in _orchestration_idempotency_keys:
+        codes.append("IDEMPOTENCY_DUPLICATE_DETECTED")
+        ok = False
+    return ok
 
-    for student in students:
-        if processed >= CONCURRENCY_LIMIT:
-            break
 
-        s = {c.key: getattr(student, c.key) for c in student.__table__.columns}
-        path = s.get("PathName", "")
+def _resolve_orchestration_thresholds(
+    rule_set: Dict[str, Any],
+    missing_keys: List[str],
+) -> Dict[str, Any]:
+    """
+    Resolve Config V2 Group A / H / K thresholds from rule_set.
+    Missing or UNKNOWN_V0 inputs resolve to UNKNOWN_V0 sentinel — never hardcoded (AP-RT9).
+    """
+    result: Dict[str, Any] = {}
+    for k in _ORCHESTRATION_THRESHOLD_KEYS:
+        if k in rule_set and rule_set[k] != UNKNOWN_V0:
+            result[k] = rule_set[k]
+        else:
+            result[k] = UNKNOWN_V0
+            missing_keys.append(k)
+    return result
 
-        if path != checkpoint_type:
-            skipped += 1
-            continue
 
-        eligibility = check_eligibility(s)
+def _classify_intent(
+    ctx: OutreachOrchestrationContext,
+    threshold_bindings: Dict[str, Any],
+    ai_tier: Optional[str],
+) -> str:
+    """
+    Classify the orchestration intent based on student context and Config V2 thresholds.
+    AI advisory informs but does not authorize — rule-based logic governs (AP-RT11, AP-DF9).
+    Never re-implements directive logic; classifies based on observable state only (AP-RT12).
+    """
+    # Terminal/final lifecycle states → no new orchestration
+    if ctx.outreach_state in _TERMINAL_STATES:
+        return INTENT_HOLD
 
-        tracking_row = await db.execute(
-            select(StudentOutreachTracking).where(
-                StudentOutreachTracking.user_id == s["UserID"],
-                StudentOutreachTracking.checkpoint_type == checkpoint_type,
-            )
-        )
-        tracking_obj = tracking_row.scalar_one_or_none()
-        tracking = (
-            {
-                "state": tracking_obj.state,
-                "current_attempt": tracking_obj.current_attempt,
-                "next_retry_at": tracking_obj.next_retry_at,
-            }
-            if tracking_obj
-            else None
-        )
+    # AI IN_FLIGHT — defer evaluation until AI advisory is available (advisory-only, AP-RT11)
+    if ai_tier == AI_TIER_IN_FLIGHT:
+        return INTENT_DEFER_PENDING_AI
 
-        decision = decide(s, tracking, eligibility)
-
+    # Retry exhaustion check — governed by Config V2, never hardcoded (AP-RT9, AP-RF3)
+    max_attempts = threshold_bindings.get(K_OUTREACH_MAX_RETRY_ATTEMPTS)
+    if max_attempts not in (UNKNOWN_V0, None):
         try:
-            if decision == "TRIGGER_OUTREACH":
-                await _execute_outreach(db, s, checkpoint_type, tracking_obj, is_retry=False)
-                triggered += 1
-            elif decision == "RETRY_OUTREACH":
-                await _execute_outreach(db, s, checkpoint_type, tracking_obj, is_retry=True)
-                retried += 1
-            elif decision == "ESCALATE":
-                await _escalate(db, s, checkpoint_type, tracking_obj)
-                triggered += 1
-            elif decision == "CLOSE":
-                await _close_case(db, s, checkpoint_type, tracking_obj, "NO_CONTACT_INFO")
-                skipped += 1
-            else:
-                skipped += 1
-        except Exception as exc:
-            logger.error("Error processing student %s: %s", s["UserID"], exc, exc_info=True)
-            errors += 1
+            if ctx.contact_attempt_count >= int(max_attempts):
+                return INTENT_ESCALATE
+        except (ValueError, TypeError):
+            pass  # malformed threshold treated as UNKNOWN_V0 — safe to continue
 
-        processed += 1
+    # NO_RESPONSE → retry on next window (cadence governed by retry_window_days)
+    if ctx.outreach_state == STATE_NO_RESPONSE:
+        return INTENT_RETRY_OUTREACH
 
-    summary = {
-        "checkpoint_type": checkpoint_type,
-        "triggered": triggered,
-        "skipped": skipped,
-        "retried": retried,
-        "errors": errors,
-    }
-    logger.info("Batch complete | %s", summary)
-    return summary
+    # New / initial student → initiate outreach
+    if ctx.outreach_state in _INITIAL_STATES:
+        return INTENT_INITIATE_OUTREACH
+
+    # CONTACTED → hold pending response or GHL webhook (state management service owns this)
+    if ctx.outreach_state == STATE_CONTACTED:
+        return INTENT_HOLD
+
+    return INTENT_HOLD
 
 
-async def _execute_outreach(
-    db: AsyncSession,
-    student: dict,
-    checkpoint_type: str,
-    tracking_obj: Optional[StudentOutreachTracking],
-    is_retry: bool,
-) -> None:
-    user_id = student["UserID"]
+# ── Public coordination API ───────────────────────────────────────────────────
 
-    if tracking_obj is None:
-        tracking_obj = StudentOutreachTracking(
-            user_id=user_id,
-            checkpoint_type=checkpoint_type,
-            state="QUEUED",
-            current_attempt=0,
+def coordinate_orchestration_cycle(
+    ctx: OutreachOrchestrationContext,
+) -> OutreachCoordinationRecord:
+    """
+    Evaluate outreach orchestration governance for one student candidate.
+
+    Coordination contract: returns OutreachCoordinationRecord only.
+    Never dispatches, never mutates state, never calls providers (AP-RT1, AP-DF1, AP-RF1).
+    Attribution propagated immutably from input (AP-RT4, AP-DF5, AP-RF6).
+    Every path emits a structured observability record (AP-RT15, AP-DF15, AP-RF15).
+    """
+    t0 = time.monotonic()
+    codes: List[str] = []
+    rule_path: List[str] = []
+    degradation_flags: List[str] = []
+    rule_set = ctx.config_rule_set or {}
+
+    # ── RULE 0: Governance precondition gate (AP-RT3, AP-RT4, AP-DF5) ─────────
+    rule_path.append("RULE_0")
+    gate_codes: List[str] = []
+    if not _governance_precondition_gate(ctx, gate_codes):
+        codes.extend(gate_codes)
+        record = _make_blocked_record(
+            ctx, codes, rule_path, t0, {},
+            gate_codes[0] if gate_codes else "GOVERNANCE_PRECONDITION_FAILED",
         )
-        db.add(tracking_obj)
-        await db.flush()
-        await _log_transition(db, tracking_obj.id, user_id, "ELIGIBLE", "QUEUED", "batch_trigger")
+        emit_orchestration_event_log(record, ctx.student_id_opaque)
+        return record
+
+    # Register idempotency key after gate passes; only for original execution (AP-RT10)
+    if ctx.idempotency_key and ctx.execution_type == TYPE_ORIGINAL:
+        _orchestration_idempotency_keys.add(ctx.idempotency_key)
+
+    # ── RULE 1: MAINTENANCE mode suspension ───────────────────────────────────
+    rule_path.append("RULE_1")
+    if ctx.maintenance_mode_active:
+        codes.append("MAINTENANCE_MODE_ACTIVE")
+        record = _make_maintenance_record(ctx, codes, rule_path, t0)
+        emit_orchestration_event_log(record, ctx.student_id_opaque)
+        return record
+
+    # ── RULE 2: Replay/regeneration containment (AP-RT2, AP-DF3, AP-RF4) ─────
+    rule_path.append("RULE_2")
+    is_replay = ctx.execution_type in _REPLAY_TYPES
+    if is_replay:
+        codes.append("REPLAY_MODE_ACTIVE")
+        if not ctx.source_artifact_id:
+            codes.append("REPLAY_SOURCE_ARTIFACT_MISSING")
+        record = _make_replay_record(ctx, codes, rule_path, t0, {})
+        emit_orchestration_event_log(record, ctx.student_id_opaque)
+        return record
+
+    # ── RULE 3: Config V2 threshold resolution (AP-RT9, AP-DF6, AP-RF3) ──────
+    rule_path.append("RULE_3")
+    missing_threshold_keys: List[str] = []
+    threshold_bindings = _resolve_orchestration_thresholds(rule_set, missing_threshold_keys)
+    for k in missing_threshold_keys:
+        flag = f"CONFIG_THRESHOLD_MISSING_{k.upper()}"
+        codes.append(flag)
+        degradation_flags.append(flag)
+
+    # ── RULE 4: SHADOW mode containment (AP-RT7) ──────────────────────────────
+    # SHADOW mode runs full evaluation but produces SHADOW_ONLY governance scope.
+    # Phase-12 certification is required before AUTHORIZED scope can be emitted (AP-RT7).
+    rule_path.append("RULE_4")
+    shadow_mode = ctx.execution_mode == MODE_SHADOW
+
+    # ── RULE 5: Provider sync validation (system_loop.md §5.2, §10.7) ─────────
+    rule_path.append("RULE_5")
+    stale_sql = False
+    sync_threshold = threshold_bindings.get(K_SQL_MAX_SYNC_AGE_HOURS)
+    if sync_threshold not in (UNKNOWN_V0, None):
+        try:
+            if ctx.sync_lag_hours > float(sync_threshold):
+                stale_sql = True
+                codes.append("STALE_SQL_SERVER_DATA")
+                degradation_flags.append("STALE_SQL_SERVER_DATA")
+        except (ValueError, TypeError):
+            pass  # malformed threshold treated as UNKNOWN_V0
+
+    # ── RULE 6: Provider circuit breaker (AP-RT6, AP-GF9) ────────────────────
+    rule_path.append("RULE_6")
+    circuit_open = ctx.circuit_breaker_state == CB_OPEN
+    dispatch_blocked = False
+    dispatch_blocked_reason: Optional[str] = None
+    escalation_candidate = False
+    escalation_candidacy_reason: Optional[str] = None
+
+    if circuit_open:
+        dispatch_blocked = True
+        dispatch_blocked_reason = "CIRCUIT_BREAKER_OPEN"
+        codes.append("CIRCUIT_BREAKER_OPEN")
+        degradation_flags.append("CIRCUIT_BREAKER_OPEN")
+        escalation_candidate = True
+        escalation_candidacy_reason = "PROVIDER_FAILURE_ESCALATION_CANDIDACY"
+
+    # ── RULE 7: Compliance hold per student (system_loop.md §10.2) ────────────
+    rule_path.append("RULE_7")
+    compliance_hold_active = ctx.compliance_hold_flag
+    if compliance_hold_active:
+        if not dispatch_blocked:
+            dispatch_blocked = True
+            dispatch_blocked_reason = "COMPLIANCE_HOLD_ACTIVE"
+        codes.append("COMPLIANCE_HOLD_DISPATCH_BLOCKED")
+        degradation_flags.append("COMPLIANCE_HOLD_DISPATCH_BLOCKED")
+
+    # ── RULE 8: AI governance tier coordination (AP-RT11, AP-AI11) ───────────
+    # Stale / unavailable AI restricts escalation authority only — never blocks evaluation.
+    # AI advisory never independently drives orchestration decisions (AP-RT11, AP-DF9).
+    rule_path.append("RULE_8")
+    ai_tier = ctx.ai_governance_tier
+    ai_escalation_authority = ai_tier not in _STALE_AI_TIERS
+    if ai_tier in _STALE_AI_TIERS:
+        codes.append(f"AI_TIER_{ai_tier}_ESCALATION_RESTRICTED")
+
+    # ── RULE 9: Orchestration intent classification (AP-RT12, AP-DF8) ────────
+    # Intent derived from observable state + Config V2 thresholds.
+    # AI advisory informs but does not authorize (AP-RT11).
+    rule_path.append("RULE_9")
+    intent_type = _classify_intent(ctx, threshold_bindings, ai_tier)
+    codes.append(f"INTENT_{intent_type}")
+
+    # Retry-exhausted escalation candidacy (escalation_rules.md §4.5)
+    if intent_type == INTENT_ESCALATE and not escalation_candidate:
+        escalation_candidate = True
+        escalation_candidacy_reason = "RETRY_EXHAUSTED_ESCALATION_CANDIDACY"
+
+    # ── RULE 10: Governance scope assignment (AP-RT7) ─────────────────────────
+    # AUTHORIZED scope requires Phase-12 certification (AP-RT7).
+    # Current deployment: SHADOW phase; both LIVE and SHADOW produce SHADOW_ONLY.
+    # UNAVAILABLE scope assigned when dispatch is explicitly blocked.
+    rule_path.append("RULE_10")
+    if dispatch_blocked:
+        governance_scope = SCOPE_UNAVAILABLE
+        outcome = OUTCOME_DEGRADED
+    elif ctx.execution_mode == MODE_SHADOW:
+        governance_scope = SCOPE_SHADOW_ONLY
+        outcome = OUTCOME_SHADOW_ONLY
     else:
-        old_state = tracking_obj.state
-        target = "RETRY" if is_retry else "QUEUED"
-        if not _apply_transition(tracking_obj, target, "retry_trigger" if is_retry else "batch_trigger"):
-            return
-        await _log_transition(db, tracking_obj.id, user_id, old_state, tracking_obj.state, "retry_trigger" if is_retry else "batch_trigger")
+        # LIVE mode: Phase-12 cert gate — maps to SHADOW_ONLY until cert is granted (AP-RT7)
+        codes.append("LIVE_SCOPE_SHADOW_ONLY_PHASE11")
+        governance_scope = SCOPE_SHADOW_ONLY
+        outcome = OUTCOME_SHADOW_ONLY
 
-    attempt = tracking_obj.current_attempt + 1
-    channel = select_channel(student, attempt)
+    # ── RULE 11: Dispatch authorization ───────────────────────────────────────
+    rule_path.append("RULE_11")
+    # Dispatch is authorized only when governance_scope would be AUTHORIZED (Phase-12 cert).
+    # Under current SHADOW deployment, dispatch_authorized is unconditionally False.
+    dispatch_authorized = False   # Phase-12 cert required for True; see RULE 10
+    if not dispatch_blocked and governance_scope != SCOPE_UNAVAILABLE:
+        # Governance scope controls authorization; shadow = not authorized
+        pass  # dispatch_authorized remains False until Phase-12 cert grants AUTHORIZED scope
 
-    if channel is None:
-        await _close_case(db, student, checkpoint_type, tracking_obj, "NO_CHANNEL")
-        return
+    # ── RULE 12: Terminal output ───────────────────────────────────────────────
+    rule_path.append("RULE_12")
+    degraded = bool(degradation_flags)
+    degradation_cause = degradation_flags[0] if degraded else None
 
-    payload, action_label = await _build_payload(student, channel, attempt)
-    response = await _dispatch(channel, payload)
-
-    old_state = tracking_obj.state
-    if not _apply_transition(tracking_obj, "CONTACTED", action_label):
-        return
-
-    tracking_obj.current_attempt = attempt
-    tracking_obj.last_contact_at = datetime.now(tz=timezone.utc)
-    tracking_obj.next_retry_at = datetime.now(tz=timezone.utc) + timedelta(hours=settings.RETRY_INTERVAL_HOURS)
-
-    await db.flush()
-    await _log_transition(db, tracking_obj.id, user_id, old_state, "CONTACTED", action_label)
-
-    db.add(OutreachHistory(
-        tracking_id=tracking_obj.id,
-        user_id=user_id,
-        checkpoint_type=checkpoint_type,
-        attempt_number=attempt,
-        channel=channel,
-        action=action_label,
-        execution_mode=settings.EXECUTION_MODE,
-        simulated_status="NOT_SENT" if settings.is_shadow else "SENT",
-        payload=payload,
-        response_payload=response,
-        decision="RETRY_OUTREACH" if is_retry else "TRIGGER_OUTREACH",
-        state_before=old_state,
-        state_after="CONTACTED",
-    ))
-    await db.commit()
-
-
-async def _build_payload(student: dict, channel: str, attempt: int) -> tuple[dict, str]:
-    if channel == "CALL":
-        payload = {
-            "synthflow": build_call_payload(student, attempt),
-            "ghl": build_ghl_payload(student, channel, attempt),
-        }
-        action = "CALL_SIMULATED" if settings.is_shadow else "CALL_EXECUTED"
-    elif channel == "SMS":
-        payload = build_sms_payload(student, attempt)
-        action = "SMS_SIMULATED" if settings.is_shadow else "SMS_SENT"
-    else:
-        payload = build_email_payload(student, attempt)
-        action = "EMAIL_SIMULATED" if settings.is_shadow else "EMAIL_SENT"
-    return payload, action
-
-
-async def _dispatch(channel: str, payload: dict) -> dict:
-    if channel == "CALL":
-        call_resp = await place_call(payload.get("synthflow", {}))
-        ghl_resp = await trigger_ghl_workflow(payload.get("ghl", {}))
-        return {"call": call_resp, "ghl": ghl_resp}
-    if channel == "SMS":
-        return await send_sms(payload)
-    return await send_email(payload)
-
-
-async def _escalate(
-    db: AsyncSession,
-    student: dict,
-    checkpoint_type: str,
-    tracking_obj: Optional[StudentOutreachTracking],
-) -> None:
-    if tracking_obj is None:
-        return
-    user_id = student["UserID"]
-    old_state = tracking_obj.state
-    if not _apply_transition(tracking_obj, "INTERVENTION_REQUIRED", "escalate"):
-        return
-    await _log_transition(db, tracking_obj.id, user_id, old_state, "INTERVENTION_REQUIRED", "escalate")
-    db.add(OutreachHistory(
-        tracking_id=tracking_obj.id,
-        user_id=user_id,
-        checkpoint_type=checkpoint_type,
-        attempt_number=tracking_obj.current_attempt,
-        action="ESCALATED",
-        execution_mode=settings.EXECUTION_MODE,
-        simulated_status="N/A",
-        decision="ESCALATE",
-        state_before=old_state,
-        state_after="INTERVENTION_REQUIRED",
-    ))
-    await db.commit()
-
-
-async def _close_case(
-    db: AsyncSession,
-    student: dict,
-    checkpoint_type: str,
-    tracking_obj: Optional[StudentOutreachTracking],
-    reason: str,
-) -> None:
-    if tracking_obj is None:
-        return
-    user_id = student["UserID"]
-    old_state = tracking_obj.state
-    if not _apply_transition(tracking_obj, "CLOSED", f"close:{reason}"):
-        return
-    await _log_transition(db, tracking_obj.id, user_id, old_state, "CLOSED", f"close:{reason}")
-    db.add(OutreachHistory(
-        tracking_id=tracking_obj.id,
-        user_id=user_id,
-        checkpoint_type=checkpoint_type,
-        attempt_number=tracking_obj.current_attempt,
-        action="CASE_CLOSED",
-        execution_mode=settings.EXECUTION_MODE,
-        simulated_status="N/A",
-        decision="CLOSE",
-        state_before=old_state,
-        state_after="CLOSED",
-    ))
-    await db.commit()
-
-
-async def execute_manual_action(
-    db: AsyncSession,
-    user_id: int,
-    action_type: str,
-    notes: Optional[str],
-) -> dict:
-    tracking_row = await db.execute(
-        select(StudentOutreachTracking).where(StudentOutreachTracking.user_id == user_id)
+    record = _make_coordination_record(
+        ctx=ctx,
+        codes=codes,
+        rule_path=rule_path,
+        t0=t0,
+        threshold_bindings=threshold_bindings,
+        governance_scope=governance_scope,
+        intent_type=intent_type,
+        dispatch_authorized=dispatch_authorized,
+        dispatch_blocked_reason=dispatch_blocked_reason,
+        degraded=degraded,
+        degradation_flags=degradation_flags,
+        degradation_cause=degradation_cause,
+        escalation_candidate=escalation_candidate,
+        escalation_candidacy_reason=escalation_candidacy_reason,
+        compliance_hold_active=compliance_hold_active,
+        ai_governance_tier=ai_tier,
+        ai_escalation_authority=ai_escalation_authority,
+        stale_sql_server_data=stale_sql,
+        outcome=outcome,
     )
-    tracking_obj = tracking_row.scalar_one_or_none()
-    if tracking_obj is None:
-        return {"status": "not_found"}
-
-    action_map = {
-        "CLOSE_CASE": "CLOSED",
-        "BOOK_MEETING": "RESOLVED",
-        "FORCE_RETRY": "RETRY",
-        "ESCALATE": "INTERVENTION_REQUIRED",
-    }
-    to_state = action_map.get(action_type)
-    if to_state is None:
-        return {"status": "invalid_action"}
-
-    if action_type == "FORCE_RETRY" and tracking_obj.current_attempt >= settings.MAX_ATTEMPTS:
-        return {
-            "status": "max_attempts_reached",
-            "current_attempt": tracking_obj.current_attempt,
-            "max": settings.MAX_ATTEMPTS,
-        }
-
-    old_state = tracking_obj.state
-    if not _apply_transition(tracking_obj, to_state, f"manual:{action_type}"):
-        return {"status": "invalid_transition", "from": old_state, "to": to_state}
-
-    await _log_transition(
-        db, tracking_obj.id, user_id, old_state, to_state,
-        f"manual:{action_type}", actor="manual"
-    )
-
-    entry = OutreachHistory(
-        tracking_id=tracking_obj.id,
-        user_id=user_id,
-        checkpoint_type=tracking_obj.checkpoint_type,
-        attempt_number=tracking_obj.current_attempt,
-        action=action_type,
-        execution_mode=settings.EXECUTION_MODE,
-        simulated_status="N/A",
-        decision=action_type,
-        state_before=old_state,
-        state_after=to_state,
-    )
-    if notes:
-        entry.response_payload = {"notes": notes}
-    db.add(entry)
-    await db.commit()
-    return {"status": "ok", "from_state": old_state, "to_state": to_state}
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _apply_transition(tracking_obj: StudentOutreachTracking, to_state: str, trigger: str) -> bool:
-    try:
-        validate_transition(tracking_obj.state, to_state, trigger)
-        tracking_obj.state = to_state
-        return True
-    except StateViolationError as exc:
-        logger.warning("State violation: %s", exc)
-        return False
-
-
-async def _log_transition(
-    db: AsyncSession,
-    tracking_id: int,
-    user_id: int,
-    from_state: str,
-    to_state: str,
-    trigger: str,
-    actor: str = "system",
-    meta: Optional[dict] = None,
-) -> None:
-    db.add(StateTransitionLog(
-        tracking_id=tracking_id,
-        user_id=user_id,
-        from_state=from_state,
-        to_state=to_state,
-        trigger=trigger,
-        actor=actor,
-        meta=meta,
-    ))
-    await db.flush()
+    emit_orchestration_event_log(record, ctx.student_id_opaque)
+    return record
