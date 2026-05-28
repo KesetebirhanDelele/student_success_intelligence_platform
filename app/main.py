@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
+from app.middleware.correlation import AttributionMiddleware
 from app.routers import actions, health, metrics, outreach, students, webhook
 from app.routers import ai_insights as ai_insights_router
 from app.routers import batch as batch_router
@@ -34,6 +35,8 @@ app = FastAPI(
     description="Production-grade automated student outreach decision engine",
     version="2.0.0",
 )
+
+app.add_middleware(AttributionMiddleware)
 
 
 @app.on_event("startup")
