@@ -12,14 +12,15 @@ class APIResponse(BaseModel):
     status: str
     data: Optional[Any] = None
     error: Optional[dict] = None
+    meta: Optional[dict] = None
 
     @classmethod
-    def ok(cls, data: Any = None) -> "APIResponse":
-        return cls(status="success", data=data, error=None)
+    def ok(cls, data: Any = None, meta: Optional[dict] = None) -> "APIResponse":
+        return cls(status="success", data=data, error=None, meta=meta)
 
     @classmethod
-    def fail(cls, code: str, message: str) -> "APIResponse":
-        return cls(status="error", data=None, error={"code": code, "message": message})
+    def fail(cls, code: str, message: str, meta: Optional[dict] = None) -> "APIResponse":
+        return cls(status="error", data=None, error={"code": code, "message": message}, meta=meta)
 
 
 class TriggerOutreachRequest(BaseModel):

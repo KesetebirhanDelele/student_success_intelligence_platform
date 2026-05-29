@@ -1,4 +1,15 @@
-from fastapi import APIRouter, Depends
+"""
+Student detail endpoints — governance-aware profile, history, and transitions.
+
+Governance alignment:
+  CID-1  — correlation_id propagated into response meta
+  IML-1  — attribution fields surfaced in history and transition items
+  RSV-1  — is_replay exposed in history items for LIVE/REPLAY distinction
+  AP-RT13 — PII excluded from governance meta (not from profile data)
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +18,14 @@ from app.database import get_db
 from app.models import (
     OutreachHistory, StateTransitionLog, StudentInterviewPrep,
     StudentOutreachTracking, StudentTriggerData,
+)
+from app.routers._router_helpers import (
+    build_governance_attribution_fields,
+    build_request_attribution,
+    extract_causation_id,
+    extract_correlation_id,
+    make_governance_meta,
+    replay_visibility_fields,
 )
 from app.schemas import APIResponse
 from app.services.payment import compute_balance, payment_risk_label
@@ -17,7 +36,24 @@ router = APIRouter()
 
 
 @router.get("/students/{user_id}")
-async def get_student(user_id: int, db: AsyncSession = Depends(get_db)) -> APIResponse:
+async def get_student(
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    Full student profile with outreach history and state transitions.
+
+    History items expose governance attribution (correlation_id, causation_id,
+    config_version_id, execution_mode, execution_type, governance_scope) and
+    replay classification (is_replay) so consumers can distinguish LIVE from
+    REPLAY records (IML-1, RSV-1).
+    """
+    correlation_id = extract_correlation_id(dict(request.headers))
+    causation_id = extract_causation_id(dict(request.headers))
+    attribution = build_request_attribution(correlation_id, causation_id=causation_id)
+    meta = make_governance_meta(attribution)
+
     tracking_row = await db.execute(
         select(StudentOutreachTracking).where(StudentOutreachTracking.user_id == user_id)
     )
@@ -29,6 +65,7 @@ async def get_student(user_id: int, db: AsyncSession = Depends(get_db)) -> APIRe
                 "NOT_FOUND",
                 f"No outreach record found for student {user_id}. "
                 "The student may not be tracked yet or the ID is incorrect.",
+                meta=meta.as_dict(),
             ).model_dump(),
         )
 
@@ -51,51 +88,60 @@ async def get_student(user_id: int, db: AsyncSession = Depends(get_db)) -> APIRe
     )
     transitions = transition_rows.scalars().all()
 
-    return APIResponse.ok({
-        "user_id": user_id,
-        "checkpoint_type": tracking_obj.checkpoint_type,
-        "state": tracking_obj.state,
-        "current_attempt": tracking_obj.current_attempt,
-        "last_contact_at": tracking_obj.last_contact_at,
-        "next_retry_at": tracking_obj.next_retry_at,
-        "profile": {
-            "first_name": profile.FirstName if profile else None,
-            "last_name": profile.LastName if profile else None,
-            "email": profile.Email if profile else None,
-            "phone": profile.PhoneNumber if profile else None,
-            "path": profile.PathName if profile else None,
-            "hws_behind": profile.HWsBehind if profile else None,
-            "avg_eff_rating": profile.AvgEffRating if profile else None,
-            "last_activity_days": profile.LastActivityDays if profile else None,
-            "risk_level": risk_level_for_display(profile),
+    return APIResponse.ok(
+        {
+            "user_id": user_id,
+            "checkpoint_type": tracking_obj.checkpoint_type,
+            "state": tracking_obj.state,
+            "current_attempt": tracking_obj.current_attempt,
+            "last_contact_at": tracking_obj.last_contact_at,
+            "next_retry_at": tracking_obj.next_retry_at,
+            "profile": {
+                "first_name": profile.FirstName if profile else None,
+                "last_name": profile.LastName if profile else None,
+                "email": profile.Email if profile else None,
+                "phone": profile.PhoneNumber if profile else None,
+                "path": profile.PathName if profile else None,
+                "hws_behind": profile.HWsBehind if profile else None,
+                "avg_eff_rating": profile.AvgEffRating if profile else None,
+                "last_activity_days": profile.LastActivityDays if profile else None,
+                "risk_level": risk_level_for_display(profile),
+            },
+            "history": [
+                {
+                    "id": h.id,
+                    "attempt_number": h.attempt_number,
+                    "channel": h.channel,
+                    "action": h.action,
+                    "execution_mode": h.execution_mode,
+                    "simulated_status": h.simulated_status,
+                    "decision": h.decision,
+                    "state_before": h.state_before,
+                    "state_after": h.state_after,
+                    "created_at": h.created_at,
+                    # Governance attribution lineage (IML-1, CID-1)
+                    **build_governance_attribution_fields(h),
+                    # Replay classification (RSV-1) — LIVE vs REPLAY distinguishable
+                    **replay_visibility_fields(h),
+                }
+                for h in history
+            ],
+            "transitions": [
+                {
+                    "id": t.id,
+                    "from_state": t.from_state,
+                    "to_state": t.to_state,
+                    "trigger": t.trigger,
+                    "actor": t.actor,
+                    "created_at": t.created_at,
+                    # Governance attribution lineage (IML-1, CID-1)
+                    **build_governance_attribution_fields(t),
+                }
+                for t in transitions
+            ],
         },
-        "history": [
-            {
-                "id": h.id,
-                "attempt_number": h.attempt_number,
-                "channel": h.channel,
-                "action": h.action,
-                "execution_mode": h.execution_mode,
-                "simulated_status": h.simulated_status,
-                "decision": h.decision,
-                "state_before": h.state_before,
-                "state_after": h.state_after,
-                "created_at": h.created_at,
-            }
-            for h in history
-        ],
-        "transitions": [
-            {
-                "id": t.id,
-                "from_state": t.from_state,
-                "to_state": t.to_state,
-                "trigger": t.trigger,
-                "actor": t.actor,
-                "created_at": t.created_at,
-            }
-            for t in transitions
-        ],
-    })
+        meta=meta.as_dict(),
+    )
 
 
 @router.get("/students/{user_id}/interview-prep")
@@ -141,7 +187,10 @@ async def get_student_drawer(user_id: int, db: AsyncSession = Depends(get_db)) -
 
         profile = {
             "user_id": profile_row.UserID,
-            "display_name": f"{profile_row.FirstName or ''} {profile_row.LastName or ''}".strip() or f"#{user_id}",
+            "display_name": (
+                f"{profile_row.FirstName or ''} {profile_row.LastName or ''}".strip()
+                or f"#{user_id}"
+            ),
             "email": profile_row.Email,
             "phone": profile_row.PhoneNumber,
             "path": profile_row.PathName,
@@ -186,6 +235,8 @@ async def get_student_drawer(user_id: int, db: AsyncSession = Depends(get_db)) -
                 "current_attempt": t.current_attempt,
                 "last_contact_at": t.last_contact_at.isoformat() if t.last_contact_at else None,
                 "next_retry_at": t.next_retry_at.isoformat() if t.next_retry_at else None,
+                # Governance attribution (IML-1)
+                "correlation_id": getattr(t, "correlation_id", None),
             }
             for t in tracking_list
         ],
