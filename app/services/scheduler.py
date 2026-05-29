@@ -77,6 +77,7 @@ _executed_windows: set[str] = set()
 # ── APScheduler instance ──────────────────────────────────────────────────────
 _scheduler = AsyncIOScheduler()
 _scheduler_config: Dict[str, Any] = {}
+_last_run_at: Optional[str] = None
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────

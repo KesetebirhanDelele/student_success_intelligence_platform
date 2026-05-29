@@ -369,3 +369,95 @@ def coordinate_orchestration_cycle(
     )
     emit_orchestration_event_log(record, ctx.student_id_opaque)
     return record
+
+
+# ── Manual operator action ────────────────────────────────────────────────────
+# Operator override path — not subject to coordination layer prohibitions.
+# AP-DF7 applies to coordinate_orchestration_cycle only (no direct state mutation
+# in the coordination contract). This function is an explicit operator gate.
+
+_ACTION_TYPE_TO_STATE: Dict[str, str] = {
+    "CLOSE_CASE":   "CLOSED",
+    "FORCE_RETRY":  "RETRY",
+    "ESCALATE":     "INTERVENTION_REQUIRED",
+    "BOOK_MEETING": "RESOLVED",
+}
+
+
+async def execute_manual_action(
+    db: Any,
+    user_id: int,
+    action_type: str,
+    notes: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Execute a manual operator action on a student's outreach tracking record.
+    Mutates state, appends an immutable audit entry, and returns a plain dict
+    so the router can map to APIResponse without coupling.
+    """
+    import uuid
+    from sqlalchemy import select as _select
+    from app.config import settings as _settings
+    from app.models import StudentOutreachTracking as _SOT
+    from app.state_machine import can_transition as _can_transition
+    from app.repositories.repository import append_state_transition as _append_stl
+    from app.repositories._repository_types import AttributionFields as _AF
+
+    target_state = _ACTION_TYPE_TO_STATE.get(action_type)
+    if target_state is None:
+        return {"status": "invalid_action", "action_type": action_type}
+
+    result = await db.execute(
+        _select(_SOT)
+        .where(_SOT.user_id == user_id)
+        .order_by(_SOT.updated_at.desc())
+        .limit(1)
+    )
+    tracking = result.scalar_one_or_none()
+
+    if tracking is None:
+        return {"status": "not_found", "user_id": user_id}
+
+    from_state = tracking.state
+    if not _can_transition(from_state, target_state):
+        return {"status": "invalid_transition", "from": from_state, "to": target_state}
+
+    mode = str(_settings.EXECUTION_MODE)
+    scope = "REPLAY_ONLY" if mode == "REPLAY" else "SHADOW_ONLY"
+    correlation_id = str(uuid.uuid4())
+    attribution = _AF(
+        correlation_id=correlation_id,
+        execution_mode=mode,
+        execution_type="original",
+        governance_scope=scope,
+        origin_source="operator_manual_action",
+        origin_authority="operator",
+    )
+
+    tracking.state = target_state
+    tracking.correlation_id = correlation_id
+    await db.flush()
+
+    await _append_stl(
+        db,
+        tracking_id=tracking.id,
+        user_id=user_id,
+        from_state=from_state,
+        to_state=target_state,
+        trigger=action_type,
+        attribution=attribution,
+        actor="operator",
+        meta={"notes": notes} if notes else None,
+    )
+
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "user_id": user_id,
+        "action_type": action_type,
+        "from_state": from_state,
+        "to_state": target_state,
+        "tracking_id": tracking.id,
+        "correlation_id": correlation_id,
+    }
