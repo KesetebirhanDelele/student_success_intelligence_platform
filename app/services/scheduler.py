@@ -299,6 +299,8 @@ def configure_scheduler(
 
 async def _scheduled_cycle() -> None:
     """APScheduler callback — delegates to governance coordination only."""
+    global _last_run_at
+    _last_run_at = _now_iso()
     cfg = _scheduler_config
     await coordinate_orchestration_cycle(
         execution_mode=cfg.get("execution_mode", MODE_SHADOW),
@@ -343,6 +345,11 @@ def stop_scheduler() -> None:
             "timestamp": _now_iso(), "level": "info",
             "service": "scheduler", "event": "scheduler_stopped",
         }))
+
+
+def get_last_run_at() -> Optional[str]:
+    """ISO-8601 timestamp of the last scheduler cycle, or None if no cycle has run."""
+    return _last_run_at
 
 
 def get_scheduler_status() -> Dict[str, Any]:
