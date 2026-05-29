@@ -11,6 +11,7 @@ Governance alignment:
 """
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -19,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap.runtime_context import initialize_runtime_context
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, load_active_config_versions, verify_startup_db_state
 from app.middleware.correlation import AttributionMiddleware
 from app.routers import actions, health, metrics, outreach, students, webhook
 from app.routers import ai_insights as ai_insights_router
@@ -59,11 +60,13 @@ async def on_startup() -> None:
 
     Order:
     1. init_db() — tables, column migrations, governance indexes
-    2. initialize_runtime_context() — validates execution_mode + Config V2,
+    2. verify_startup_db_state() — read-only PostgreSQL readiness check (RISK-003)
+    3. load_active_config_versions() — resolves ACTIVE Config V2 row (RISK-001 fix)
+    4. initialize_runtime_context() — validates execution_mode + Config V2,
        derives governance_scope, builds scheduler timing, emits startup log
-    3. configure_scheduler() — wires governance context into scheduler so
+    5. configure_scheduler() — wires governance context into scheduler so
        every APScheduler cycle carries explicit attribution (not silent fallback)
-    4. start_scheduler() — starts APScheduler with Config-V2-sourced timing
+    6. start_scheduler() — starts APScheduler with Config-V2-sourced timing
 
     SHADOW-safe: governance_scope is always SHADOW_ONLY or REPLAY_ONLY at startup
     (AUTHORIZED scope unreachable — Phase-12 cert gate enforced in bootstrap).
@@ -71,13 +74,26 @@ async def on_startup() -> None:
     """
     await init_db()
 
+    # Startup DB verification — read-only PostgreSQL readiness (RISK-003).
+    db_state = await verify_startup_db_state()
+    logger.info(json.dumps({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "level": "info" if db_state.get("active_config_count") == 1 else "warning",
+        "service": "main",
+        "event": "startup_db_verification",
+        **db_state,
+    }))
+
+    # Load ACTIVE config from DB — replaces static active_configs=[] (RISK-001 fix).
+    # Returns [] on any DB error → UNKNOWN_V0 degradation path preserved.
+    active_configs = await load_active_config_versions()
+
     # Runtime bootstrap: validate mode + Config V2, derive scope, emit startup log.
-    # active_configs=[] because no Config V2 model exists yet — yields UNKNOWN_V0.
     bootstrap_ctx = initialize_runtime_context(
         execution_mode=settings.EXECUTION_MODE.value,
-        active_configs=[],           # Config V2 not yet in schema → UNKNOWN_V0
-        attribution=None,            # startup has no inbound attribution headers
-        config_rule_set=None,        # no Config V2 rule set yet → settings fallbacks
+        active_configs=active_configs,    # DB-resolved; [] → UNKNOWN_V0 degradation
+        attribution=None,                 # startup has no inbound attribution headers
+        config_rule_set=None,             # Config V2 rule set not yet wired to timing
         scheduler_fallback_hour=settings.SCHEDULER_HOUR,
         scheduler_fallback_minute=settings.SCHEDULER_MINUTE,
         scheduler_fallback_timezone=settings.SCHEDULER_TIMEZONE,

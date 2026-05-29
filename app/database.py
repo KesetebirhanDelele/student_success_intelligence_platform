@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncGenerator
+from dataclasses import dataclass
+from typing import AsyncGenerator, List
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -231,3 +232,111 @@ async def fetch_students_from_mssql() -> tuple[list[dict], str | None]:
 
 async def fetch_interview_prep_from_mssql() -> tuple[list[dict], str | None]:
     return await asyncio.to_thread(_fetch_interview_prep_sync)
+
+
+# ── Config V2 startup resolution ──────────────────────────────────────────────
+
+
+@dataclass
+class ConfigVersionRow:
+    """Startup query result from config_version_registry."""
+    version_id: str     # str(version_number) — used by validate_config_v2
+    id: int
+    version_number: int
+    status: str
+
+
+async def load_active_config_versions() -> List[ConfigVersionRow]:
+    """
+    Query config_version_registry for rows with status='ACTIVE'.
+
+    Returns a list for bootstrap initialization.
+    Error handling: table missing or DB unreachable → returns [], which
+    propagates to UNKNOWN_V0 degradation in initialize_runtime_context().
+    This preserves the explicit degradation semantics for every failure path.
+    """
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                text(
+                    "SELECT id, version_number, status "
+                    "FROM config_version_registry WHERE status = 'ACTIVE'"
+                )
+            )
+            rows = result.fetchall()
+            return [
+                ConfigVersionRow(
+                    version_id=str(row.version_number),
+                    id=row.id,
+                    version_number=row.version_number,
+                    status=row.status,
+                )
+                for row in rows
+            ]
+    except Exception as exc:
+        logger.warning(
+            "Config V2 load failed — UNKNOWN_V0 degradation path: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        return []
+
+
+async def verify_startup_db_state() -> dict:
+    """
+    Read-only startup verification for PostgreSQL readiness (RISK-003).
+
+    Checks:
+    - config_version_registry table exists (migration 0003 applied)
+    - ACTIVE config count and version number
+    - Alembic current revision
+
+    Does not modify schema or governance behavior.
+    Returns a structured dict for startup observability logging.
+    """
+    state: dict = {
+        "config_version_registry_exists": False,
+        "active_config_count": 0,
+        "active_config_version_number": None,
+        "alembic_current_revision": None,
+    }
+    try:
+        async with AsyncSessionLocal() as session:
+            tbl_result = await session.execute(
+                text(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema = 'public' "
+                    "AND table_name = 'config_version_registry'"
+                )
+            )
+            state["config_version_registry_exists"] = bool(tbl_result.scalar_one())
+
+            if state["config_version_registry_exists"]:
+                active_result = await session.execute(
+                    text(
+                        "SELECT id, version_number "
+                        "FROM config_version_registry WHERE status = 'ACTIVE'"
+                    )
+                )
+                active_rows = active_result.fetchall()
+                state["active_config_count"] = len(active_rows)
+                if len(active_rows) == 1:
+                    state["active_config_version_number"] = active_rows[0].version_number
+
+            try:
+                rev_result = await session.execute(
+                    text("SELECT version_num FROM alembic_version LIMIT 1")
+                )
+                state["alembic_current_revision"] = rev_result.scalar_one_or_none()
+            except Exception:
+                pass  # alembic_version absent in test environments
+
+    except Exception as exc:
+        logger.error(
+            "Startup DB verification failed: %s: %s",
+            type(exc).__name__,
+            exc,
+        )
+        state["verification_error"] = str(exc)
+
+    return state
