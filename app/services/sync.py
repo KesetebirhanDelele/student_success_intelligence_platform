@@ -336,3 +336,90 @@ def coordinate_sync_cycle(
     )
     emit_sync_event_log(record)
     return record
+
+
+# ── Operational sync entry points (read SQL Server → write PostgreSQL) ─────────
+
+async def sync_from_mssql(db: Any) -> Dict[str, Any]:
+    """
+    Pull AI_ChatBot_TriggerData from SQL Server and upsert into local PostgreSQL mirror.
+    Read-only from SQL Server (FAD-5/ABG-1). Safe to run in SHADOW mode.
+    """
+    import json as _json
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.database import fetch_students_from_mssql
+    from app.models import StudentTriggerData
+
+    rows, error = await fetch_students_from_mssql()
+    if error:
+        logger.warning(_json.dumps({
+            "service": "sync", "event": "mssql_fetch_failed", "error": error,
+        }))
+        return {"synced": 0, "total_fetched": 0, "error": error, "status": "failed"}
+
+    model_cols: set = {c.name for c in StudentTriggerData.__table__.columns}
+    count = 0
+    for row in rows:
+        values = {k: v for k, v in row.items() if k in model_cols}
+        if not values.get("UserID"):
+            continue
+        stmt = (
+            pg_insert(StudentTriggerData)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["UserID"],
+                set_={k: v for k, v in values.items() if k != "UserID"},
+            )
+        )
+        await db.execute(stmt)
+        count += 1
+
+    await db.commit()
+    logger.info(_json.dumps({
+        "service": "sync", "event": "mssql_sync_complete",
+        "synced": count, "total_fetched": len(rows),
+    }))
+    return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
+
+
+async def sync_interview_prep(db: Any) -> Dict[str, Any]:
+    """
+    Pull InterviewPrep data from SQL Server and store as JSONB in local PostgreSQL.
+    Read-only from SQL Server (FAD-5/ABG-1). Safe to run in SHADOW mode.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.database import fetch_interview_prep_from_mssql
+    from app.models import StudentInterviewPrep
+
+    rows, error = await fetch_interview_prep_from_mssql()
+    if error:
+        logger.warning(_json.dumps({
+            "service": "sync", "event": "interview_prep_fetch_failed", "error": error,
+        }))
+        return {"synced": 0, "total_fetched": 0, "error": error, "status": "failed"}
+
+    now = datetime.now(timezone.utc)
+    count = 0
+    for row in rows:
+        uid = row.get("UserID")
+        if not uid:
+            continue
+        stmt = (
+            pg_insert(StudentInterviewPrep)
+            .values(user_id=int(uid), raw_data=row, synced_at=now)
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={"raw_data": row, "synced_at": now},
+            )
+        )
+        await db.execute(stmt)
+        count += 1
+
+    await db.commit()
+    logger.info(_json.dumps({
+        "service": "sync", "event": "interview_prep_sync_complete",
+        "synced": count, "total_fetched": len(rows),
+    }))
+    return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}

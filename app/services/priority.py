@@ -507,3 +507,104 @@ def assess_orchestration_priority(
     )
     emit_priority_event_log(record)
     return record
+
+
+# ── Simple display / batch-scoring API (not governance assessment) ─────────────
+
+class StudentPriorityScore:
+    """Lightweight scoring result for display and queue sorting. Not a governance record."""
+    __slots__ = ("level", "score", "recommended_action", "reason_codes")
+
+    def __init__(
+        self,
+        level: str,
+        score: float,
+        recommended_action: str,
+        reason_codes: List[str],
+    ) -> None:
+        self.level = level
+        self.score = score
+        self.recommended_action = recommended_action
+        self.reason_codes = reason_codes
+
+
+def score_student(
+    student: Dict[str, Any],
+    tracking: Optional[Dict[str, Any]] = None,
+) -> StudentPriorityScore:
+    """
+    Heuristic priority score for a student dict.
+    For display and queue sorting only — not a governance assessment.
+    Use assess_orchestration_priority() for governance decisions.
+    """
+    codes: List[str] = []
+    score = 0.0
+
+    hws = student.get("HWsBehind") or 0
+    inactivity = student.get("LastActivityDays") or 0
+    eff = student.get("AvgEffRating")
+    balance = student.get("PaymentBalance") or 0
+
+    if hws >= 3:
+        score += 40.0
+        codes.append("HWS_BEHIND_HIGH_RISK")
+    elif hws >= 1:
+        score += 20.0
+        codes.append("HWS_BEHIND_MODERATE")
+
+    if inactivity > 14:
+        score += 30.0
+        codes.append("INACTIVITY_HIGH_RISK")
+    elif inactivity > 7:
+        score += 15.0
+        codes.append("INACTIVITY_MODERATE")
+
+    if eff is not None and eff < 3.0:
+        score += 20.0
+        codes.append("EFF_RATING_LOW")
+
+    if balance > 0:
+        score += 10.0
+        codes.append("PAYMENT_BALANCE_RISK")
+
+    if tracking:
+        state = tracking.get("state", "")
+        if state == "INTERVENTION_REQUIRED":
+            score += 20.0
+            codes.append("INTERVENTION_STATE")
+        elif state == "NO_RESPONSE":
+            score += 10.0
+            codes.append("NO_RESPONSE_STATE")
+
+    if score >= 60:
+        level = PRIORITY_CRITICAL
+        action = "ESCALATE"
+    elif score >= 40:
+        level = PRIORITY_HIGH
+        action = "CONTACT_IMMEDIATELY"
+    elif score >= 20:
+        level = PRIORITY_MEDIUM
+        action = "SCHEDULE_OUTREACH"
+    else:
+        level = PRIORITY_LOW
+        action = "MONITOR"
+
+    return StudentPriorityScore(
+        level=level, score=score, recommended_action=action, reason_codes=codes,
+    )
+
+
+def risk_level_for_display(profile: Any) -> str:
+    """
+    Display-only risk string from a StudentTriggerData ORM object or None.
+    Returns "HIGH", "MEDIUM", "LOW", or "UNKNOWN". Not a governance decision.
+    """
+    if profile is None:
+        return "UNKNOWN"
+    hws = getattr(profile, "HWsBehind", None)
+    inactivity = getattr(profile, "LastActivityDays", None)
+    if (hws is not None and hws >= 3) or (inactivity is not None and inactivity > 14):
+        return RISK_HIGH
+    if (hws is not None and hws >= 1) or (inactivity is not None and inactivity > 7):
+        return RISK_MEDIUM
+    return RISK_LOW

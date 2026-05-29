@@ -320,3 +320,96 @@ def classify_timeline_event(
     )
     emit_timeline_event_log(record)
     return record
+
+
+# ── Operational timeline builder (DB query, not governance assessment) ─────────
+
+async def build_timeline(user_id: int, db: Any) -> List[Dict[str, Any]]:
+    """
+    Build chronological (newest-first) unified event stream for one student.
+    Merges outreach attempts, state transitions, notes, AI insights, GHL messages.
+    Content fields with PII are omitted — governance metadata only (AP-RT13).
+    """
+    from sqlalchemy import select
+    from app.models import (
+        AIInsight, GHLMessage, OutreachHistory, StateTransitionLog, StudentNote,
+    )
+
+    events: List[Dict[str, Any]] = []
+
+    oh_rows = (await db.execute(
+        select(OutreachHistory).where(OutreachHistory.user_id == user_id)
+    )).scalars().all()
+    for h in oh_rows:
+        events.append({
+            "type": "outreach",
+            "created_at": h.created_at.isoformat() if h.created_at else None,
+            "attempt_number": h.attempt_number,
+            "channel": h.channel,
+            "action": h.action,
+            "execution_mode": h.execution_mode,
+            "simulated_status": h.simulated_status,
+            "decision": h.decision,
+            "state_before": h.state_before,
+            "state_after": h.state_after,
+            "correlation_id": h.correlation_id,
+            "is_replay": h.is_replay,
+        })
+
+    stl_rows = (await db.execute(
+        select(StateTransitionLog).where(StateTransitionLog.user_id == user_id)
+    )).scalars().all()
+    for t in stl_rows:
+        events.append({
+            "type": "transition",
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "from_state": t.from_state,
+            "to_state": t.to_state,
+            "trigger": t.trigger,
+            "actor": t.actor,
+            "execution_mode": t.execution_mode,
+            "correlation_id": t.correlation_id,
+            "is_replay": t.is_replay,
+        })
+
+    note_rows = (await db.execute(
+        select(StudentNote).where(StudentNote.user_id == user_id)
+    )).scalars().all()
+    for n in note_rows:
+        events.append({
+            "type": "note",
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+            "author": n.author,
+            "note_type": n.note_type,
+            "is_ai_generated": n.is_ai_generated,
+        })
+
+    ins_rows = (await db.execute(
+        select(AIInsight).where(AIInsight.user_id == user_id)
+    )).scalars().all()
+    for ins in ins_rows:
+        events.append({
+            "type": "ai_insight",
+            "created_at": ins.created_at.isoformat() if ins.created_at else None,
+            "insight_type": ins.insight_type,
+            "execution_mode": ins.execution_mode,
+            "is_finalized": ins.is_finalized,
+            "correlation_id": ins.correlation_id,
+            "is_replay": ins.is_replay,
+        })
+
+    ghl_rows = (await db.execute(
+        select(GHLMessage).where(GHLMessage.user_id == user_id)
+    )).scalars().all()
+    for m in ghl_rows:
+        ts = m.ghl_created_at or m.synced_at
+        events.append({
+            "type": "ghl_message",
+            "created_at": ts.isoformat() if ts else None,
+            "direction": m.direction,
+            "channel": m.channel,
+            "status": m.status,
+        })
+
+    events.sort(key=lambda e: e["created_at"] or "", reverse=True)
+    return events

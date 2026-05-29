@@ -490,3 +490,30 @@ def _emit(ctx: EligibilityContext, gov: GovernanceCtx, sid: Optional[str],
         config_threshold_warnings=list(threshold_warnings),
         student_id_opaque=sid,
     )
+
+
+# ── Simple batch-preview eligibility API (not governance assessment) ───────────
+
+class _SimpleEligibility:
+    """Lightweight result for check_eligibility — display/batch use only."""
+    __slots__ = ("eligible", "skip_reason")
+
+    def __init__(self, eligible: bool, skip_reason: Optional[str]) -> None:
+        self.eligible = eligible
+        self.skip_reason = skip_reason
+
+
+def check_eligibility(student: Dict[str, Any]) -> "_SimpleEligibility":
+    """
+    Lightweight eligibility check for batch preview. Not a governance assessment —
+    use assess_orchestration_eligibility() for governance decisions.
+    Returns object with .eligible (bool) and .skip_reason (str | None).
+    """
+    if not student.get("UserID"):
+        return _SimpleEligibility(False, "NO_USER_ID")
+    if not student.get("PathName"):
+        return _SimpleEligibility(False, "NO_PATH_NAME")
+    active = str(student.get("ActiveStatus") or "").lower()
+    if active in ("inactive", "withdrawn", "dropped", "0"):
+        return _SimpleEligibility(False, f"INACTIVE_STATUS")
+    return _SimpleEligibility(True, None)

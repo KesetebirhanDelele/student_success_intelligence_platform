@@ -658,3 +658,31 @@ def _log(
         record["error_class"] = "GovernancePreconditionFailed"
         record["blocking_reason"] = intent.blocking_reason
     (logger.error if intent.intent_blocked else logger.info)(record)
+
+
+# ── Simple batch-preview decision API (not governance intent) ──────────────────
+
+def decide(
+    student: Dict[str, Any],
+    tracking: Optional[Dict[str, Any]],
+    eligibility: Any,
+) -> str:
+    """
+    Map student/tracking/eligibility to a batch-preview decision string.
+    For display use only — not an orchestration intent.
+    Returns one of: TRIGGER_OUTREACH, RETRY_OUTREACH, ESCALATE, CLOSE, NO_ACTION.
+    """
+    if not getattr(eligibility, "eligible", False):
+        return "NO_ACTION"
+    if tracking is None:
+        return "TRIGGER_OUTREACH"
+    state = tracking.get("state", "")
+    if state in ("CLOSED", "RESOLVED"):
+        return "CLOSE"
+    if state == "INTERVENTION_REQUIRED":
+        return "ESCALATE"
+    if state in ("NO_RESPONSE", "RETRY"):
+        return "RETRY_OUTREACH"
+    if state in ("ELIGIBLE", "QUEUED", "CONTACTED"):
+        return "TRIGGER_OUTREACH"
+    return "NO_ACTION"
