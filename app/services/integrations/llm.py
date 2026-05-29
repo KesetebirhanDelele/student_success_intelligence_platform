@@ -50,7 +50,7 @@ def assess_ai_intelligence(ctx: AIOrchestrationContext) -> AIAssessment:
     return assess_ai_orchestration(ctx)
 
 
-def analyze_transcript(
+async def analyze_transcript(
     transcript: str,
     user_id: int,
     attempt: int,

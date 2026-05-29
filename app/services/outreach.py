@@ -461,3 +461,55 @@ async def execute_manual_action(
         "tracking_id": tracking.id,
         "correlation_id": correlation_id,
     }
+
+
+async def run_outreach_batch(
+    db: Any,
+    checkpoint_type: str,
+) -> Dict[str, Any]:
+    """Trigger a governance-safe batch cycle for a checkpoint type. Delegates to worker."""
+    from app.config import settings as _settings
+    from app.services.worker import run_batch_cycle
+    return await run_batch_cycle(
+        db,
+        checkpoint_type=checkpoint_type,
+        execution_mode=str(_settings.EXECUTION_MODE),
+    )
+
+
+async def _log_transition(
+    db: Any,
+    tracking_id: int,
+    user_id: int,
+    from_state: str,
+    to_state: str,
+    trigger: str,
+    *,
+    actor: str = "system",
+) -> None:
+    """Append a state transition log entry. Used by webhook handler."""
+    import uuid
+    from app.config import settings as _settings
+    from app.repositories.repository import append_state_transition as _append_stl
+    from app.repositories._repository_types import AttributionFields as _AF
+
+    mode = str(_settings.EXECUTION_MODE)
+    scope = "REPLAY_ONLY" if mode == "REPLAY" else "SHADOW_ONLY"
+    attribution = _AF(
+        correlation_id=str(uuid.uuid4()),
+        execution_mode=mode,
+        execution_type="original",
+        governance_scope=scope,
+        origin_source="webhook_handler",
+        origin_authority="ghl_webhook",
+    )
+    await _append_stl(
+        db,
+        tracking_id=tracking_id,
+        user_id=user_id,
+        from_state=from_state,
+        to_state=to_state,
+        trigger=trigger,
+        attribution=attribution,
+        actor=actor,
+    )

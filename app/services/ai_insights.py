@@ -100,6 +100,14 @@ import uuid as _uuid_mod
 # In-memory idempotency store for deduplication of AI evaluations (AP-LF8)
 _ai_idempotency_keys: set[str] = set()
 
+# Valid insight types for the on-demand generation endpoint
+INSIGHT_TYPES: frozenset = frozenset({
+    "OUTREACH_DRAFT",
+    "INTERVENTION",
+    "RISK_EXPLANATION",
+    "INTERVIEW_COACHING",
+})
+
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -447,3 +455,139 @@ def assess_ai_orchestration(
     )
     emit_ai_event_log(assessment, ctx.student_id_opaque)
     return assessment
+
+
+# ── On-demand insight generation ─────────────────────────────────────────────
+
+_PROMPTS: dict = {
+    "OUTREACH_DRAFT": (
+        "Draft a concise, professional outreach message for a student at risk. "
+        "Student context (no PII): {context}. Keep under 150 words."
+    ),
+    "INTERVENTION": (
+        "Recommend an intervention strategy for a student showing these risk signals: "
+        "{context}. Be specific and actionable."
+    ),
+    "RISK_EXPLANATION": (
+        "Explain in plain language why this student is flagged as at-risk based on: "
+        "{context}. Use 2-3 sentences."
+    ),
+    "INTERVIEW_COACHING": (
+        "Provide 3 targeted interview coaching tips for a student with this profile: "
+        "{context}."
+    ),
+}
+
+_TTL_HOURS = 24
+
+
+async def get_or_generate(
+    user_id: int,
+    insight_type: str,
+    student: dict,
+    db: Any,
+) -> dict:
+    """
+    Return a cached AIInsight if valid, otherwise generate one.
+
+    In SHADOW mode without LLM_API_KEY: returns a structured placeholder tagged
+    execution_mode=SHADOW. AI inference is not blocked in SHADOW — only outbound
+    provider dispatch (GHL, Synthflow) is suppressed.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select
+    from app.config import settings
+    from app.models import AIInsight
+
+    now = datetime.now(timezone.utc)
+
+    existing = await db.execute(
+        select(AIInsight)
+        .where(
+            AIInsight.user_id == user_id,
+            AIInsight.insight_type == insight_type,
+        )
+        .order_by(AIInsight.created_at.desc())
+        .limit(1)
+    )
+    insight = existing.scalar_one_or_none()
+
+    if insight and not insight.is_finalized:
+        expired = insight.expires_at and insight.expires_at < now
+        if not expired:
+            return _serialize_insight(insight)
+
+    context_parts = []
+    for k in ("PathName", "AttendancePercentage", "LastLoginDays", "ActiveStatus",
+              "StatusI", "StatusII", "Past10DaysLogon"):
+        v = student.get(k)
+        if v is not None:
+            context_parts.append(f"{k}={v}")
+    context_str = "; ".join(context_parts) or "no context available"
+
+    content_text: str
+    model_used: str | None = None
+    api_key = settings.LLM_API_KEY
+
+    if not api_key:
+        content_text = (
+            f"[AI advisory: {insight_type} — LLM_API_KEY not configured. "
+            f"Shadow mode: governance assessment only.]"
+        )
+    else:
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=api_key)
+            prompt = _PROMPTS.get(insight_type, "Assess this student: {context}.").format(
+                context=context_str
+            )
+            resp = await client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300,
+                timeout=20,
+            )
+            content_text = resp.choices[0].message.content or ""
+            model_used = settings.LLM_MODEL
+        except Exception as exc:
+            content_text = f"[AI generation failed: {type(exc).__name__}]"
+
+    mode = str(settings.EXECUTION_MODE)
+    scope = "REPLAY_ONLY" if mode == "REPLAY" else "SHADOW_ONLY"
+    correlation_id = str(_uuid_mod.uuid4())
+    expires_at = now + timedelta(hours=_TTL_HOURS)
+
+    new_insight = AIInsight(
+        user_id=user_id,
+        insight_type=insight_type,
+        content_text=content_text,
+        model_used=model_used,
+        execution_mode=mode,
+        governance_scope=scope,
+        execution_type="original",
+        is_replay=(mode == "REPLAY"),
+        correlation_id=correlation_id,
+        expires_at=expires_at,
+        origin_source="get_or_generate",
+        origin_authority="ai_insights_service",
+    )
+    db.add(new_insight)
+    await db.commit()
+    await db.refresh(new_insight)
+    return _serialize_insight(new_insight)
+
+
+def _serialize_insight(insight: Any) -> dict:
+    return {
+        "id": insight.id,
+        "user_id": insight.user_id,
+        "insight_type": insight.insight_type,
+        "content": insight.content_text,
+        "model": insight.model_used,
+        "created_at": insight.created_at.isoformat() if insight.created_at else None,
+        "expires_at": insight.expires_at.isoformat() if insight.expires_at else None,
+        "is_finalized": insight.is_finalized,
+        "execution_mode": insight.execution_mode,
+        "governance_scope": insight.governance_scope,
+        "correlation_id": insight.correlation_id,
+    }
