@@ -8,6 +8,16 @@
 
 ---
 
+## Phase 60 — Reporting Content Contract
+
+- [x] directives/reporting_content_contract.md — reporting content contract for all UX reporting surfaces
+  - Date: 2026-05-29
+  - What changed: Created new directive specifying field-level content for every reporting surface in the UX: (1) Monthly Student Report — 9 sections (identity, risk/priority, academic, engagement, financial, outreach summary, AI narratives, state history, governance metadata); source data categories assigned; source columns marked TBD pending source table definitions. (2) Lifecycle tab field mappings — shared columns + per-tab additional columns for all 6 tabs (Newcomers, Engagement, HW Risk, CAP Hopefuls, Launch Hopefuls, Placement Hopefuls); source categories assigned. (3) Student drawer Profile tab fields — source categories assigned. (4) Dashboard KPI Summary — metric definitions and derivations. Data source category table defines MSSQL_MIRROR / MSSQL_INTERVIEW_PREP / PLATFORM / AI_GENERATED / GHL_SUPPLEMENTARY / DERIVED with authority rules. 9 open items (OI-1 through OI-9) track TBD entries pending source table input.
+  - Verification: File created; no runtime code changed; no tests required for directive doc.
+  - Notes: All `[TBD — source tables pending]` entries in the directive must be resolved before implementation of data-fetching for any reporting surface. User will provide source database table definitions.
+
+---
+
 ## Phase 59 — Pre-Shadow Launch Remediation Sprint (RISK-001 + RISK-003)
 
 - [x] app/database.py — ConfigVersionRow dataclass + load_active_config_versions() + verify_startup_db_state()
