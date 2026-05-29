@@ -109,10 +109,20 @@ async def batch_run(
     request: BatchRunRequest,
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """Execute batch outreach (shadow-safe). Delegates to outreach service."""
-    from app.services.outreach import run_outreach_batch
+    """Execute batch outreach (shadow-safe). Delegates to worker execution layer."""
+    from app.services.worker import run_batch_cycle
 
-    result = await run_outreach_batch(db, request.checkpoint_type)
+    result = await run_batch_cycle(
+        db,
+        request.checkpoint_type,
+        execution_mode=settings.EXECUTION_MODE,
+        config_version_id=getattr(settings, "CONFIG_VERSION_ID", None),
+        attribution_context={
+            "origin_source": "batch_api",
+            "origin_authority": "system",
+            "actor_identity": "batch_runner",
+        },
+    )
     return APIResponse.ok({
         **result,
         "execution_mode": settings.EXECUTION_MODE,
