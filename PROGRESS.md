@@ -10,11 +10,17 @@
 
 ## Phase 60 — Reporting Content Contract
 
-- [x] directives/reporting_content_contract.md — reporting content contract for all UX reporting surfaces
+- [x] directives/reporting_content_contract.md — v1: reporting content contract created (all surfaces, TBD stubs)
   - Date: 2026-05-29
-  - What changed: Created new directive specifying field-level content for every reporting surface in the UX: (1) Monthly Student Report — 9 sections (identity, risk/priority, academic, engagement, financial, outreach summary, AI narratives, state history, governance metadata); source data categories assigned; source columns marked TBD pending source table definitions. (2) Lifecycle tab field mappings — shared columns + per-tab additional columns for all 6 tabs (Newcomers, Engagement, HW Risk, CAP Hopefuls, Launch Hopefuls, Placement Hopefuls); source categories assigned. (3) Student drawer Profile tab fields — source categories assigned. (4) Dashboard KPI Summary — metric definitions and derivations. Data source category table defines MSSQL_MIRROR / MSSQL_INTERVIEW_PREP / PLATFORM / AI_GENERATED / GHL_SUPPLEMENTARY / DERIVED with authority rules. 9 open items (OI-1 through OI-9) track TBD entries pending source table input.
-  - Verification: File created; no runtime code changed; no tests required for directive doc.
-  - Notes: All `[TBD — source tables pending]` entries in the directive must be resolved before implementation of data-fetching for any reporting surface. User will provide source database table definitions.
+  - What changed: Created new directive specifying field-level content for all UX reporting surfaces: Monthly Student Report (9 sections), Lifecycle tabs (6 tabs), Student Drawer Profile, Dashboard KPIs. All MSSQL_MIRROR source columns marked TBD pending source table definitions.
+  - Verification: Directive doc only; no runtime code changed.
+  - Notes: TBD entries to be resolved when source table definitions are provided.
+
+- [x] directives/reporting_content_contract.md — v2: CCPP SP source mappings resolved (partial)
+  - Date: 2026-05-29
+  - What changed: Updated directive with field-level source mappings from 4 CCPP stored procedures provided: SP_RETOOL_RPT_IPBC_PROMOTION, IPBC NEW SIGNUPS (last 90 days), IPBC HW Not Submitted >3 Days, IPBC CAP Hopefuls. Resolved: student identity fields (ADF_Mentorship_Activity.MM_Student/UserID/Email/IPBC_StartDate/WksInProgram/PerComp_Act/DaysToMarket), financial fields (IPBC_SubscriptionPlan + vw_IPBC_Students_Payment_Summary), active status (ADF_Mentorship_Program.IsActive), HW days (LastHWSubmittedDays), engagement activity (VW_RETOOL_CAMPAIGNACTIVITY_LASTACTIVITY). Tab filter logic added from actual SP WHERE clauses. Section 10 (Source Tables Inventory) added with all CCPP tables/views identified. OI-1 promoted to PARTIALLY RESOLVED; OI-4 closed; OI-8 through OI-16 opened for remaining ambiguities.
+  - Verification: Directive doc only; no runtime code changed. 9 OIs remain open; data-fetching implementation remains blocked.
+  - Notes: Remaining TBDs need answers to OI-8–OI-16. Launch Hopefuls and Placement Hopefuls SPs still pending from user.
 
 ---
 
