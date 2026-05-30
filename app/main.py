@@ -36,7 +36,8 @@ from app.routers import source as source_router
 from app.routers import student_timeline as timeline_router
 from app.routers import sync as sync_router
 from app.routers import work_queue as work_queue_router
-from app.services.scheduler import configure_scheduler, start_scheduler, stop_scheduler
+from app.routers import reports as reports_router
+from app.services.scheduler import configure_scheduler, start_monthly_report_job, start_scheduler, stop_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,6 +119,7 @@ async def on_startup() -> None:
         trigger_minute=timing.get("trigger_minute", settings.SCHEDULER_MINUTE),
         timezone_str=timing.get("timezone_str", settings.SCHEDULER_TIMEZONE),
     )
+    start_monthly_report_job(timezone_str="UTC")
 
     logger.info(json.dumps({
         "timestamp": bootstrap_ctx.startup_timestamp,
@@ -200,6 +202,7 @@ app.include_router(notes_router.router, tags=["Notes"])
 app.include_router(ghl_sync_router.router, tags=["GHLSync"])
 app.include_router(lifecycle_router.router, tags=["Lifecycle"])
 app.include_router(quick_actions_router.router, tags=["QuickActions"])
+app.include_router(reports_router.router, tags=["Reports"])
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 

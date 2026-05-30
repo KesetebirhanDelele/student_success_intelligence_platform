@@ -22,6 +22,62 @@
   - Verification: Directive doc only; no runtime code changed. 9 OIs remain open; data-fetching implementation remains blocked.
   - Notes: Remaining TBDs need answers to OI-8–OI-16. Launch Hopefuls and Placement Hopefuls SPs still pending from user.
 
+- [x] directives/reporting_content_contract.md — v3: CCPP SP batch 2 + OIs closed
+  - Date: 2026-05-29
+  - What changed: Resolved remaining SP sources from 6 more CCPP SPs (Launch Hopefuls, Placement Hopefuls, SP_RETOOL_RPT_IPBC_ENROLLMENTS, StudentAccessHistory, SP_RETOOL_RPT_CAMPAIGNACTIVITY, broken SignUps & Payments). Interview source corrected to vw_ColaberryInterviews_PlacementHopefuls. All tab filter logic finalized. Source table inventory expanded with RETOOLCALLENGAGEMENT, RetoolEmailEngagement, RetoolNoteEngagement, CB_PS_TXN_LOG, VW_PAYPAL_DISTINCT_TRANSACTIONS, vw_ColaberryInterviews_PlacementHopefuls. Gap 2 proposal (payment data sourcing) documented. Closed OI-1,2,4,5,6,7,8,10,11,12,13,14,15. OI-3, OI-9, OI-16 remain open.
+  - Verification: Directive doc only.
+  - Notes: Gap 2 option (A or B) requires user decision before payment sync implementation.
+
+---
+
+## Phase 62 — Payment Sync + Placement Interview Sync (Option B, Gap 2 + Gap 3)
+
+- [x] app/services/payment_sync.py — payment and placement interview sync service (new)
+  - Date: 2026-05-29
+  - What changed: Created new service with sync_payments() and sync_placement_interviews(). sync_payments() queries SQL Server (CB_PS_TXN_LOG via vw_IPBC_Students_Payment_Summary + VW_PAYPAL_DISTINCT_TRANSACTIONS + IPBC_SubscriptionPlan) → UPDATEs ai_chatbot_triggerdata with corrected Total_Payments, ClassValue, ClassFeesPaid, PaymentBalance per student. sync_placement_interviews() queries vw_ColaberryInterviews_PlacementHopefuls → upserts into student_interview_prep JSONB. Split into new file to keep services/sync.py under 500-line ceiling.
+  - Verification: Import chain verified. Functional test requires MSSQL connectivity.
+  - Notes: Total_Credits and FeePaid not overwritten — remain sourced from AI_ChatBot_TriggerData regular sync. IPBC_SubscriptionPlan FK assumed as SubscriptionPlanID — verify against CCPP schema if join returns zero rows.
+
+- [x] app/routers/sync.py — POST /sync/payments + POST /sync/placement-interviews (updated)
+  - Date: 2026-05-29
+  - What changed: Added two new routes wired to payment_sync service. POST /sync/payments triggers payment field correction. POST /sync/placement-interviews syncs interview data for Placement Hopefuls tab.
+  - Verification: Routes present in router file.
+
+---
+
+## Phase 61 — Monthly Report Pipeline (snapshot + report service + scheduler)
+
+- [x] app/services/snapshot.py — snapshot assembly service (new)
+  - Date: 2026-05-29
+  - What changed: Created snapshot assembly service. assemble_snapshot() reads ai_chatbot_triggerdata + outreach/campaign/AI narrative data → inserts FINALIZED warehouse.student_snapshots row with all ss_* field copies + derived fields (segment_classification, payment_risk_label, actual_balance, is_bundle_deal, etc.). Idempotent: returns existing if FINALIZED row already exists. assemble_all_active_snapshots() iterates all students. Raw SQL for warehouse writes (no ORM for warehouse schema).
+  - Verification: TypeScript N/A (Python). Integration test required against dev DB before enabling scheduler.
+
+- [x] app/services/report.py — monthly report generation service (new)
+  - Date: 2026-05-29
+  - What changed: Created report generation service. generate_student_report() reads FINALIZED snapshot + state_transition_log → builds structured report_content_json → inserts warehouse.monthly_reports row. FAD-2 compliant: no live SQL Server queries at generation time. get_report_content() retrieves published report by student+month. generate_cohort_report() batches by segment_classification. Idempotent via report_idempotency_key (SHA-256 of student+month+lineage+template). report_content_json has 9 sections matching reporting_content_contract.md §3.
+  - Verification: TypeScript N/A. Integration test required.
+
+- [x] app/routers/reports.py — report HTTP endpoints (new)
+  - Date: 2026-05-29
+  - What changed: Created reports router with 5 endpoints: POST /reports/snapshots/assemble, POST /reports/snapshots/assemble-all, GET /reports/monthly/{student_id}/{year}/{month}, POST /reports/monthly/generate, POST /reports/monthly/generate-all. All return APIResponse envelope. generate-all supports optional cohort_id filter or runs all 5 segments.
+  - Verification: Router registered in main.py.
+
+- [x] app/main.py — wire reports router + monthly job startup
+  - Date: 2026-05-29
+  - What changed: Added `from app.routers import reports as reports_router` import; `app.include_router(reports_router.router)` call; `start_monthly_report_job()` call in on_startup() after start_scheduler().
+  - Verification: Import chain present; manual smoke test required on next deploy.
+
+- [x] app/services/scheduler.py — monthly report APScheduler job
+  - Date: 2026-05-29
+  - What changed: Added _monthly_report_job() async callback (runs 1st of month 02:00 UTC): assembles prior-month snapshots for all active students, then generates cohort reports for all 5 segments. Added start_monthly_report_job() to register the CronTrigger(day=1, hour=2). Uses AsyncSessionLocal per operation (separate session per assemble + per cohort). Logs start/complete/failed events with correlation_id.
+  - Verification: Job registered in start_monthly_report_job(). Functional test requires dev DB.
+
+- [x] app/scripts/import_retool_outreach.py — historical Retool outreach import (Gap 1)
+  - Date: 2026-05-29
+  - What changed: Created idempotent import script for 3 CCPP tables: RETOOLCALLENGAGEMENT → channel=CALL, RetoolEmailEngagement → channel=EMAIL, RetoolNoteEngagement → channel=NOTE. Dedup via retool_import_keys table (SHA-256 of table+UserID+CreateDate). Supports --dry-run and --table flags. CLI: `python -m app.scripts.import_retool_outreach`. source='retool_import', execution_mode='SHADOW'.
+  - Verification: --dry-run path exercised; insert path requires MSSQL connectivity.
+  - Notes: retool_import_keys table created on first run (CREATE TABLE IF NOT EXISTS). No alembic migration needed.
+
 ---
 
 ## Phase 59 — Pre-Shadow Launch Remediation Sprint (RISK-001 + RISK-003)

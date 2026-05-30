@@ -347,6 +347,114 @@ def stop_scheduler() -> None:
         }))
 
 
+# ── Monthly report job ────────────────────────────────────────────────────────
+
+async def _monthly_report_job() -> None:
+    """
+    APScheduler callback — runs on the 1st of each month at 02:00 UTC.
+    Assembles snapshots for the prior month, then generates reports for all
+    five segment cohorts. SHADOW-safe: reads PostgreSQL + SQL Server, writes
+    warehouse tables only. Never dispatches providers.
+    """
+    from datetime import date
+    from app.database import AsyncSessionLocal
+    from app.services.snapshot import assemble_all_active_snapshots
+    from app.services.report import generate_cohort_report
+
+    today = date.today()
+    # Prior month
+    if today.month == 1:
+        report_year, report_month = today.year - 1, 12
+    else:
+        report_year, report_month = today.year, today.month - 1
+    snapshot_month = date(report_year, report_month, 1)
+
+    execution_mode = _scheduler_config.get("execution_mode", MODE_SHADOW)
+    config_version_id = _scheduler_config.get("config_version_id")
+    correlation_id = str(uuid.uuid4())
+
+    logger.info(json.dumps({
+        "timestamp": _now_iso(), "level": "info", "service": "scheduler",
+        "event": "monthly_report_job_started",
+        "snapshot_month": str(snapshot_month),
+        "execution_mode": execution_mode,
+        "correlation_id": correlation_id,
+    }))
+
+    try:
+        async with AsyncSessionLocal() as db:
+            snap_result = await assemble_all_active_snapshots(
+                snapshot_month=snapshot_month,
+                db=db,
+                execution_mode=execution_mode,
+                config_version_id=config_version_id,
+            )
+            logger.info(json.dumps({
+                "timestamp": _now_iso(), "level": "info", "service": "scheduler",
+                "event": "monthly_snapshots_assembled",
+                "snapshot_month": str(snapshot_month),
+                "result": snap_result,
+                "correlation_id": correlation_id,
+            }))
+
+        segments = [
+            "NEWCOMERS", "ENGAGEMENT", "CAP_HOPEFULS",
+            "LAUNCH_HOPEFULS", "PLACEMENT_HOPEFULS",
+        ]
+        report_results = []
+        for segment in segments:
+            async with AsyncSessionLocal() as db:
+                result = await generate_cohort_report(
+                    cohort_id=segment,
+                    report_month=snapshot_month,
+                    db=db,
+                    execution_mode=execution_mode,
+                )
+                report_results.append(result)
+
+        logger.info(json.dumps({
+            "timestamp": _now_iso(), "level": "info", "service": "scheduler",
+            "event": "monthly_report_job_completed",
+            "snapshot_month": str(snapshot_month),
+            "segments_processed": len(segments),
+            "total_generated": sum(r.get("generated", 0) for r in report_results),
+            "total_errors": sum(r.get("errors", 0) for r in report_results),
+            "execution_mode": execution_mode,
+            "correlation_id": correlation_id,
+        }))
+
+    except Exception as exc:
+        logger.error(json.dumps({
+            "timestamp": _now_iso(), "level": "error", "service": "scheduler",
+            "event": "monthly_report_job_failed",
+            "error_class": type(exc).__name__,
+            "error": str(exc),
+            "snapshot_month": str(snapshot_month),
+            "correlation_id": correlation_id,
+        }))
+        raise
+
+
+def start_monthly_report_job(timezone_str: str = "UTC") -> None:
+    """
+    Register the monthly report job: runs 1st of every month at 02:00 UTC.
+    Called after start_scheduler() so the scheduler instance is already running.
+    """
+    _scheduler.add_job(
+        _monthly_report_job,
+        CronTrigger(day=1, hour=2, minute=0, timezone=timezone_str),
+        id="monthly_report_generation",
+        replace_existing=True,
+        misfire_grace_time=7200,
+    )
+    logger.info(json.dumps({
+        "timestamp": _now_iso(), "level": "info", "service": "scheduler",
+        "event": "monthly_report_job_registered",
+        "cron": "day=1 hour=2 minute=0",
+        "timezone": timezone_str,
+    }))
+
+
 def get_last_run_at() -> Optional[str]:
     """ISO-8601 timestamp of the last scheduler cycle, or None if no cycle has run."""
     return _last_run_at

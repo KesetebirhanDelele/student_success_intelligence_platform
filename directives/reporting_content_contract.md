@@ -364,34 +364,49 @@ Additional columns beyond shared set:
 
 ### 4.5 Launch Hopefuls Tab (20 columns)
 
-**SP source:** IPBC - Group 2 - LAUNCH Hopefuls (to be provided by user).
+**SP source:** IPBC - Group 2 - LAUNCH Hopefuls
 
-**Filter logic:** [TBD — derived from Launch Hopefuls SP when provided]
+**Filter logic:**
+```sql
+ADF_Mentorship_Activity.PerComp_Act >= 0.59
+AND ADF_Mentorship_Activity.CAP_StartDate IS NOT NULL
+AND ADF_Mentorship_Activity.LaunchStartDate IS NULL
+AND ADF_Mentorship_Activity.CurrSection_Phase1 NOT LIKE '%launch%'
+AND ADF_Mentorship_Activity.CurrSection_Phase1 LIKE '%CAP%'
+```
 
-Expected: same column schema as CAP Hopefuls with updated section filter (students who
-HAVE a `CAP_StartDate` but no `LaunchStartDate`, near launch section).
+Column schema: identical to CAP Hopefuls Tab (§4.4). Same source columns and derived
+fields. The only difference is the filter (PerComp_Act threshold ≥ 0.59 vs. > 0.30,
+and CAP_StartDate IS NOT NULL).
+
+`CAP_StartDate` and `LaunchStartDate` are used in filter logic only; not displayed.
 
 ---
 
 ### 4.6 Placement Hopefuls Tab (28 columns)
 
-**SP source:** Not yet provided. (User to share.)
+**SP source:** IPBC - Group 3 - PLACEMENT Hopefuls
 
-**Filter logic:** [TBD — derived from Placement Hopefuls SP when provided]
+**Filter logic:**
+```sql
+ADF_Mentorship_Activity.CurrSection_Phase1 LIKE '%launch%'
+```
+(Ordered by PerComp_Act DESC)
 
-All CAP Hopefuls columns plus the following interview data columns (source:
-`AI_ChatBot_TriggerData_InterviewPrep`):
+All CAP Hopefuls columns plus the following interview data columns.
+
+**Interview data source:** `vw_ColaberryInterviews_PlacementHopefuls` (joined on `CandidateID = dnnuser.Users.UserID`). This is NOT `AI_ChatBot_TriggerData_InterviewPrep` — OI-2 was resolved 2026-05-29.
 
 | Display column | Source category | Source column |
 |---|---|---|
-| Last Interview | `MSSQL_INTERVIEW_PREP` | [TBD — OI-2] |
-| Last Interview Days Ago | `DERIVED` | Computed from Last Interview date |
-| Recruiter Interview Count | `MSSQL_INTERVIEW_PREP` | [TBD — OI-2] |
-| Technical Interview Count | `MSSQL_INTERVIEW_PREP` | [TBD — OI-2] |
-| Recruiter:Technical Ratio | `DERIVED` | Computed from above two counts (OI-5) |
-| Avg Interview Prep Score | `MSSQL_INTERVIEW_PREP` | [TBD — OI-2] |
-| Avg Interview Score | `MSSQL_INTERVIEW_PREP` | [TBD — OI-2] |
-| ChatGPT Prompt | `MSSQL_INTERVIEW_PREP` | [TBD — OI-2] |
+| Last Interview | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.LastInterview` |
+| Last Interview Days Ago | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.LastInterviewDaysAgo` (pre-computed in view) |
+| Recruiter Interview Count | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.Recruiter_InterviewCount` |
+| Technical Interview Count | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.Technical_InterviewCount` |
+| Recruiter:Technical Ratio | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.Recruiter_to_Technical_Interview_Ratio` (pre-computed) |
+| Avg Interview Prep Score | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.AvgInterviewPrepScore` |
+| Avg Interview Score | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.AvgInterviewScore` |
+| ChatGPT Prompt | `MSSQL_INTERVIEW_PREP` | `vw_ColaberryInterviews_PlacementHopefuls.ChatGPT_prompt` |
 
 ---
 
@@ -520,22 +535,38 @@ not a blocking condition.
 
 | # | Item | Status | Blocker |
 |---|---|---|---|
-| OI-1 | Map all `[TBD]` fields to source columns | **PARTIALLY RESOLVED** — most fields mapped from SPs 2026-05-29; remaining items tracked in OI-9 through OI-16 | Remaining TBDs need confirmation |
-| OI-2 | Map Placement Hopefuls interview fields to `AI_ChatBot_TriggerData_InterviewPrep` columns | **OPEN** | Interview prep SP not yet provided |
+| OI-1 | Map all `[TBD]` fields to source columns | **RESOLVED** — all major fields mapped; see model `ai_chatbot_triggerdata` for column names | — |
+| OI-2 | Map Placement Hopefuls interview fields | **RESOLVED** — source is `vw_ColaberryInterviews_PlacementHopefuls` (not `AI_ChatBot_TriggerData_InterviewPrep`); columns: LastInterview, LastInterviewDaysAgo, Recruiter_InterviewCount, Technical_InterviewCount, Recruiter_to_Technical_Interview_Ratio, AvgInterviewPrepScore, AvgInterviewScore, ChatGPT_prompt | — |
 | OI-3 | Confirm null display format per numeric field (0 vs dash) | **OPEN** | Source column type needed |
-| OI-4 | Confirm `Weeks in Program` derivation formula | **RESOLVED** — `ADF_Mentorship_Activity.WksInProgram` (SQL Server view pre-computes it) | — |
-| OI-5 | Confirm Recruiter:Technical Ratio formula | **OPEN** | Interview prep SP needed |
-| OI-6 | Confirm `segment_classification` label set | **OPEN** | Config V2 definition needed |
-| OI-7 | Confirm `payment_risk_label` threshold values | **OPEN** | Config V2 definition needed |
-| OI-8 | Confirm whether `AI_ChatBot_TriggerData` is a denormalized view of the CCPP tables listed in Section 10, or a separate table | **OPEN** | CCPP schema clarification needed |
-| OI-9 | Identify source table queried by `UDF_GET_USER_PHONENUMBER` | **OPEN** | UDF definition or source table needed |
-| OI-10 | Confirm HWs Behind source: explicit column in `ADF_Mentorship_Activity` or derived from `adf_homework.sectionID` count vs expected count | **OPEN** | Business rule + source column needed |
-| OI-11 | Confirm Avg Effort Rating source column and table | **OPEN** | Not found in any SP provided so far |
-| OI-12 | Confirm Last Login Days and Last Activity Section source columns | **OPEN** | Not found in SPs; may require separate login-tracking table |
-| OI-13 | Confirm Status I and Status II source columns (possibly `ADF_Mentorship_Activity.MM_Status`?) | **OPEN** | Column definition or SP showing their usage needed |
-| OI-14 | Confirm Attendance %: is it `ADF_Mentorship_Activity.PerOnPace * 100` or a separate attendance column? | **OPEN** | Business rule confirmation needed (`PerOnPace` = "on pace", not attendance per se) |
-| OI-15 | Confirm Fee Paid display field: `IPBC_SubscriptionPlan.InitialDownPayment` (down payment amount) or `DAFeesPaid` from `VW_PAYPAL_DISTINCT_TRANSACTIONS`? | **OPEN** | Business rule clarification needed |
-| OI-16 | Confirm `DaysToMarket` business definition (days from current date to expected job placement? days remaining in program?) | **OPEN** | Business definition needed |
+| OI-4 | Confirm `Weeks in Program` derivation formula | **RESOLVED** — computed from `IPBCStartDate` as `(today - IPBCStartDate) // 7 days` | — |
+| OI-5 | Confirm Recruiter:Technical Ratio formula | **RESOLVED** — pre-computed in `vw_ColaberryInterviews_PlacementHopefuls.Recruiter_to_Technical_Interview_Ratio` | — |
+| OI-6 | Confirm `segment_classification` label set | **RESOLVED** — NEWCOMERS / ENGAGEMENT / CAP_HOPEFULS / LAUNCH_HOPEFULS / PLACEMENT_HOPEFULS; derived from `CurrentSection` + `AttendancePercentage` + `IPBCStartDate` at snapshot assembly | — |
+| OI-7 | Confirm `payment_risk_label` threshold values | **RESOLVED** — from `app/services/payment.py`: >$1000 = HIGH, >$0 = MEDIUM, $0 = CLEAR | — |
+| OI-8 | Confirm whether `AI_ChatBot_TriggerData` is a real SQL Server table | **RESOLVED** — YES, it is a real SQL Server table. Platform does `SELECT * FROM AI_ChatBot_TriggerData` via pyodbc. Column names match `app/models.py:StudentTriggerData`. SQL Server source query for this table is separate from the Retool dashboard SPs. | — |
+| OI-9 | Identify source table queried by `UDF_GET_USER_PHONENUMBER` | **OPEN** | UDF definition needed; low priority (phone number is already in `ai_chatbot_triggerdata.PhoneNumber`) |
+| OI-10 | Confirm HWs Behind source column | **RESOLVED** — `ai_chatbot_triggerdata.HWsBehind` (column exists in model; populated from SQL Server `AI_ChatBot_TriggerData.HWsBehind`) | — |
+| OI-11 | Confirm Avg Effort Rating source column | **RESOLVED** — `ai_chatbot_triggerdata.AvgEffRating` (column exists in model) | — |
+| OI-12 | Confirm Last Login Days and Last Activity Section | **RESOLVED** — `ai_chatbot_triggerdata.LastLoginDays` and `ai_chatbot_triggerdata.LastActivitySection` (both columns exist in model) | — |
+| OI-13 | Confirm Status I and Status II source columns | **RESOLVED** — `ai_chatbot_triggerdata.StatusI` and `ai_chatbot_triggerdata.StatusII` (both columns exist in model); exact values determined by `AI_ChatBot_TriggerData` SQL Server source | — |
+| OI-14 | Confirm Attendance %: `PerOnPace * 100` or separate column | **RESOLVED** — `ai_chatbot_triggerdata.AttendancePercentage` (column exists in model; separate from `PerOnPace` in ADF_Mentorship_Activity) | — |
+| OI-15 | Confirm Fee Paid source | **RESOLVED** — `ai_chatbot_triggerdata.FeePaid` is Boolean (paid vs. not paid); `ClassFeesPaid` is the amount paid. These come from `AI_ChatBot_TriggerData`. | — |
+| OI-16 | Confirm `DaysToMarket` business definition | **OPEN** | ADF_Mentorship_Activity has this column; not in platform model. Requires confirmation if needed in monthly report. |
+
+**Payment data gap note (Gap 2):** The CCPP `AI_ChatBot_TriggerData` payment fields (`Total_Payments`, `PaymentBalance`, etc.) may be stale because payment processing moved to `CB_PS_TXN_LOG` (PaySimple) and `VW_PAYPAL_DISTINCT_TRANSACTIONS`. See proposal in section below.
+
+**Campaign activity gap note (Gap 1):** Historical outreach from `RETOOLCALLENGAGEMENT`, `RetoolEmailEngagement`, `RetoolNoteEngagement` must be imported into `student_campaign_activity` as a one-time seed before historical monthly reports can show accurate outreach summaries. Source tables documented in Section 10.
+
+---
+
+## GAP 2 PROPOSAL — PAYMENT DATA SOURCING
+
+**Problem:** CCPP `AI_ChatBot_TriggerData` payment fields may be stale. The `SP_RETOOL_RPT_IPBC_ENROLLMENTS` SP shows payment data now lives in `CB_PS_TXN_LOG` (PaySimple: Posted/Settled/RefundSettled/Chargeback) and `VW_PAYPAL_DISTINCT_TRANSACTIONS` (DA fees: TRANSTYPE='T'; IPBC subscription: TRANSTYPE='S').
+
+**Option A (Recommended):** Update the SQL Server `AI_ChatBot_TriggerData` view/table to re-aggregate payment fields using the `SP_RETOOL_RPT_IPBC_ENROLLMENTS` payment JOIN pattern. No platform code changes needed. SQL Server stays as the authoritative aggregation point.
+
+**Option B:** Add `POST /sync/payments` platform endpoint that queries `CB_PS_TXN_LOG` directly, aggregates per student, and upserts into `ai_chatbot_triggerdata`. More platform code; departs from the clean `SELECT * FROM AI_ChatBot_TriggerData` sync contract.
+
+**Decision required:** Which option to proceed with. Implementation blocked on decision.
 
 ---
 
@@ -560,11 +591,25 @@ SQL Server objects that must be mirrored into `student_trigger_data` (PostgreSQL
 | `CCPP.dbo.adf_homework` | HW submission records | `ClassSignupsID`, `sectionID` (COUNT DISTINCT = HWs submitted) |
 | `CCPP.dbo.VW_RETOOL_CAMPAIGNACTIVITY_LASTACTIVITY` | Most recent campaign touchpoint per student | `UserID`, `LastActivityDate`, `LastActivityType`, `Notes` |
 | `CCPP.dbo.vw_IPBC_Signups` | IPBC signup view | Wraps ADF_ClassSignups + related; includes `StudentUserId`, `ClassSignupsID`, `IPBC_StartDate`, `ClassStartDate`, `CertifiedDate` |
-| `UDF_GET_USER_PHONENUMBER` | Scalar UDF returning phone number for a UserID | Source table TBD (OI-9) |
+| `UDF_GET_USER_PHONENUMBER` | Scalar UDF returning phone number for a UserID | Source table TBD (OI-9 — low priority; phone already in `ai_chatbot_triggerdata.PhoneNumber`) |
+| `CCPP.dbo.RETOOLCALLENGAGEMENT` | Call activity records per student | `UserID` (student), `CAMPAIGNID`, `CallDate`, `CallDuration`, `CallNotes`, `PhoneNumber`, `CreatedBy` (agent UserID) |
+| `CCPP.dbo.RetoolEmailEngagement` | Email activity records per student | `UserID` (student), `CAMPAIGNID`, `EmailDate`, `EmailFromAddress`, `EmailToAddress`, `EmailSubject`, `EmailBody`, `CreatedBy` (agent UserID) |
+| `CCPP.dbo.RetoolNoteEngagement` | Note activity records per student | `UserID` (student), `CAMPAIGNID`, `NoteDate`, `NoteDetails`, `CreatedBy` (agent UserID) |
+| `CCPP.dbo.RETOOLCAMPAIGNS` | Campaign metadata | `CampaignID` (UNIQUEIDENTIFIER), `CampaignName` |
+| `CCPP.dbo.StudentAccessHistory` | Student access revoke/restore events | `UserID`, `ClassSignupsID`, `CancellationDate`, `RestorationDate`, `CancelID`, `IPBCSignupID` |
+| `CCPP.dbo.ADF_Cancel` | Cancellation reason codes | `CancelID`, `CANCELREASON` |
+| `CCPP.dbo.ADF_Class` | Class metadata | `CLASSID`, `ClassName` |
+| `CCPP.dbo.CB_PS_TXN_LOG` | PaySimple transaction log (primary payment source) | `CustomerID`, `Amount`, `Status` (Posted/Settled/RefundSettled/Chargeback), `PaymentDate`, `UserID` (via join) |
+| `CCPP.dbo.vw_ColaberryInterviews_PlacementHopefuls` | Aggregated interview data per candidate | `CandidateID` (= UserID), `LastInterview`, `LastInterviewDaysAgo`, `Recruiter_InterviewCount`, `Technical_InterviewCount`, `Recruiter_to_Technical_Interview_Ratio`, `AvgInterviewPrepScore`, `AvgInterviewScore`, `ChatGPT_prompt` |
+
+**Gap 1 import target:** `RETOOLCALLENGAGEMENT`, `RetoolEmailEngagement`, `RetoolNoteEngagement` → platform's `student_campaign_activity` table.
+- CALL: `channel='CALL'`, `activity_type='OUTBOUND_CALL'`, `message_body=CallNotes`, `activity_label=CallDuration`, `created_by=AgentName`, `source='retool_import'`
+- EMAIL: `channel='EMAIL'`, `activity_type='EMAIL_SENT'`, `subject=EmailSubject`, `message_body=EmailBody`, `created_by=AgentName`, `source='retool_import'`
+- NOTE: `channel='NOTE'`, `activity_type='NOTE_ADDED'`, `message_body=NoteDetails`, `created_by=AgentName`, `source='retool_import'`
 
 **IPBC curriculum constant:** Homework completion percentage uses `27.0` as the total
-section count: `COUNT(DISTINCT adf_homework.sectionID) / 27.0 * 100`. Confirm whether
-this constant is fixed or should come from a config value (OI-10).
+section count: `COUNT(DISTINCT adf_homework.sectionID) / 27.0 * 100`. This is a
+business constant — confirm with user if it changes per cohort or is fixed.
 
 ---
 
