@@ -357,12 +357,37 @@ async def sync_from_mssql(db: Any) -> Dict[str, Any]:
         }))
         return {"synced": 0, "total_fetched": 0, "error": error, "status": "failed"}
 
-    model_cols: set = {c.name for c in StudentTriggerData.__table__.columns}
+    from sqlalchemy import String, Boolean as SABoolean
+
+    model_col_types: dict = {
+        c.name: type(c.type) for c in StudentTriggerData.__table__.columns
+    }
+    model_cols: set = set(model_col_types)
+
     count = 0
     for row in rows:
         values = {k: v for k, v in row.items() if k in model_cols}
         if not values.get("UserID"):
             continue
+        # Coerce SQL Server types to match PostgreSQL column expectations
+        for col, val in list(values.items()):
+            col_type = model_col_types.get(col)
+            if val is None:
+                continue
+            if col_type is SABoolean:
+                values[col] = bool(val)
+            elif col_type is String and not isinstance(val, str):
+                values[col] = str(val)
+        # Apply defaults for non-nullable columns that SQL Server may return NULL for
+        values.setdefault("HWsBehind", 0)
+        values.setdefault("AvgEffRating", 0.0)
+        values.setdefault("LastActivityDays", 0)
+        if values.get("HWsBehind") is None:
+            values["HWsBehind"] = 0
+        if values.get("AvgEffRating") is None:
+            values["AvgEffRating"] = 0.0
+        if values.get("LastActivityDays") is None:
+            values["LastActivityDays"] = 0
         stmt = (
             pg_insert(StudentTriggerData)
             .values(**values)

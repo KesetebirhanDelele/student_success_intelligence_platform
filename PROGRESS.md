@@ -30,6 +30,31 @@
 
 ---
 
+## Phase 64 — Pipeline End-to-End: ODBC fix + type coercions + warehouse migrations
+
+- [x] .env — MSSQL_DRIVER override
+  - Date: 2026-05-29
+  - What changed: Added `MSSQL_DRIVER=ODBC Driver 18 for SQL Server` to .env. Dockerfile installs msodbcsql18 (Driver 18) but app/config.py defaulted to Driver 17; the mismatch caused all SQL Server syncs to return 0 rows silently.
+  - Verification: `POST /sync/mssql` returns `{"synced":67,"total_fetched":67}` after container restart.
+
+- [x] app/services/sync.py — SQL Server type coercions in sync_from_mssql()
+  - Date: 2026-05-29
+  - What changed: (1) Boolean coercion: FeePaid came from SQL Server as numeric (e.g. 1000); added `bool(val)` for SABoolean columns. (2) String coercion: ClassSignupsID and other VARCHAR columns came as integers; added `str(val)` for String columns containing non-str values. (3) NOT NULL defaults: HWsBehind, AvgEffRating, LastActivityDays are non-nullable in PostgreSQL but SQL Server returns NULL for some students; added `.setdefault()` + None-guard for all three. Previously used individual FeePaid patch replaced by a general model-introspection coercion loop.
+  - Verification: `POST /sync/mssql` → 67 students synced with no errors.
+
+- [x] docker-entrypoint.sh — legacy stamp target corrected from "head" to "0001"
+  - Date: 2026-05-29
+  - What changed: The legacy init_db() detection stamped Alembic at `head` (0003). This caused migrations 0002 (warehouse schema) and 0003 (config_version_registry) to be skipped, so warehouse.student_snapshots did not exist. Corrected stamp target to `0001` — the baseline revision that matches what init_db() actually created. `alembic upgrade head` then applies 0002 and 0003 on first startup.
+  - Verification: Ran `alembic stamp 0001 && alembic upgrade head` manually; migrations 0002 and 0003 applied. `warehouse.student_snapshots` now exists.
+  - Notes: Existing database was fixed with `docker compose exec api alembic stamp 0001 && alembic upgrade head`.
+
+- [x] Full pipeline run — 96 snapshots + reports generated
+  - Date: 2026-05-29
+  - What changed: First successful end-to-end run: POST /reports/snapshots/assemble-all → 96 snapshots created (FINALIZED); POST /reports/monthly/generate-all → all segments completed; GET /reports/monthly/1001/2026/5 → REPORT_PUBLISHED with full report_content_json.
+  - Verification: `warehouse.monthly_reports` has 96 rows with status=REPORT_PUBLISHED, lineage_version=1, report_month=2026-05-01. API returns report for student 1001 with correct identity, risk, academic, engagement, financial, and outreach sections.
+
+---
+
 ## Phase 63 — Compose Readiness: Alembic startup + UUID fix
 
 - [x] docker-entrypoint.sh — new startup script
