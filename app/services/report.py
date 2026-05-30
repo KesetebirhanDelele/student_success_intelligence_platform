@@ -273,7 +273,7 @@ async def _insert_monthly_report(
         "fp_json": fp_json,
         "content_json": content_json,
         "now": now,
-        "correlation_id": correlation_id,
+        "correlation_id": uuid.UUID(correlation_id) if correlation_id else None,
         "execution_mode": execution_mode,
     })
     row = result.fetchone()

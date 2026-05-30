@@ -269,7 +269,7 @@ async def _insert_snapshot(
         "student_id": student_id,
         "snapshot_month": snapshot_month,
         "execution_mode": execution_mode,
-        "correlation_id": correlation_id,
+        "correlation_id": uuid.UUID(correlation_id) if correlation_id else None,
         "first_name": student.FirstName,
         "last_name": student.LastName,
         "email": student.Email,

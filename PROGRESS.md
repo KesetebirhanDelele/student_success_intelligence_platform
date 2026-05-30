@@ -30,6 +30,30 @@
 
 ---
 
+## Phase 63 — Compose Readiness: Alembic startup + UUID fix
+
+- [x] docker-entrypoint.sh — new startup script
+  - Date: 2026-05-29
+  - What changed: Created entrypoint script that runs `alembic upgrade head` before uvicorn. Ensures warehouse.student_snapshots, warehouse.snapshot_ai_narratives, warehouse.monthly_reports, warehouse.report_audit_log, compliance_audit.*, config_version_registry tables are created on every container start before the API accepts requests.
+  - Verification: `alembic upgrade head` is idempotent — safe to run on every restart.
+
+- [x] Dockerfile — use entrypoint script
+  - Date: 2026-05-29
+  - What changed: Changed CMD from direct uvicorn call to `./docker-entrypoint.sh`. Added COPY + chmod for the entrypoint script.
+  - Verification: Container startup sequence now: `alembic upgrade head` → `uvicorn`.
+
+- [x] app/services/snapshot.py — UUID type fix
+  - Date: 2026-05-29
+  - What changed: `correlation_id` parameter in `_insert_snapshot()` now passed as `uuid.UUID(correlation_id)` instead of raw string. asyncpg (the async PostgreSQL driver) rejects Python strings for UUID-typed columns in parameterized text() queries; it requires `uuid.UUID` objects.
+  - Verification: Fixes TypeError that would occur on first `POST /reports/snapshots/assemble` call.
+
+- [x] app/services/report.py — UUID type fix
+  - Date: 2026-05-29
+  - What changed: Same fix in `_insert_monthly_report()`. `correlation_id` → `uuid.UUID(correlation_id) if correlation_id else None`.
+  - Verification: Fixes TypeError that would occur on first `POST /reports/monthly/generate` call.
+
+---
+
 ## Phase 62 — Payment Sync + Placement Interview Sync (Option B, Gap 2 + Gap 3)
 
 - [x] app/services/payment_sync.py — payment and placement interview sync service (new)
