@@ -4,7 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas import APIResponse
 from app.services.payment_sync import sync_payments, sync_placement_interviews
-from app.services.sync import sync_campaign_activity, sync_from_mssql, sync_interview_prep, sync_mentorship_assignments
+from app.services.sync import (
+    sync_campaign_activity, sync_from_mssql, sync_interview_prep,
+    sync_ipbc_students, sync_mentorship_assignments,
+)
 
 router = APIRouter()
 
@@ -30,6 +33,17 @@ async def manual_payment_sync(db: AsyncSession = Depends(get_db)) -> APIResponse
     ClassFeesPaid, PaymentBalance per student. SHADOW-safe.
     """
     result = await sync_payments(db)
+    return APIResponse.ok(result)
+
+
+@router.post("/sync/ipbc-students")
+async def manual_ipbc_sync(db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """
+    Sync AI_Chatbot_TriggerData_IPBC → ai_chatbot_triggerdata + mentorship_assignments.
+    IPBC students are a separate population from AI_ChatBot_TriggerData (JRP students).
+    Must be run before mentor/supermentor tabs will show data for IPBC students.
+    """
+    result = await sync_ipbc_students(db)
     return APIResponse.ok(result)
 
 

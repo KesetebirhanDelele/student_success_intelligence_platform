@@ -407,6 +407,129 @@ async def sync_from_mssql(db: Any) -> Dict[str, Any]:
     return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
 
 
+async def sync_ipbc_students(db: Any) -> Dict[str, Any]:
+    """
+    Pull AI_Chatbot_TriggerData_IPBC from SQL Server and:
+      1. Upsert IPBC student records into ai_chatbot_triggerdata (main mirror)
+      2. Upsert their mentor/supermentor assignments into mentorship_assignments
+    IPBC students are a completely separate population from AI_ChatBot_TriggerData.
+    Read-only from SQL Server (FAD-5/ABG-1). Safe to run in SHADOW mode.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from sqlalchemy import String, Boolean as SABoolean
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.database import fetch_ipbc_students_from_mssql
+    from app.models import MentorshipAssignment, StudentTriggerData
+
+    rows, error = await fetch_ipbc_students_from_mssql()
+    if error:
+        logger.warning(_json.dumps({
+            "service": "sync", "event": "ipbc_fetch_failed", "error": error,
+        }))
+        return {"synced": 0, "mentorship_synced": 0, "total_fetched": 0, "error": error, "status": "failed"}
+
+    model_col_types: dict = {
+        c.name: type(c.type) for c in StudentTriggerData.__table__.columns
+    }
+    model_cols: set = set(model_col_types)
+
+    # IPBC table has UserID as VARCHAR — column name mapping differs slightly
+    _IPBC_RENAMES = {
+        "IPBC_StartDate": "IPBCStartDate",
+    }
+
+    now = datetime.now(timezone.utc)
+    student_count = 0
+    mentor_count = 0
+
+    for row in rows:
+        # IPBC UserID is stored as VARCHAR in SQL Server
+        uid_raw = row.get("UserID")
+        if not uid_raw:
+            continue
+        try:
+            uid = int(uid_raw)
+        except (TypeError, ValueError):
+            continue
+
+        # --- 1. Upsert student into ai_chatbot_triggerdata ---
+        renamed = {}
+        for k, v in row.items():
+            key = _IPBC_RENAMES.get(k, k)
+            renamed[key] = v
+
+        values = {k: v for k, v in renamed.items() if k in model_cols}
+        values["UserID"] = uid
+
+        for col, val in list(values.items()):
+            col_type = model_col_types.get(col)
+            if val is None:
+                continue
+            if col_type is SABoolean:
+                values[col] = bool(val)
+            elif col_type is String and not isinstance(val, str):
+                values[col] = str(val)
+
+        values.setdefault("HWsBehind", 0)
+        values.setdefault("AvgEffRating", 0.0)
+        values.setdefault("LastActivityDays", 0)
+        if values.get("HWsBehind") is None:
+            values["HWsBehind"] = 0
+        if values.get("AvgEffRating") is None:
+            values["AvgEffRating"] = 0.0
+        if values.get("LastActivityDays") is None:
+            values["LastActivityDays"] = 0
+
+        stmt = (
+            pg_insert(StudentTriggerData)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["UserID"],
+                set_={k: v for k, v in values.items() if k != "UserID"},
+            )
+        )
+        await db.execute(stmt)
+        student_count += 1
+
+        # --- 2. Upsert mentor assignments ---
+        mentor_values = {
+            "user_id": uid,
+            "mm_mentor": row.get("MM_Mentor"),
+            "mentor_email": row.get("MentorEmail"),
+            "supermentor": row.get("SuperMentor"),
+            "supermentor_email": row.get("SuperMentorEmail"),
+            "ipbc_instructor": None,
+            "ipbc_instructor_email": None,
+            "synced_at": now,
+        }
+        if mentor_values.get("mm_mentor") or mentor_values.get("supermentor"):
+            stmt2 = (
+                pg_insert(MentorshipAssignment)
+                .values(**mentor_values)
+                .on_conflict_do_update(
+                    index_elements=["user_id"],
+                    set_={k: v for k, v in mentor_values.items() if k != "user_id"},
+                )
+            )
+            await db.execute(stmt2)
+            mentor_count += 1
+
+    await db.commit()
+    logger.info(_json.dumps({
+        "service": "sync", "event": "ipbc_sync_complete",
+        "students_synced": student_count, "mentors_synced": mentor_count,
+        "total_fetched": len(rows),
+    }))
+    return {
+        "students_synced": student_count,
+        "mentorship_synced": mentor_count,
+        "total_fetched": len(rows),
+        "error": None,
+        "status": "ok",
+    }
+
+
 async def sync_mentorship_assignments(db: Any) -> Dict[str, Any]:
     """
     Pull ADF_Mentorship_Activity from SQL Server and upsert into mentorship_assignments.

@@ -67,6 +67,11 @@
   - What changed: Returns mm_mentor, mentor_email, supermentor, supermentor_email, ipbc_instructor, ipbc_instructor_email, synced_at for a student from mentorship_assignments.
   - Verification: `GET /students/46828/mentorship` → available:true, mm_mentor:"Anthony Onicha", mentor_email:"tonyonicha@gmail.com".
 
+- [x] app/database.py + services/sync.py + routers/sync.py — POST /sync/ipbc-students
+  - Date: 2026-05-29
+  - What changed: Root cause: AI_ChatBot_TriggerData (JRP students, IDs 31k-48k) and AI_Chatbot_TriggerData_IPBC (IPBC students, IDs 30k-48k different set) are 0-overlap populations. Mentor tabs showed "No assignment found" because we only synced JRP students. Fix: new sync_ipbc_students() upserts IPBC student records into ai_chatbot_triggerdata AND their mentor/supermentor assignments into mentorship_assignments in one atomic call. dashboard now has 230 students (96 JRP + 137 IPBC), 136 with mentor assignments.
+  - Verification: POST /sync/ipbc-students → students_synced:137, mentorship_synced:137. GET /students/45007/mentorship → available:true, mm_mentor:"Sakthia Okou".
+
 - [x] frontend/index.html — Mentor/Instructor/SuperMentor/Timeline/Outreach drawer tabs fixed
   - Date: 2026-05-29
   - What changed: (1) Mentor tab: now async, calls `/students/{uid}/mentorship`, shows MM Mentor + email; (2) Instructor tab: now async, calls `/students/{uid}/mentorship`, shows IPBC context (mentor + note that instructor field N/A in source); (3) SuperMentor tab: now async, calls `/students/{uid}/mentorship`, shows SuperMentor + email; (4) Timeline tab: tlLabel/tlDetail/tlColor updated for campaign_activity type — shows activity_type, channel, subject, source; (5) Outreach tab: adds "Historical Campaign Activity (Retool)" section at top showing engagement_events data from student_campaign_activity. loadDrawerTab wired to await renderDrawerMentor/Instructor/SuperMentor.

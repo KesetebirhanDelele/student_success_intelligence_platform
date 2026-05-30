@@ -235,6 +235,32 @@ async def fetch_interview_prep_from_mssql() -> tuple[list[dict], str | None]:
     return await asyncio.to_thread(_fetch_interview_prep_sync)
 
 
+def _fetch_ipbc_students_sync() -> tuple[list[dict], str | None]:
+    """
+    Fetch all rows from AI_Chatbot_TriggerData_IPBC.
+    IPBC students have mentor assignments (MM_Mentor, MentorEmail, SuperMentor, SuperMentorEmail)
+    and a completely separate UserID population from AI_ChatBot_TriggerData.
+    """
+    if not settings.mssql_configured:
+        return [], "not_configured"
+    try:
+        import pyodbc
+        conn = pyodbc.connect(settings.mssql_dsn, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM AI_Chatbot_TriggerData_IPBC")
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows, None
+    except Exception as exc:
+        logger.error("SQL Server AI_Chatbot_TriggerData_IPBC query failed: %s", exc)
+        return [], str(exc)
+
+
+async def fetch_ipbc_students_from_mssql() -> tuple[list[dict], str | None]:
+    return await asyncio.to_thread(_fetch_ipbc_students_sync)
+
+
 def _fetch_mentorship_assignments_sync() -> tuple[list[dict], str | None]:
     """
     Fetch mentor/supermentor assignments from AI_Chatbot_TriggerData_IPBC.
