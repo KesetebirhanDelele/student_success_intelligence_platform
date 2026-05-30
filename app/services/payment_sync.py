@@ -65,17 +65,7 @@ LEFT JOIN (
 """
 
 _PLACEMENT_INTERVIEW_QUERY = """
-SELECT
-    CandidateID,
-    LastInterview,
-    LastInterviewDaysAgo,
-    Recruiter_InterviewCount,
-    Technical_InterviewCount,
-    Recruiter_to_Technical_Interview_Ratio,
-    AvgInterviewPrepScore,
-    AvgInterviewScore,
-    ChatGPT_prompt
-FROM vw_ColaberryInterviews_PlacementHopefuls
+SELECT * FROM vw_ColaberryInterviewPreparation_UpcomingInterviews_Processed
 """
 
 

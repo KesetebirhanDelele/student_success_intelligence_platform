@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas import APIResponse
 from app.services.payment_sync import sync_payments, sync_placement_interviews
-from app.services.sync import sync_from_mssql, sync_interview_prep
+from app.services.sync import sync_campaign_activity, sync_from_mssql, sync_interview_prep, sync_mentorship_assignments
 
 router = APIRouter()
 
@@ -30,6 +30,20 @@ async def manual_payment_sync(db: AsyncSession = Depends(get_db)) -> APIResponse
     ClassFeesPaid, PaymentBalance per student. SHADOW-safe.
     """
     result = await sync_payments(db)
+    return APIResponse.ok(result)
+
+
+@router.post("/sync/mentorship-assignments")
+async def manual_mentorship_sync(db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """Sync ADF_Mentorship_Activity from SQL Server → mentorship_assignments (PostgreSQL)."""
+    result = await sync_mentorship_assignments(db)
+    return APIResponse.ok(result)
+
+
+@router.post("/sync/campaign-activity")
+async def manual_campaign_activity_sync(db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """Gap 1 import: RETOOLCALLENGAGEMENT + RetoolEmailEngagement + RetoolNoteEngagement → student_campaign_activity."""
+    result = await sync_campaign_activity(db)
     return APIResponse.ok(result)
 
 

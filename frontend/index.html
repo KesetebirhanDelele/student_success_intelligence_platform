@@ -1293,9 +1293,9 @@ async function loadDrawerTab(name) {
   if (!el) return;
 
   if (name === 'info') { renderDrawerInfo(); return; }
-  if (name === 'mentor') { el.innerHTML = '<p class="text-muted small">Mentor assignment not yet configured. <br/>This tab will show assigned mentor details once the assignment system is set up.</p>'; return; }
-  if (name === 'instructor') { renderDrawerInstructor(el); return; }
-  if (name === 'supermentor') { el.innerHTML = '<p class="text-muted small">Super Mentor assignment not yet configured.</p>'; return; }
+  if (name === 'mentor') { el.innerHTML = '<p class="text-muted small">Loading mentor info…</p>'; await renderDrawerMentor(el, uid); return; }
+  if (name === 'instructor') { el.innerHTML = '<p class="text-muted small">Loading instructor info…</p>'; await renderDrawerInstructor(el, uid); return; }
+  if (name === 'supermentor') { el.innerHTML = '<p class="text-muted small">Loading super-mentor info…</p>'; await renderDrawerSuperMentor(el, uid); return; }
   if (name === 'timeline') { el.innerHTML = '<p class="text-muted">Loading timeline…</p>'; await renderDrawerTimeline(el, uid); return; }
   if (name === 'outreach') { el.innerHTML = '<p class="text-muted">Loading…</p>'; await renderDrawerOutreach(el, uid); return; }
   if (name === 'insights') { el.innerHTML = '<p class="text-muted">Generating AI insights…</p>'; await renderDrawerInsights(el, uid); return; }
@@ -1335,49 +1335,169 @@ function renderDrawerInfo() {
   `;
 }
 
-function renderDrawerInstructor(el) {
-  const p = (S.drawerData||{}).profile || {};
-  el.innerHTML = `<div class="small"><strong>Current Section:</strong> ${escH(p.current_section||p.path||'—')}<br><br><p class="text-muted">Instructor assignment not yet configured. Section shown above.</p></div>`;
+async function renderDrawerMentor(el, uid) {
+  const resp = await api(`/students/${uid}/mentorship`);
+  const d = resp.data || {};
+  if (!d.available) {
+    el.innerHTML = `<div class="alert alert-warning small">No mentor assignment found for this student.
+      <br>Run <code>POST /sync/mentorship-assignments</code> to sync from SQL Server.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.4px">Mentor Assignment</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:42%">MM Mentor</th><td><strong>${escH(d.mm_mentor || '—')}</strong></td></tr>
+      <tr><th>Mentor Email</th><td>${d.mentor_email ? `<a href="mailto:${escH(d.mentor_email)}">${escH(d.mentor_email)}</a>` : '—'}</td></tr>
+    </tbody></table>
+    <div class="text-muted" style="font-size:.65rem">Synced: ${fmtTs(d.synced_at)}</div>
+    <div class="mode-shadow mt-2">SHADOW — outreach suppressed</div>`;
+}
+
+async function renderDrawerInstructor(el, uid) {
+  const resp = await api(`/students/${uid}/mentorship`);
+  const d = resp.data || {};
+  if (!d.available) {
+    el.innerHTML = `<div class="alert alert-warning small">No assignment record found for this student.
+      <br>Run <code>POST /sync/mentorship-assignments</code> to sync from SQL Server.</div>`;
+    return;
+  }
+  // Instructor field not present in AI_Chatbot_TriggerData_IPBC source;
+  // show mentor context for visibility until a dedicated instructor source is identified.
+  el.innerHTML = `
+    <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.4px">IPBC Assignment Context</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:42%">MM Mentor</th><td>${escH(d.mm_mentor || '—')}</td></tr>
+      <tr><th>Mentor Email</th><td>${d.mentor_email ? `<a href="mailto:${escH(d.mentor_email)}">${escH(d.mentor_email)}</a>` : '—'}</td></tr>
+      <tr><th>Super Mentor</th><td>${escH(d.supermentor || '—')}</td></tr>
+    </tbody></table>
+    <div class="alert alert-info small py-2">Dedicated instructor field not yet available in SQL Server source (<code>AI_Chatbot_TriggerData_IPBC</code>).</div>
+    <div class="text-muted" style="font-size:.65rem">Synced: ${fmtTs(d.synced_at)}</div>`;
+}
+
+async function renderDrawerSuperMentor(el, uid) {
+  const resp = await api(`/students/${uid}/mentorship`);
+  const d = resp.data || {};
+  if (!d.available) {
+    el.innerHTML = `<div class="alert alert-warning small">No super-mentor assignment found for this student.
+      <br>Run <code>POST /sync/mentorship-assignments</code> to sync from SQL Server.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.4px">Super Mentor Assignment</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:42%">Super Mentor</th><td><strong>${escH(d.supermentor || '—')}</strong></td></tr>
+      <tr><th>Super Mentor Email</th><td>${d.supermentor_email ? `<a href="mailto:${escH(d.supermentor_email)}">${escH(d.supermentor_email)}</a>` : '—'}</td></tr>
+    </tbody></table>
+    <div class="text-muted" style="font-size:.65rem">Synced: ${fmtTs(d.synced_at)}</div>
+    <div class="mode-shadow mt-2">SHADOW — outreach suppressed</div>`;
 }
 
 async function renderDrawerTimeline(el, uid) {
   const resp = await api(`/timeline/${uid}`);
   const events = resp.data?.events || [];
-  el.innerHTML = events.length === 0
-    ? '<p class="text-muted small">No timeline events yet.</p>'
-    : `<div class="mt-2">${events.map(e => `
-        <div class="tl-item tl-${e.type}">
-          <div class="tl-ts">${fmtTs(e.ts)}</div>
-          <div class="tl-label">${escH(e.label)}</div>
-          <div class="tl-detail">${escH(e.detail||'')}</div>
-          ${e.badge ? `<span class="badge bg-secondary mt-1" style="font-size:.6rem">${escH(e.badge)}</span>` : ''}
-        </div>`).join('')}
-      </div>`;
+  if (events.length === 0) { el.innerHTML = '<p class="text-muted small">No timeline events yet.</p>'; return; }
+
+  function tlLabel(e) {
+    if (e.type === 'ai_insight')       return e.insight_type || 'AI Insight';
+    if (e.type === 'outreach')         return e.action || 'Outreach';
+    if (e.type === 'transition')       return `${e.from_state} → ${e.to_state}`;
+    if (e.type === 'campaign_activity') return e.activity_label || e.activity_type || 'Activity';
+    if (e.type === 'note')             return `Note (${e.note_type || 'general'})`;
+    if (e.type === 'ghl_message')      return `GHL ${e.direction || 'Message'}`;
+    return e.type || '—';
+  }
+  function tlDetail(e) {
+    if (e.type === 'ai_insight')       return `Finalized: ${e.is_finalized ? 'Yes' : 'No'}`;
+    if (e.type === 'outreach')         return `Channel: ${e.channel||'—'} | Decision: ${e.decision||'—'} | ${e.state_before} → ${e.state_after}`;
+    if (e.type === 'transition')       return `Trigger: ${e.trigger||'—'} | Actor: ${e.actor||'—'}`;
+    if (e.type === 'campaign_activity') return `${e.channel||'—'}${e.subject ? ' | ' + e.subject : ''} | Source: ${e.source||'—'}`;
+    if (e.type === 'ghl_message')      return `Channel: ${e.channel||'—'} | Status: ${e.status||'—'}`;
+    return '';
+  }
+  function tlColor(e) {
+    if (e.type === 'ai_insight')       return '#7b61ff';
+    if (e.type === 'outreach')         return 'var(--color-primary-light)';
+    if (e.type === 'transition')       return 'var(--color-accent)';
+    if (e.type === 'campaign_activity') return '#d97706';
+    if (e.type === 'note')             return '#38a169';
+    if (e.type === 'ghl_message')      return '#e53e3e';
+    return 'var(--color-text-light)';
+  }
+
+  el.innerHTML = `<div class="mt-1">${events.map(e => `
+    <div class="d-flex gap-2 mb-3">
+      <div style="width:3px;background:${tlColor(e)};border-radius:2px;flex-shrink:0;min-height:36px"></div>
+      <div class="flex-grow-1">
+        <div class="d-flex justify-content-between align-items-start">
+          <span class="small fw-semibold">${escH(tlLabel(e))}</span>
+          <span class="badge bg-secondary" style="font-size:.6rem">${escH(e.execution_mode||'')}</span>
+        </div>
+        <div class="text-muted" style="font-size:.7rem">${escH(tlDetail(e))}</div>
+        <div class="text-muted" style="font-size:.65rem">${fmtTs(e.created_at)}</div>
+      </div>
+    </div>`).join('')}</div>`;
 }
 
 async function renderDrawerOutreach(el, uid) {
-  const [resp, ghlResp] = await Promise.all([
+  const [resp, ghlResp, timelineResp] = await Promise.all([
     api(`/students/${uid}`),
     api(`/ghl-sync/status`),
+    api(`/timeline/${uid}`),
   ]);
   const d = resp.data || {};
   const history = d.history || [];
+  const transitions = d.transitions || [];
   const ghl = ghlResp.data || {};
+  const allEvents = timelineResp.data?.events || [];
+  const campaignActs = allEvents.filter(e => e.type === 'campaign_activity');
 
   const historyHtml = history.length === 0
-    ? '<p class="text-muted small">No outreach history.</p>'
-    : `<table class="table table-sm small"><thead><tr><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>State →</th><th>Time</th></tr></thead><tbody>
-        ${history.map(h => `<tr><td>${h.attempt_number}</td><td>${escH(h.channel||'—')}</td><td>${escH(h.action||'—')}</td><td><span class="${h.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${h.execution_mode}</span></td><td>${statePill(h.state_after)}</td><td>${fmtTs(h.created_at)}</td></tr>`).join('')}
+    ? '<p class="text-muted small">No SHADOW outreach attempts yet.</p>'
+    : `<table class="table table-sm small"><thead><tr><th>#</th><th>Channel</th><th>Action</th><th>Mode</th><th>State After</th><th>Time</th></tr></thead><tbody>
+        ${history.map(h => `<tr>
+          <td>${h.attempt_number}</td>
+          <td>${escH(h.channel||'—')}</td>
+          <td>${escH(h.action||'—')}</td>
+          <td><span class="${h.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${h.execution_mode}</span></td>
+          <td>${statePill(h.state_after)}</td>
+          <td>${fmtTs(h.created_at)}</td>
+        </tr>`).join('')}
+       </tbody></table>`;
+
+  const transitionsHtml = transitions.length === 0 ? '' :
+    `<div class="fw-semibold small mb-2 mt-3">State Transitions</div>
+     <table class="table table-sm small"><thead><tr><th>From</th><th>To</th><th>Trigger</th><th>Time</th></tr></thead><tbody>
+       ${transitions.map(t => `<tr>
+         <td>${statePill(t.from_state)}</td>
+         <td>${statePill(t.to_state)}</td>
+         <td>${escH(t.trigger||'—')}</td>
+         <td>${fmtTs(t.created_at)}</td>
+       </tr>`).join('')}
+     </tbody></table>`;
+
+  const campaignHtml = campaignActs.length === 0
+    ? '<p class="text-muted small">No historical activity found. Run <code>POST /sync/campaign-activity</code> to import Retool data.</p>'
+    : `<table class="table table-sm small"><thead><tr><th>Type</th><th>Channel</th><th>Subject/Label</th><th>Date</th></tr></thead><tbody>
+        ${campaignActs.map(a => `<tr>
+          <td><span class="badge bg-secondary" style="font-size:.6rem">${escH(a.activity_type||'—')}</span></td>
+          <td>${escH(a.channel||'—')}</td>
+          <td>${escH(a.subject || a.activity_label || '—')}</td>
+          <td>${fmtTs(a.created_at)}</td>
+        </tr>`).join('')}
        </tbody></table>`;
 
   el.innerHTML = `
-    <div class="d-flex align-items-center justify-content-between mb-2">
-      <span class="fw-semibold small">GHL Messages <span class="mode-shadow">READ-ONLY</span></span>
-      <button class="btn btn-xs btn-outline-secondary" style="font-size:.7rem;padding:.2rem .5rem" onclick="syncGHLStudent(${uid}, this)">Sync GHL</button>
+    <div class="fw-semibold small mb-2">Historical Campaign Activity (Retool)</div>
+    ${campaignHtml}
+    <div class="fw-semibold small mb-2 mt-3">SHADOW Outreach Attempts</div>
+    ${historyHtml}
+    ${transitionsHtml}
+    <div class="d-flex align-items-center justify-content-between mb-2 mt-3">
+      <span class="fw-semibold small">GHL Messages</span>
+      <button class="btn btn-sm btn-outline-secondary" style="font-size:.7rem;padding:.2rem .5rem" onclick="syncGHLStudent(${uid}, this)">Sync GHL</button>
     </div>
-    <div id="ghl-drawer-result-${uid}" class="small text-muted mb-3"></div>
-    <div class="fw-semibold small mb-2">Outreach History</div>
-    ${historyHtml}`;
+    <div class="small text-muted mb-1">${ghl.ghl_configured ? `${ghl.total_messages_stored} messages stored` : 'GHL not configured — API key required.'}</div>
+    <div id="ghl-drawer-result-${uid}" class="small text-muted"></div>`;
 }
 
 async function syncGHLStudent(uid, btn) {

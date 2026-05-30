@@ -407,6 +407,134 @@ async def sync_from_mssql(db: Any) -> Dict[str, Any]:
     return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
 
 
+async def sync_mentorship_assignments(db: Any) -> Dict[str, Any]:
+    """
+    Pull ADF_Mentorship_Activity from SQL Server and upsert into mentorship_assignments.
+    Read-only from SQL Server (FAD-5/ABG-1). Safe to run in SHADOW mode.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from app.database import fetch_mentorship_from_mssql
+    from app.models import MentorshipAssignment
+
+    rows, error = await fetch_mentorship_from_mssql()
+    if error:
+        logger.warning(_json.dumps({
+            "service": "sync", "event": "mentorship_fetch_failed", "error": error,
+        }))
+        return {"synced": 0, "total_fetched": 0, "error": error, "status": "failed"}
+
+    now = datetime.now(timezone.utc)
+    count = 0
+    for row in rows:
+        uid = row.get("UserID") or row.get("user_id") or row.get("StudentID")
+        if not uid:
+            continue
+        values = {
+            "user_id": int(uid),
+            "mm_mentor": row.get("MM_Mentor"),
+            "mentor_email": row.get("MentorEmail"),
+            "supermentor": row.get("SuperMentor"),
+            "supermentor_email": row.get("SuperMentorEmail"),
+            # Instructor not available in AI_Chatbot_TriggerData_IPBC
+            "ipbc_instructor": None,
+            "ipbc_instructor_email": None,
+            "synced_at": now,
+        }
+        stmt = (
+            pg_insert(MentorshipAssignment)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={k: v for k, v in values.items() if k != "user_id"},
+            )
+        )
+        await db.execute(stmt)
+        count += 1
+
+    await db.commit()
+    logger.info(_json.dumps({
+        "service": "sync", "event": "mentorship_sync_complete",
+        "synced": count, "total_fetched": len(rows),
+    }))
+    return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
+
+
+async def sync_campaign_activity(db: Any) -> Dict[str, Any]:
+    """
+    Pull RETOOLCALLENGAGEMENT, RetoolEmailEngagement, RetoolNoteEngagement from SQL Server
+    and insert into student_campaign_activity (Gap 1 historical import).
+    Idempotent: deletes existing retool_* source rows before re-inserting.
+    Read-only from SQL Server (FAD-5/ABG-1). Safe to run in SHADOW mode.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from sqlalchemy import delete
+    from app.database import fetch_retool_outreach_from_mssql
+    from app.models import StudentCampaignActivity
+
+    rows, error = await fetch_retool_outreach_from_mssql()
+    if error:
+        logger.warning(_json.dumps({
+            "service": "sync", "event": "retool_outreach_fetch_failed", "error": error,
+        }))
+        return {"synced": 0, "total_fetched": 0, "error": error, "status": "failed"}
+
+    # Idempotent replace: remove existing engagement_events rows so re-runs are safe
+    await db.execute(
+        delete(StudentCampaignActivity).where(
+            StudentCampaignActivity.source == "engagement_events"
+        )
+    )
+
+    count = 0
+    for row in rows:
+        # AI_ChatBot_EngagementEvents uses user_id (not UserID)
+        uid = row.get("user_id") or row.get("UserID")
+        if not uid:
+            continue
+
+        event_type = row.get("event_type") or row.get("_activity_type") or "EVENT"
+        created_at = row.get("created_at")
+        activity_date = None
+        if created_at:
+            if hasattr(created_at, "isoformat"):
+                activity_date = created_at if getattr(created_at, "tzinfo", None) else created_at.replace(tzinfo=timezone.utc)
+            elif isinstance(created_at, str):
+                try:
+                    activity_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                except (ValueError, AttributeError):
+                    pass
+
+        raw = {k: (v.isoformat() if hasattr(v, "isoformat") else v)
+               for k, v in row.items() if not k.startswith("_")}
+
+        obj = StudentCampaignActivity(
+            student_user_id=int(uid),
+            activity_date=activity_date,
+            activity_type=event_type.upper(),
+            activity_label=(event_type[:200] if event_type else None),
+            channel=(row.get("channel") or "").lower() or "system",
+            subject=row.get("agent_name", "")[:300] if row.get("agent_name") else None,
+            message_body=(row.get("message") or _json.dumps(raw, default=str))[:2000],
+            source="engagement_events",
+            created_by=row.get("agent_name"),
+            execution_mode="SHADOW",
+            shadow_only=True,
+        )
+        db.add(obj)
+        count += 1
+
+    await db.commit()
+    await db.commit()
+    logger.info(_json.dumps({
+        "service": "sync", "event": "campaign_activity_sync_complete",
+        "synced": count, "total_fetched": len(rows),
+    }))
+    return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
+
+
 async def sync_interview_prep(db: Any) -> Dict[str, Any]:
     """
     Pull InterviewPrep data from SQL Server and store as JSONB in local PostgreSQL.

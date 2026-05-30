@@ -235,6 +235,64 @@ async def fetch_interview_prep_from_mssql() -> tuple[list[dict], str | None]:
     return await asyncio.to_thread(_fetch_interview_prep_sync)
 
 
+def _fetch_mentorship_assignments_sync() -> tuple[list[dict], str | None]:
+    """
+    Fetch mentor/supermentor assignments from AI_Chatbot_TriggerData_IPBC.
+    Extracts: UserID, MM_Mentor, MentorEmail, SuperMentor, SuperMentorEmail.
+    Note: no IPBC_Instructor column exists in this source; instructor_email will be None.
+    """
+    if not settings.mssql_configured:
+        return [], "not_configured"
+    try:
+        import pyodbc
+        conn = pyodbc.connect(settings.mssql_dsn, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT UserID, MM_Mentor, MentorEmail, SuperMentor, SuperMentorEmail "
+            "FROM AI_Chatbot_TriggerData_IPBC"
+        )
+        cols = [c[0] for c in cursor.description]
+        rows = [dict(zip(cols, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows, None
+    except Exception as exc:
+        logger.error("SQL Server AI_Chatbot_TriggerData_IPBC query failed: %s", exc)
+        return [], str(exc)
+
+
+async def fetch_mentorship_from_mssql() -> tuple[list[dict], str | None]:
+    return await asyncio.to_thread(_fetch_mentorship_assignments_sync)
+
+
+def _fetch_retool_outreach_sync() -> tuple[list[dict], str | None]:
+    """
+    Fetch historical engagement events from AI_ChatBot_EngagementEvents.
+    Columns: id, user_id, event_type, channel, message, agent_name, trigger_id, created_at.
+    """
+    if not settings.mssql_configured:
+        return [], "not_configured"
+    try:
+        import pyodbc
+        conn = pyodbc.connect(settings.mssql_dsn, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM AI_ChatBot_EngagementEvents ORDER BY created_at ASC")
+        cols = [c[0] for c in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            d = dict(zip(cols, row))
+            d["_activity_type"] = (d.get("event_type") or "EVENT").upper()
+            rows.append(d)
+        conn.close()
+        return rows, None
+    except Exception as exc:
+        logger.error("SQL Server AI_ChatBot_EngagementEvents query failed: %s", exc)
+        return [], str(exc)
+
+
+async def fetch_retool_outreach_from_mssql() -> tuple[list[dict], str | None]:
+    return await asyncio.to_thread(_fetch_retool_outreach_sync)
+
+
 # ── Config V2 startup resolution ──────────────────────────────────────────────
 
 

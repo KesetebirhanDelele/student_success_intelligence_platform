@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import (
-    OutreachHistory, StateTransitionLog, StudentInterviewPrep,
+    MentorshipAssignment, OutreachHistory, StateTransitionLog, StudentInterviewPrep,
     StudentOutreachTracking, StudentTriggerData,
 )
 from app.routers._router_helpers import (
@@ -142,6 +142,25 @@ async def get_student(
         },
         meta=meta.as_dict(),
     )
+
+
+@router.get("/students/{user_id}/mentorship")
+async def get_student_mentorship(user_id: int, db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """Mentor, instructor, and supermentor assignment for a student (from ADF_Mentorship_Activity sync)."""
+    assignment = await db.get(MentorshipAssignment, user_id)
+    if not assignment:
+        return APIResponse.ok({"user_id": user_id, "available": False})
+    return APIResponse.ok({
+        "user_id": user_id,
+        "available": True,
+        "synced_at": assignment.synced_at.isoformat() if assignment.synced_at else None,
+        "mm_mentor": assignment.mm_mentor,
+        "mentor_email": assignment.mentor_email,
+        "supermentor": assignment.supermentor,
+        "supermentor_email": assignment.supermentor_email,
+        "ipbc_instructor": assignment.ipbc_instructor,
+        "ipbc_instructor_email": assignment.ipbc_instructor_email,
+    })
 
 
 @router.get("/students/{user_id}/interview-prep")

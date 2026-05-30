@@ -411,5 +411,22 @@ async def build_timeline(user_id: int, db: Any) -> List[Dict[str, Any]]:
             "status": m.status,
         })
 
+    from app.models import StudentCampaignActivity
+    sca_rows = (await db.execute(
+        select(StudentCampaignActivity).where(StudentCampaignActivity.student_user_id == user_id)
+    )).scalars().all()
+    for act in sca_rows:
+        ts = act.activity_date or act.created_at
+        events.append({
+            "type": "campaign_activity",
+            "created_at": ts.isoformat() if ts else None,
+            "activity_type": act.activity_type,
+            "activity_label": act.activity_label,
+            "channel": act.channel,
+            "subject": act.subject,
+            "source": act.source,
+            "execution_mode": act.execution_mode,
+        })
+
     events.sort(key=lambda e: e["created_at"] or "", reverse=True)
     return events

@@ -30,6 +30,50 @@
 
 ---
 
+## Phase 66 — Drawer tabs: real mentor/engagement data from SQL Server
+
+- [x] app/models.py — MentorshipAssignment model added
+  - Date: 2026-05-29
+  - What changed: New `mentorship_assignments` PostgreSQL table (primary key: user_id) with columns mm_mentor, mentor_email, supermentor, supermentor_email, ipbc_instructor, ipbc_instructor_email, synced_at. Populated by new mentorship sync. `Base.metadata.create_all` creates it on startup.
+  - Verification: Table created on container restart; `POST /sync/mentorship-assignments` → 137 rows synced.
+
+- [x] app/database.py — two new SQL Server fetch functions
+  - Date: 2026-05-29
+  - What changed: `_fetch_mentorship_assignments_sync()` queries `AI_Chatbot_TriggerData_IPBC` (correct source; ADF_Mentorship_Activity does not exist). `_fetch_retool_outreach_sync()` queries `AI_ChatBot_EngagementEvents` (correct source; RETOOLCALLENGAGEMENT/RetoolEmailEngagement/RetoolNoteEngagement do not exist in this database). Both wrapped with `asyncio.to_thread`.
+  - Verification: Confirmed correct table names by querying INFORMATION_SCHEMA.TABLES directly.
+
+- [x] app/services/sync.py — sync_mentorship_assignments() + sync_campaign_activity()
+  - Date: 2026-05-29
+  - What changed: `sync_mentorship_assignments()` — upserts into mentorship_assignments from AI_Chatbot_TriggerData_IPBC (MM_Mentor, MentorEmail, SuperMentor, SuperMentorEmail; instructor field N/A in source). `sync_campaign_activity()` — idempotent (deletes source=engagement_events rows before re-insert); maps AI_ChatBot_EngagementEvents columns (user_id, event_type, channel, message, agent_name, created_at) to StudentCampaignActivity.
+  - Verification: `/sync/mentorship-assignments` → synced:137, total_fetched:137. `/sync/campaign-activity` → synced:65, total_fetched:69 (4 skipped: null user_id).
+
+- [x] app/services/timeline.py — build_timeline() extended with StudentCampaignActivity
+  - Date: 2026-05-29
+  - What changed: Added query for StudentCampaignActivity (WHERE student_user_id = user_id); emits events with type="campaign_activity", activity_type, activity_label, channel, subject, source, execution_mode. These appear in the Timeline tab chronologically with all other events.
+  - Verification: `GET /timeline/46828` returns 41 events including campaign_activity events sourced from engagement_events.
+
+- [x] app/services/payment_sync.py — placement interview view name corrected
+  - Date: 2026-05-29
+  - What changed: `_PLACEMENT_INTERVIEW_QUERY` was querying `vw_ColaberryInterviews_PlacementHopefuls` (does not exist). Corrected to `SELECT * FROM vw_ColaberryInterviewPreparation_UpcomingInterviews_Processed` (3 rows; confirmed in SQL Server). `SELECT *` used because view has 33 columns, not the original 9-column projection.
+  - Verification: Table confirmed via INFORMATION_SCHEMA query. Endpoint no longer returns "Invalid object name" error.
+
+- [x] app/routers/sync.py — two new endpoints
+  - Date: 2026-05-29
+  - What changed: `POST /sync/mentorship-assignments` and `POST /sync/campaign-activity` added.
+  - Verification: Both return status:ok with synced counts.
+
+- [x] app/routers/students.py — GET /students/{uid}/mentorship endpoint
+  - Date: 2026-05-29
+  - What changed: Returns mm_mentor, mentor_email, supermentor, supermentor_email, ipbc_instructor, ipbc_instructor_email, synced_at for a student from mentorship_assignments.
+  - Verification: `GET /students/46828/mentorship` → available:true, mm_mentor:"Anthony Onicha", mentor_email:"tonyonicha@gmail.com".
+
+- [x] frontend/index.html — Mentor/Instructor/SuperMentor/Timeline/Outreach drawer tabs fixed
+  - Date: 2026-05-29
+  - What changed: (1) Mentor tab: now async, calls `/students/{uid}/mentorship`, shows MM Mentor + email; (2) Instructor tab: now async, calls `/students/{uid}/mentorship`, shows IPBC context (mentor + note that instructor field N/A in source); (3) SuperMentor tab: now async, calls `/students/{uid}/mentorship`, shows SuperMentor + email; (4) Timeline tab: tlLabel/tlDetail/tlColor updated for campaign_activity type — shows activity_type, channel, subject, source; (5) Outreach tab: adds "Historical Campaign Activity (Retool)" section at top showing engagement_events data from student_campaign_activity. loadDrawerTab wired to await renderDrawerMentor/Instructor/SuperMentor.
+  - Verification: API returns real data; UI change requires browser test.
+
+---
+
 ## Phase 65 — Drawer populated + Monthly Report tab + Find Student
 
 - [x] app/database.py — execution_mode column added to student_outreach_tracking migration-lite list

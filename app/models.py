@@ -319,6 +319,22 @@ class StudentCampaignActivity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MentorshipAssignment(Base):
+    """Mirror of ADF_Mentorship_Activity. Populated by SQL Server sync."""
+    __tablename__ = "mentorship_assignments"
+
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mm_mentor: Mapped[Optional[str]] = mapped_column(String(200))
+    mentor_email: Mapped[Optional[str]] = mapped_column(String(255))
+    supermentor: Mapped[Optional[str]] = mapped_column(String(200))
+    supermentor_email: Mapped[Optional[str]] = mapped_column(String(255))
+    ipbc_instructor: Mapped[Optional[str]] = mapped_column(String(200))
+    ipbc_instructor_email: Mapped[Optional[str]] = mapped_column(String(255))
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class StudentQuickActionLog(Base):
     """Every operator button click logged — no external side effects in SHADOW mode."""
     __tablename__ = "student_quick_action_log"
