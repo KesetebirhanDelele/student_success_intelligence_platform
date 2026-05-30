@@ -141,6 +141,10 @@
         <option value="Instructor">Instructor</option>
         <option value="Placement Team">Placement Team</option>
       </select>
+      <div class="d-flex align-items-center gap-1">
+        <input id="find-student-input" type="number" class="form-control form-control-sm" placeholder="Student ID" style="width:100px;font-size:.72rem;padding:3px 8px" onkeydown="if(event.key==='Enter')findStudent()" min="1">
+        <button class="btn btn-sm btn-outline-light" onclick="findStudent()" style="font-size:.72rem;padding:3px 10px">Find</button>
+      </div>
       <button class="btn btn-sm btn-outline-light" onclick="refreshActiveTab()" style="font-size:.72rem;padding:3px 12px">↺ Refresh</button>
       <span class="text-white-50" style="font-size:.67rem" id="last-refresh">—</span>
     </div>
@@ -496,6 +500,7 @@
     <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('interviewprep',this)">Interview</button></li>
     <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('payment',this)">Payment</button></li>
     <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('notes',this)">Notes</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="switchDrawerTab('report',this)">Report</button></li>
   </ul>
   <div class="offcanvas-body p-0" style="overflow-y:auto">
     <div id="drawer-info"        class="drawer-tab-pane active p-3"></div>
@@ -508,6 +513,7 @@
     <div id="drawer-interviewprep" class="drawer-tab-pane p-3"></div>
     <div id="drawer-payment"     class="drawer-tab-pane p-3"></div>
     <div id="drawer-notes"       class="drawer-tab-pane p-3"></div>
+    <div id="drawer-report"      class="drawer-tab-pane p-3"></div>
   </div>
 </div>
 
@@ -1296,6 +1302,7 @@ async function loadDrawerTab(name) {
   if (name === 'interviewprep') { el.innerHTML = '<p class="text-muted">Loading…</p>'; await renderDrawerInterviewPrep(el, uid); return; }
   if (name === 'payment') { renderDrawerPayment(el); return; }
   if (name === 'notes') { el.innerHTML = '<p class="text-muted">Loading…</p>'; await renderDrawerNotes(el, uid); return; }
+  if (name === 'report') { el.innerHTML = '<p class="text-muted">Loading report…</p>'; await renderDrawerReport(el, uid); return; }
 }
 
 function renderDrawerInfo() {
@@ -1464,6 +1471,149 @@ async function addNote(uid) {
     body: JSON.stringify({ user_id: uid, content, author }),
   });
   await renderDrawerNotes(document.getElementById('drawer-notes'), uid);
+}
+
+function findStudent() {
+  const uid = +document.getElementById('find-student-input').value;
+  if (!uid) return;
+  openDrawer(uid);
+  document.getElementById('find-student-input').value = '';
+}
+
+async function renderDrawerReport(el, uid) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  // Month selector header
+  const selId = `rpt-month-sel-${uid}`;
+  el.innerHTML = `
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <label class="small fw-semibold mb-0">Month:</label>
+      <select id="${selId}" class="form-select form-select-sm" style="width:auto;font-size:.75rem" onchange="loadReportForMonth(${uid})">
+        ${[...Array(6)].map((_,i) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const y = d.getFullYear(), m = d.getMonth()+1;
+          const val = `${y}-${String(m).padStart(2,'0')}`;
+          const label = d.toLocaleDateString('en-US',{month:'short',year:'numeric'});
+          return `<option value="${val}" ${i===0?'selected':''}>${label}</option>`;
+        }).join('')}
+      </select>
+    </div>
+    <div id="rpt-body-${uid}"><p class="text-muted small">Loading…</p></div>`;
+
+  await loadReportForMonth(uid);
+}
+
+async function loadReportForMonth(uid) {
+  const selId = `rpt-month-sel-${uid}`;
+  const bodyId = `rpt-body-${uid}`;
+  const sel = document.getElementById(selId);
+  const body = document.getElementById(bodyId);
+  if (!sel || !body) return;
+
+  const [y, m] = sel.value.split('-').map(Number);
+  body.innerHTML = '<p class="text-muted small">Loading…</p>';
+
+  const resp = await api(`/reports/monthly/${uid}/${y}/${m}`);
+  const d = resp.data;
+  if (!d || !d.report_content) {
+    body.innerHTML = `<p class="text-muted small">No report for this month. Run snapshot assembly and report generation first.</p>`;
+    return;
+  }
+
+  const rc = d.report_content;
+  const s = rc.sections || {};
+  const id = s.identity || {};
+  const risk = s.risk_priority || {};
+  const acad = s.academic_performance || {};
+  const eng = s.engagement || {};
+  const fin = s.financial || {};
+  const out = s.outreach_summary || {};
+  const ai = s.ai_narratives || {};
+  const gov = s.governance_metadata || {};
+
+  const riskClass = risk.risk_level === 'HIGH' ? 'danger' : risk.risk_level === 'MEDIUM' ? 'warning' : 'success';
+
+  body.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="small text-muted">Report v${escH(rc.report_version||'—')} · Lineage ${escH(String(rc.lineage_version||'—'))} · <span class="mode-shadow">${escH(d.execution_mode||'SHADOW')}</span></span>
+      <span class="badge bg-${riskClass}">${escH(risk.risk_level||'—')}</span>
+    </div>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Identity</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:45%">Name</th><td>${escH(id.full_name||'—')}</td></tr>
+      <tr><th>Email</th><td>${escH(id.email||'—')}</td></tr>
+      <tr><th>Phone</th><td>${escH(id.phone||'—')}</td></tr>
+      <tr><th>Program Path</th><td>${escH(id.program_path||'—')}</td></tr>
+      <tr><th>IPBC Start</th><td>${escH(id.ipbc_start_date||'—')}</td></tr>
+      <tr><th>Weeks in Program</th><td>${id.weeks_in_program ?? '—'}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Risk & Segment</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:45%">Risk Level</th><td><span class="badge bg-${riskClass}">${escH(risk.risk_level||'—')}</span></td></tr>
+      <tr><th>Payment Risk</th><td>${escH(risk.payment_risk_label||'—')}</td></tr>
+      <tr><th>Segment</th><td>${escH(risk.segment_classification||'—')}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Academic Performance</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:45%">HWs Behind</th><td><strong>${acad.hws_behind ?? '—'}</strong></td></tr>
+      <tr><th>Avg Efficiency</th><td>${fmtPct(acad.avg_eff_rating)}</td></tr>
+      <tr><th>Last HW Submitted</th><td>${acad.hw_submitted_days_ago != null ? acad.hw_submitted_days_ago + ' days ago' : '—'}</td></tr>
+      <tr><th>Attendance</th><td>${fmtPct(acad.attendance_pct)}</td></tr>
+      <tr><th>Active Status</th><td>${escH(acad.active_status||'—')}</td></tr>
+      <tr><th>Current Section</th><td>${escH(acad.current_section||'—')}</td></tr>
+      <tr><th>Status I</th><td>${escH(acad.status_i||'—')}</td></tr>
+      <tr><th>Status II</th><td>${escH(acad.status_ii||'—')}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Engagement</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:45%">Last Activity</th><td>${eng.last_activity_days != null ? eng.last_activity_days + ' days ago' : '—'}</td></tr>
+      <tr><th>Last Login</th><td>${eng.last_login_days != null ? eng.last_login_days + ' days ago' : '—'}</td></tr>
+      <tr><th>Current Class</th><td>${escH(eng.current_class_name||'—')}</td></tr>
+      <tr><th>Last Activity Section</th><td>${escH(eng.last_activity_section||'—')}</td></tr>
+      <tr><th>Last Submitted</th><td>${escH(eng.last_submitted||'—')}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Financial</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:45%">Class Value</th><td>${fmtCur(fin.class_value)}</td></tr>
+      <tr><th>Total Payments</th><td>${fmtCur(fin.total_payments)}</td></tr>
+      <tr><th>Credits</th><td>${fmtCur(fin.total_credits)}</td></tr>
+      <tr><th>Actual Balance</th><td><strong class="payment-risk-${risk.payment_risk_label}">${fmtCur(fin.actual_balance)}</strong></td></tr>
+      <tr><th>Bundle Deal</th><td>${fin.is_bundle_deal ? '<span class="bundle-badge">BUNDLE</span>' : 'No'}</td></tr>
+      <tr><th>Fee Paid</th><td>${fin.fee_paid ? '✓ Yes' : '✗ No'}</td></tr>
+      <tr><th>Class Fees Paid</th><td>${fmtCur(fin.class_fees_paid)}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Outreach Summary</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:45%">Total Attempts</th><td>${out.total_attempts ?? 0}</td></tr>
+      <tr><th>Total Responses</th><td>${out.total_responses ?? 0}</td></tr>
+      <tr><th>Response Received</th><td>${out.response_received ? '✓ Yes' : '✗ No'}</td></tr>
+      <tr><th>Last Contact</th><td>${escH(out.last_contact_date||'—')}</td></tr>
+      <tr><th>Days Since Contact</th><td>${out.days_since_last_contact != null ? out.days_since_last_contact + ' days' : '—'}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">AI Narratives <span class="badge ${ai.ai_content_available ? 'bg-success' : 'bg-secondary'}" style="font-size:.6rem">${ai.ai_governance_tier||'UNAVAILABLE'}</span></div>
+    ${ai.ai_content_available ? `
+    <div class="mb-2"><div class="text-muted" style="font-size:.68rem;font-weight:700;text-transform:uppercase">Risk Summary</div><div class="border rounded p-2 small bg-light">${escH(ai.risk_summary||'—')}</div></div>
+    <div class="mb-2"><div class="text-muted" style="font-size:.68rem;font-weight:700;text-transform:uppercase">Progress Summary</div><div class="border rounded p-2 small bg-light">${escH(ai.progress_summary||'—')}</div></div>
+    <div class="mb-2"><div class="text-muted" style="font-size:.68rem;font-weight:700;text-transform:uppercase">Monthly Narrative</div><div class="border rounded p-2 small bg-light">${escH(ai.monthly_narrative||'—')}</div></div>
+    <div class="mb-2"><div class="text-muted" style="font-size:.68rem;font-weight:700;text-transform:uppercase">Intervention Recommendation</div><div class="border rounded p-2 small bg-light">${escH(ai.intervention_recommendation||'—')}</div></div>
+    ` : '<p class="text-muted small">No AI narratives generated for this snapshot.</p>'}
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1 mt-2" style="letter-spacing:.4px">Governance</div>
+    <table class="table table-sm small mb-0"><tbody>
+      <tr><th style="width:45%">Snapshot ID</th><td>${escH(String(gov.snapshot_id||'—'))}</td></tr>
+      <tr><th>Generated At</th><td>${fmtTs(gov.report_generated_date)}</td></tr>
+      <tr><th>Execution Mode</th><td><span class="${d.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${escH(d.execution_mode||'—')}</span></td></tr>
+      <tr><th>Schema Fingerprint</th><td style="font-size:.62rem">${escH(gov.fingerprint_schema_version||'—')}</td></tr>
+    </tbody></table>`;
 }
 
 // ════════════════════════════════════════════════════════

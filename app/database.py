@@ -68,6 +68,7 @@ _NEW_TRIGGER_COLS = [
 _GOVERNANCE_COLS = [
     # student_outreach_tracking (mutable operational state — only correlation_id + mode)
     ("student_outreach_tracking", "correlation_id", "VARCHAR(36)", None),
+    ("student_outreach_tracking", "execution_mode", "VARCHAR(20)", "'SHADOW'"),
 
     # outreach_history (append-only lineage — full attribution)
     ("outreach_history", "correlation_id", "VARCHAR(36)", None),

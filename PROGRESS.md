@@ -30,6 +30,25 @@
 
 ---
 
+## Phase 65 — Drawer populated + Monthly Report tab + Find Student
+
+- [x] app/database.py — execution_mode column added to student_outreach_tracking migration-lite list
+  - Date: 2026-05-29
+  - What changed: `_GOVERNANCE_COLS` was missing `("student_outreach_tracking", "execution_mode", "VARCHAR(20)", "'SHADOW'")`. The ORM model had the column; the legacy init_db() table did not. Added to the ALTER TABLE IF NOT EXISTS list so all container restarts apply it automatically. Column also applied manually via psql to unblock current session.
+  - Verification: `GET /students/1001/drawer` returns full data payload — profile, payment, segments, outreach, interview_prep.
+
+- [x] frontend/index.html — "Find Student" search input in navbar
+  - Date: 2026-05-29
+  - What changed: Added UserID number input + Find button to the navbar (between role picker and Refresh). Enter key and button both call `findStudent()` which calls `openDrawer(uid)`. Clears input after opening. Allows navigating directly to any student without scrolling a lifecycle tab.
+  - Verification: UI change; requires browser test.
+
+- [x] frontend/index.html — Monthly Report drawer tab
+  - Date: 2026-05-29
+  - What changed: Added "Report" tab as the last tab in the student drawer. Tab renders `renderDrawerReport(el, uid)` which: (1) shows a month-picker dropdown (last 6 months); (2) fetches `GET /reports/monthly/{uid}/{year}/{month}`; (3) renders all report sections — Identity, Risk & Segment, Academic Performance, Engagement, Financial, Outreach Summary, AI Narratives (with governance tier badge), Governance metadata. Month change triggers `loadReportForMonth(uid)` to re-fetch. Shows "no report" message if snapshot not yet assembled for that month.
+  - Verification: UI change; requires browser test. API returns correct data at `GET /reports/monthly/1001/2026/5`.
+
+---
+
 ## Phase 64 — Pipeline End-to-End: ODBC fix + type coercions + warehouse migrations
 
 - [x] .env — MSSQL_DRIVER override
