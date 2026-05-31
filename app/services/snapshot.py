@@ -13,8 +13,9 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import date, datetime, timezone
-from typing import Any, Optional
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
+from typing import Any, Optional, Union
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -340,6 +341,73 @@ async def _insert_snapshot(
     return snap_id
 
 
+# ── Historical student state lookup ──────────────────────────────────────────
+
+def _month_last_day(snapshot_month: date) -> date:
+    if snapshot_month.month == 12:
+        return date(snapshot_month.year + 1, 1, 1) - timedelta(days=1)
+    return date(snapshot_month.year, snapshot_month.month + 1, 1) - timedelta(days=1)
+
+
+def _adjust_relative_fields(row: dict, snapshot_month: date) -> dict:
+    """
+    Relative fields (LastActivityDays, LastLoginDays) are computed by SQL Server
+    as "days from the sync date" not "days from the snapshot month end."
+    When the history was captured N days after the month ended, subtract N to
+    approximate the values as they would have been at month-end.
+    Activities that happened AFTER month-end show as negative — floor to 0
+    (the student was active at or before month-end in those cases).
+    """
+    captured_at = row.get("captured_at")
+    if not captured_at:
+        return row
+
+    capture_date = captured_at.date() if hasattr(captured_at, "date") else captured_at
+    month_end = _month_last_day(snapshot_month)
+    offset = (capture_date - month_end).days  # 0 if captured at month-end, >0 if later
+
+    if offset <= 0:
+        return row
+
+    adjusted = dict(row)
+    for field in ("LastActivityDays", "LastLoginDays"):
+        val = adjusted.get(field)
+        if val is not None:
+            adjusted[field] = max(0, val - offset)
+    return adjusted
+
+
+async def _get_student_for_month(
+    student_id: int,
+    snapshot_month: date,
+    db: AsyncSession,
+) -> Optional[Union[StudentTriggerData, SimpleNamespace]]:
+    """
+    Return the student's SQL Server mirror state as of snapshot_month.
+    Checks student_mirror_history first (month-end captured state).
+    Falls back to the live ai_chatbot_triggerdata mirror if no history exists.
+    """
+    hist_row = (await db.execute(text("""
+        SELECT
+            "UserID", "FirstName", "LastName", "Email", "PhoneNumber", "PathName",
+            "HWsBehind", "AvgEffRating", "LastActivityDays",
+            "AttendancePercentage", "CurrentSection", "IPBCStartDate",
+            "Past10DaysLogon", "Total_Payments", "Total_Credits", "PaymentBalance",
+            "ClassValue", "FeePaid", "ClassFeesPaid", "ClassName", "ClassSignupsID",
+            "ActiveStatus", "StatusI", "StatusII", "StudentStartDate", "ClassStartDate",
+            "LastActivitySection", "LastLoginDays", "LastSubmitted",
+            captured_at
+        FROM student_mirror_history
+        WHERE snapshot_month = :month AND "UserID" = :uid
+    """), {"month": snapshot_month, "uid": student_id})).mappings().first()
+
+    if hist_row:
+        adjusted = _adjust_relative_fields(dict(hist_row), snapshot_month)
+        return SimpleNamespace(**adjusted)
+
+    return await db.get(StudentTriggerData, student_id)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 async def assemble_snapshot(
@@ -367,7 +435,7 @@ async def assemble_snapshot(
             "snapshot_month": str(snapshot_month),
         }
 
-    student = await db.get(StudentTriggerData, student_id)
+    student = await _get_student_for_month(student_id, snapshot_month, db)
     if not student:
         return {
             "status": "error",
@@ -376,7 +444,10 @@ async def assemble_snapshot(
             "snapshot_month": str(snapshot_month),
         }
 
-    student_dict = {c.key: getattr(student, c.key) for c in student.__table__.columns}
+    if isinstance(student, StudentTriggerData):
+        student_dict = {c.key: getattr(student, c.key) for c in student.__table__.columns}
+    else:
+        student_dict = vars(student)
     payment_bal = compute_balance(student_dict)
     p_risk = payment_risk_label(payment_bal)
     segment = _classify_segment(student)

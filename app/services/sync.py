@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from app.services._sync_helpers import (
@@ -656,6 +657,119 @@ async def sync_campaign_activity(db: Any) -> Dict[str, Any]:
         "synced": count, "total_fetched": len(rows),
     }))
     return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
+
+
+async def capture_month_state(
+    snapshot_month: date,
+    db: Any,
+) -> Dict[str, Any]:
+    """
+    Copy the current ai_chatbot_triggerdata state into student_mirror_history
+    for the given snapshot_month.  Idempotent: re-running for the same month
+    overwrites the existing row so the latest capture always wins.
+
+    Run at (or near) the last day of each month for historically accurate
+    relative fields (LastActivityDays, LastLoginDays).  Running after
+    month-end still stores useful data; assemble_snapshot will adjust those
+    fields by the capture-to-month-end offset.
+
+    Read-only from SQL Server (FAD-5/ABG-1). Safe in SHADOW mode.
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from sqlalchemy import text as _text
+
+    # Always capture from the PostgreSQL mirror — it is the authoritative merged
+    # view of all SQL Server sources (AI_ChatBot_TriggerData + IPBC + others).
+    # Callers should run POST /sync/mssql + /sync/ipbc-students beforehand if
+    # they need a fresh pull from SQL Server before capturing.
+    result = await db.execute(_text("SELECT * FROM ai_chatbot_triggerdata"))
+    source_rows = [dict(r) for r in result.mappings().all()]
+    source = "pg_mirror"
+
+    _MIRROR_COLS = [
+        "UserID", "FirstName", "LastName", "Email", "PhoneNumber", "PathName",
+        "HWsBehind", "AvgEffRating", "LastActivityDays", "AttendancePercentage",
+        "CurrentSection", "IPBCStartDate", "Past10DaysLogon", "Total_Payments",
+        "Total_Credits", "PaymentBalance", "ClassValue", "FeePaid", "ClassFeesPaid",
+        "ClassName", "ClassSignupsID", "ActiveStatus", "StatusI", "StatusII",
+        "StudentStartDate", "ClassStartDate", "LastActivitySection",
+        "LastLoginDays", "LastSubmitted",
+    ]
+    _BOOL_COLS = {"FeePaid"}
+    _STR_COLS = {
+        "FirstName", "LastName", "Email", "PhoneNumber", "PathName",
+        "CurrentSection", "ClassName", "ClassSignupsID", "ActiveStatus",
+        "StatusI", "StatusII", "LastActivitySection", "LastSubmitted",
+    }
+    _INT_COLS = {"UserID", "HWsBehind", "LastActivityDays", "Past10DaysLogon", "LastLoginDays"}
+
+    now = datetime.now(timezone.utc)
+    count = 0
+    for row in source_rows:
+        uid = row.get("UserID")
+        if not uid:
+            continue
+
+        def _coerce(col: str, val: Any) -> Any:
+            if val is None:
+                return None
+            if col in _BOOL_COLS:
+                return bool(val)
+            if col in _STR_COLS and not isinstance(val, str):
+                return str(val)
+            if col in _INT_COLS and not isinstance(val, int):
+                try:
+                    return int(val)
+                except (TypeError, ValueError):
+                    return val
+            return val
+
+        # Build parameterised upsert with quoted column names
+        col_list = ', '.join(f'"{c}"' for c in _MIRROR_COLS)
+        param_list = ', '.join(f':p_{c}' for c in _MIRROR_COLS)
+        update_set = ', '.join(
+            f'"{c}" = EXCLUDED."{c}"' for c in _MIRROR_COLS if c != "UserID"
+        )
+        params: Dict[str, Any] = {
+            "snapshot_month": snapshot_month,
+            "captured_at": now,
+        }
+        for c in _MIRROR_COLS:
+            params[f"p_{c}"] = _coerce(c, row.get(c))
+
+        # Apply non-nullable defaults (mirrors sync_from_mssql behaviour)
+        if params.get("p_HWsBehind") is None:
+            params["p_HWsBehind"] = 0
+        if params.get("p_AvgEffRating") is None:
+            params["p_AvgEffRating"] = 0.0
+        if params.get("p_LastActivityDays") is None:
+            params["p_LastActivityDays"] = 0
+
+        await db.execute(_text(f"""
+            INSERT INTO student_mirror_history
+                (snapshot_month, captured_at, {col_list})
+            VALUES
+                (:snapshot_month, :captured_at, {param_list})
+            ON CONFLICT (snapshot_month, "UserID")
+            DO UPDATE SET
+                captured_at = EXCLUDED.captured_at,
+                {update_set}
+        """), params)
+        count += 1
+
+    await db.commit()
+    logger.info(_json.dumps({
+        "service": "sync", "event": "month_state_captured",
+        "snapshot_month": str(snapshot_month), "count": count,
+        "source": source,
+    }))
+    return {
+        "snapshot_month": str(snapshot_month),
+        "captured": count,
+        "source": source,
+        "status": "ok",
+    }
 
 
 async def sync_interview_prep(db: Any) -> Dict[str, Any]:

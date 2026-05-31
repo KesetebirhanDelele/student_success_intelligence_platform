@@ -1,15 +1,40 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import APIResponse
 from app.services.payment_sync import sync_payments, sync_placement_interviews
 from app.services.sync import (
+    capture_month_state,
     sync_campaign_activity, sync_from_mssql, sync_interview_prep,
     sync_ipbc_students, sync_mentorship_assignments,
 )
 
 router = APIRouter()
+
+
+class CaptureMonthStateRequest(BaseModel):
+    year: int
+    month: int
+
+
+@router.post("/sync/capture-month-state")
+async def manual_capture_month_state(
+    req: CaptureMonthStateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    Capture the current SQL Server mirror state into student_mirror_history
+    for the given year/month.  Run at or near the last day of each month so
+    that relative fields (LastActivityDays, LastLoginDays) are historically
+    accurate.  Safe to re-run: overwrites the existing capture for that month.
+    """
+    snapshot_month = date(req.year, req.month, 1)
+    result = await capture_month_state(snapshot_month, db)
+    return APIResponse.ok(result)
 
 
 @router.post("/sync/mssql")

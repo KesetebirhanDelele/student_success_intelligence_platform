@@ -9,6 +9,12 @@ Public API:
   generate_student_report(student_id, snapshot_month, db, ...) -> dict
   generate_cohort_report(cohort_id, report_month, db, ...) -> dict
   get_report_content(student_id, year, month, db) -> dict | None
+
+Report sections (v1.1):
+  identity, risk_priority, academic_performance, academic_trends,
+  engagement, engagement_depth, financial, financial_trends,
+  outreach_summary, outreach_intelligence, lifecycle_patterns,
+  ai_narratives, state_history, governance_metadata
 """
 from __future__ import annotations
 
@@ -22,9 +28,18 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services._report_helpers import (
+    build_academic_trends,
+    build_engagement_depth,
+    build_financial_trends,
+    load_lifecycle_patterns,
+    load_outreach_intelligence,
+    load_trend_data,
+)
+
 logger = logging.getLogger(__name__)
 
-_TEMPLATE_VERSION = "1.0"
+_TEMPLATE_VERSION = "1.1"
 
 
 # ── Snapshot readers (raw SQL — warehouse schema) ─────────────────────────────
@@ -112,10 +127,15 @@ def _build_report_content(
     state_history: list[dict],
     generated_at: datetime,
     lineage_version: int,
+    trend_data: dict,
+    outreach_intel: dict,
+    lifecycle: dict,
 ) -> dict:
     """
-    Assemble the structured report_content_json from a finalized snapshot row.
-    Field layout matches directives/reporting_content_contract.md §3.
+    Assemble the structured report_content_json from a finalized snapshot row
+    plus pre-loaded trend, outreach intelligence, and lifecycle data.
+    Section order follows the display grouping: base section then its
+    analysis/trend companion, so viewers see related data together.
     """
     ai_available = any([
         snap.get("risk_summary_text"),
@@ -127,7 +147,7 @@ def _build_report_content(
 
     ipbc_str = None
     if snap.get("ss_ipbc_start_date"):
-        ipbc_str = str(snap["ss_ipbc_start_date"])[:10]  # date part only
+        ipbc_str = str(snap["ss_ipbc_start_date"])[:10]
 
     return {
         "report_version": _TEMPLATE_VERSION,
@@ -136,6 +156,7 @@ def _build_report_content(
         "generated_at": generated_at.isoformat(),
         "lineage_version": lineage_version,
         "sections": {
+            # ── Identity & risk ───────────────────────────────────────────────
             "identity": {
                 "full_name": f"{snap.get('ss_first_name') or ''} {snap.get('ss_last_name') or ''}".strip(),
                 "user_id": snap["student_id"],
@@ -150,6 +171,7 @@ def _build_report_content(
                 "payment_risk_label": snap.get("payment_risk_label") or "UNKNOWN",
                 "segment_classification": snap.get("segment_classification"),
             },
+            # ── Academic: current state + multi-month trends ──────────────────
             "academic_performance": {
                 "hws_behind": snap.get("ss_hws_behind"),
                 "avg_eff_rating": snap.get("ss_avg_eff_rating"),
@@ -160,6 +182,8 @@ def _build_report_content(
                 "status_i": snap.get("ss_status_i"),
                 "status_ii": snap.get("ss_status_ii"),
             },
+            "academic_trends": build_academic_trends(snap, trend_data),
+            # ── Engagement: current state + depth analysis ────────────────────
             "engagement": {
                 "last_activity_days": snap.get("ss_last_activity_days"),
                 "last_login_days": snap.get("ss_last_login_days"),
@@ -167,6 +191,8 @@ def _build_report_content(
                 "last_activity_section": snap.get("ss_last_activity_section"),
                 "last_submitted": snap.get("ss_last_submitted"),
             },
+            "engagement_depth": build_engagement_depth(snap, trend_data),
+            # ── Financial: current state + trends ─────────────────────────────
             "financial": {
                 "class_value": snap.get("ss_class_value"),
                 "total_payments": snap.get("ss_total_payments"),
@@ -177,6 +203,8 @@ def _build_report_content(
                 "class_fees_paid": snap.get("ss_class_fees_paid"),
                 "is_bundle_deal": snap.get("is_bundle_deal"),
             },
+            "financial_trends": build_financial_trends(snap, trend_data),
+            # ── Outreach: summary + channel intelligence ──────────────────────
             "outreach_summary": {
                 "total_attempts": snap.get("total_outreach_attempts") or 0,
                 "channels_used": snap.get("channel_breakdown_json") or {},
@@ -185,6 +213,10 @@ def _build_report_content(
                 "total_responses": snap.get("total_responses") or 0,
                 "response_received": bool(snap.get("total_responses")),
             },
+            "outreach_intelligence": outreach_intel,
+            # ── Lifecycle patterns ────────────────────────────────────────────
+            "lifecycle_patterns": lifecycle,
+            # ── AI narratives ─────────────────────────────────────────────────
             "ai_narratives": {
                 "risk_summary": snap.get("risk_summary_text") or "No narrative available at time of finalization.",
                 "progress_summary": snap.get("progress_summary_text") or "No narrative available at time of finalization.",
@@ -316,9 +348,23 @@ async def generate_student_report(
     state_history = await _load_state_transitions_from_snapshot(
         snap["snapshot_id"], student_id, snapshot_month, db
     )
+
+    if snapshot_month.month == 12:
+        month_end_dt = datetime(snapshot_month.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        month_end_dt = datetime(snapshot_month.year, snapshot_month.month + 1, 1, tzinfo=timezone.utc)
+    month_start_dt = datetime(snapshot_month.year, snapshot_month.month, 1, tzinfo=timezone.utc)
+
+    trend_data = await load_trend_data(student_id, snapshot_month, db)
+    outreach_intel = await load_outreach_intelligence(student_id, month_start_dt, month_end_dt, db)
+    lifecycle = await load_lifecycle_patterns(student_id, db)
+
     lineage_version = snap.get("lineage_version") or 1
     generated_at = datetime.now(timezone.utc)
-    report_content = _build_report_content(snap, state_history, generated_at, lineage_version)
+    report_content = _build_report_content(
+        snap, state_history, generated_at, lineage_version,
+        trend_data, outreach_intel, lifecycle,
+    )
 
     report_id = await _insert_monthly_report(
         student_id=student_id,
