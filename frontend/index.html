@@ -1647,11 +1647,27 @@ async function loadReportForMonth(uid) {
   const id = s.identity || {};
   const risk = s.risk_priority || {};
   const acad = s.academic_performance || {};
+  const trends = s.academic_trends || {};
   const eng = s.engagement || {};
+  const engDepth = s.engagement_depth || {};
   const fin = s.financial || {};
+  const finTrends = s.financial_trends || {};
   const out = s.outreach_summary || {};
+  const outIntel = s.outreach_intelligence || {};
+  const lc = s.lifecycle_patterns || {};
   const ai = s.ai_narratives || {};
   const gov = s.governance_metadata || {};
+
+  const trendRows = (arr, valKey, fmt) => !arr || !arr.length
+    ? '<tr><td colspan="2" class="text-muted">No trend data yet</td></tr>'
+    : [...arr].reverse().map(r =>
+        `<tr><td>${escH(String(r.month||'').slice(0,7))}</td><td>${fmt ? fmt(r[valKey]) : escH(String(r[valKey]??'—'))}</td></tr>`
+      ).join('');
+  const momBadge = m => m === 'IMPROVING' ? `<span class="badge bg-success">${m}</span>`
+    : m === 'DECLINING' ? `<span class="badge bg-danger">${m}</span>`
+    : m === 'STABLE' ? `<span class="badge bg-secondary">${m}</span>`
+    : `<span class="badge bg-light text-dark">${escH(m||'—')}</span>`;
+  const chRates = outIntel.channel_response_rates || {};
 
   const riskClass = risk.risk_level === 'HIGH' ? 'danger' : risk.risk_level === 'MEDIUM' ? 'warning' : 'success';
 
@@ -1690,6 +1706,22 @@ async function loadReportForMonth(uid) {
       <tr><th>Status II</th><td>${escH(acad.status_ii||'—')}</td></tr>
     </tbody></table>
 
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Academic Trends</div>
+    <table class="table table-sm small mb-1"><thead class="table-light"><tr><th>Month</th><th>HWs Behind</th><th>Efficiency</th></tr></thead><tbody>
+      ${!trends.hw_velocity || !trends.hw_velocity.length ? '<tr><td colspan="3" class="text-muted">No trend data yet</td></tr>' :
+        [...(trends.hw_velocity||[])].reverse().map((r,i) => {
+          const e = (trends.efficiency_trend||[])[trends.efficiency_trend ? trends.efficiency_trend.length-1-i : 0] || {};
+          return `<tr><td>${escH(String(r.month||'').slice(0,7))}</td><td>${r.hws_behind??'—'}</td><td>${fmtPct(e.avg_eff_rating)}</td></tr>`;
+        }).join('')}
+    </tbody></table>
+    <table class="table table-sm small mb-3"><thead class="table-light"><tr><th>Month</th><th>Section Progress</th></tr></thead><tbody>
+      ${trendRows(trends.section_progression, 'section', null)}
+    </tbody></table>
+    <div class="mb-3 d-flex gap-3 small">
+      <span><strong>Submission Momentum:</strong> ${momBadge(trends.submission_momentum)}</span>
+      <span class="text-muted">Months of data: ${trends.months_of_data??'—'}</span>
+    </div>
+
     <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Engagement</div>
     <table class="table table-sm small mb-3"><tbody>
       <tr><th style="width:45%">Last Activity</th><td>${eng.last_activity_days != null ? eng.last_activity_days + ' days ago' : '—'}</td></tr>
@@ -1697,6 +1729,17 @@ async function loadReportForMonth(uid) {
       <tr><th>Current Class</th><td>${escH(eng.current_class_name||'—')}</td></tr>
       <tr><th>Last Activity Section</th><td>${escH(eng.last_activity_section||'—')}</td></tr>
       <tr><th>Last Submitted</th><td>${escH(eng.last_submitted||'—')}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Engagement Depth</div>
+    <table class="table table-sm small mb-1"><tbody>
+      <tr><th style="width:55%">Login vs Submission Gap</th><td>${engDepth.login_submission_gap != null ? engDepth.login_submission_gap + ' days' : '—'}</td></tr>
+      <tr><th>Gap Interpretation</th><td>${escH(engDepth.gap_interpretation||'—')}</td></tr>
+      <tr><th>Activity Pattern</th><td>${escH(engDepth.activity_pattern||'—')}</td></tr>
+      <tr><th>Logins Last 10 Days</th><td>${engDepth.peak_activity_logins_10d??'—'}</td></tr>
+    </tbody></table>
+    <table class="table table-sm small mb-3"><thead class="table-light"><tr><th>Month</th><th>Attendance %</th></tr></thead><tbody>
+      ${trendRows(engDepth.attendance_trend, 'attendance_pct', fmtPct)}
     </tbody></table>
 
     <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Financial</div>
@@ -1710,6 +1753,16 @@ async function loadReportForMonth(uid) {
       <tr><th>Class Fees Paid</th><td>${fmtCur(fin.class_fees_paid)}</td></tr>
     </tbody></table>
 
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Financial Trends</div>
+    <table class="table table-sm small mb-1"><thead class="table-light"><tr><th>Month</th><th>Balance</th></tr></thead><tbody>
+      ${trendRows(finTrends.balance_trend, 'balance', fmtCur)}
+    </tbody></table>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:55%">Payment Behavior</th><td><span class="badge bg-secondary">${escH(finTrends.payment_behavior||'—')}</span></td></tr>
+      <tr><th>Remaining After Credits</th><td>${fmtCur(finTrends.remaining_after_credits)}</td></tr>
+      <tr><th>Enrollment Fee Only</th><td>${finTrends.enrollment_fee_only ? '<span class="text-warning">⚠ No class fees paid</span>' : '✓ Class fees active'}</td></tr>
+    </tbody></table>
+
     <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Outreach Summary</div>
     <table class="table table-sm small mb-3"><tbody>
       <tr><th style="width:45%">Total Attempts</th><td>${out.total_attempts ?? 0}</td></tr>
@@ -1717,6 +1770,33 @@ async function loadReportForMonth(uid) {
       <tr><th>Response Received</th><td>${out.response_received ? '✓ Yes' : '✗ No'}</td></tr>
       <tr><th>Last Contact</th><td>${escH(out.last_contact_date||'—')}</td></tr>
       <tr><th>Days Since Contact</th><td>${out.days_since_last_contact != null ? out.days_since_last_contact + ' days' : '—'}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Outreach Intelligence</div>
+    <table class="table table-sm small mb-1"><thead class="table-light"><tr><th>Channel</th><th>Attempts</th><th>Responses</th><th>Rate</th></tr></thead><tbody>
+      ${Object.keys(chRates).length
+        ? Object.entries(chRates).map(([ch,v]) =>
+            `<tr><td>${escH(ch)}</td><td>${v.attempts||0}</td><td>${v.responses||0}</td><td>${((v.response_rate||0)*100).toFixed(0)}%</td></tr>`
+          ).join('')
+        : '<tr><td colspan="4" class="text-muted">No outreach attempts this month</td></tr>'}
+    </tbody></table>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:55%">Avg Days to Response</th><td>${outIntel.avg_days_to_response != null ? outIntel.avg_days_to_response + ' days' : '—'}</td></tr>
+      <tr><th>Most Responsive Channel</th><td>${escH(outIntel.most_responsive_channel||'—')}</td></tr>
+      <tr><th>Fatigue Flag</th><td>${outIntel.fatigue_flag ? '<span class="badge bg-danger">HIGH FATIGUE</span>' : outIntel.fatigue_score > 0 ? `Score: ${outIntel.fatigue_score}` : '—'}</td></tr>
+    </tbody></table>
+
+    <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">Lifecycle Patterns</div>
+    <table class="table table-sm small mb-3"><tbody>
+      <tr><th style="width:55%">Current State</th><td>${lc.current_lifecycle_state ? `<span class="state-pill s-${escH(lc.current_lifecycle_state)}">${escH(lc.current_lifecycle_state)}</span>` : '—'}</td></tr>
+      <tr><th>Current Attempt #</th><td>${lc.current_attempt_number??'—'}</td></tr>
+      <tr><th>Last Contact At</th><td>${lc.last_contact_at ? fmtTs(lc.last_contact_at) : '—'}</td></tr>
+      <tr><th>Next Retry At</th><td>${lc.next_retry_at ? fmtTs(lc.next_retry_at) : '—'}</td></tr>
+      <tr><th>Total State Transitions</th><td>${lc.total_state_transitions??'—'}</td></tr>
+      <tr><th>Intervention Cycles</th><td>${lc.intervention_cycle_count != null ? (lc.intervention_cycle_count > 0 ? `<span class="badge bg-warning text-dark">${lc.intervention_cycle_count}</span>` : '0') : '—'}</td></tr>
+      <tr><th>Days: First Contact → Response</th><td>${lc.days_first_contact_to_response != null ? lc.days_first_contact_to_response + ' days' : '—'}</td></tr>
+      <tr><th>Segment</th><td>${escH(lc.current_segment||'—')}</td></tr>
+      <tr><th>Segment Tenure</th><td>${lc.segment_tenure_months != null ? lc.segment_tenure_months + ' month(s)' : '—'}</td></tr>
     </tbody></table>
 
     <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.4px">AI Narratives <span class="badge ${ai.ai_content_available ? 'bg-success' : 'bg-secondary'}" style="font-size:.6rem">${ai.ai_governance_tier||'UNAVAILABLE'}</span></div>
