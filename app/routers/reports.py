@@ -16,6 +16,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from app.database import get_db
 from app.schemas import APIResponse
 from app.services.report import generate_cohort_report, generate_student_report, get_report_content
@@ -178,3 +180,82 @@ async def generate_all_monthly_reports(
         result = {"report_month": str(report_month), "status": "completed_all_segments"}
 
     return APIResponse.ok(result)
+
+
+@router.post("/snapshots/backfill-narratives")
+async def backfill_narratives(
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    Copy finalized AI narratives from ai_insights into existing
+    snapshot_ai_narratives rows where columns are still NULL.
+
+    Run this after POST /ai-insights/generate-monthly-narratives-all completes.
+    Idempotent: only updates NULL columns; never overwrites existing content.
+    After this, run POST /reports/monthly/generate-all for each month so report
+    content picks up the new narratives.
+    """
+    update_sql = text("""
+        UPDATE warehouse.snapshot_ai_narratives san
+        SET
+            risk_summary_text = COALESCE(san.risk_summary_text,
+                (SELECT content_text FROM ai_insights
+                 WHERE user_id = ss.user_id AND insight_type = 'risk_summary'
+                   AND is_finalized = true
+                 ORDER BY created_at DESC LIMIT 1)),
+            progress_summary_text = COALESCE(san.progress_summary_text,
+                (SELECT content_text FROM ai_insights
+                 WHERE user_id = ss.user_id AND insight_type = 'progress_summary'
+                   AND is_finalized = true
+                 ORDER BY created_at DESC LIMIT 1)),
+            monthly_narrative_text = COALESCE(san.monthly_narrative_text,
+                (SELECT content_text FROM ai_insights
+                 WHERE user_id = ss.user_id AND insight_type = 'monthly_narrative'
+                   AND is_finalized = true
+                 ORDER BY created_at DESC LIMIT 1)),
+            intervention_recommendation_text = COALESCE(san.intervention_recommendation_text,
+                (SELECT content_text FROM ai_insights
+                 WHERE user_id = ss.user_id AND insight_type = 'intervention_recommendation'
+                   AND is_finalized = true
+                 ORDER BY created_at DESC LIMIT 1)),
+            trend_interpretation_text = COALESCE(san.trend_interpretation_text,
+                (SELECT content_text FROM ai_insights
+                 WHERE user_id = ss.user_id AND insight_type = 'sentiment_analysis'
+                   AND is_finalized = true
+                 ORDER BY created_at DESC LIMIT 1))
+        FROM warehouse.student_snapshots ss
+        WHERE san.snapshot_id = ss.id
+          AND (
+              san.risk_summary_text IS NULL
+           OR san.progress_summary_text IS NULL
+           OR san.monthly_narrative_text IS NULL
+           OR san.intervention_recommendation_text IS NULL
+           OR san.trend_interpretation_text IS NULL
+          )
+    """)
+
+    count_before = (await db.execute(text("""
+        SELECT COUNT(*) FROM warehouse.snapshot_ai_narratives
+        WHERE risk_summary_text IS NULL
+    """))).scalar_one()
+
+    await db.execute(update_sql)
+    await db.commit()
+
+    count_after = (await db.execute(text("""
+        SELECT COUNT(*) FROM warehouse.snapshot_ai_narratives
+        WHERE risk_summary_text IS NULL
+    """))).scalar_one()
+
+    return APIResponse.ok({
+        "status": "ok",
+        "snapshots_backfilled": int(count_before - count_after),
+        "snapshots_still_null": int(count_after),
+        "note": (
+            "Run POST /reports/monthly/generate-all for each month to "
+            "refresh report content with the new narratives."
+            if count_after == 0 else
+            f"{count_after} snapshots still have null narratives — "
+            "ensure generation completed for all students first."
+        ),
+    })

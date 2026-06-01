@@ -1438,5 +1438,24 @@ PROGRESS.md audit: 8 code files changed (alembic/versions/0004_student_mirror_hi
 
 PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
 
+## Phase 69 — AI Narrative Generation for Monthly Reports
+
+- [x] app/services/_narrative_generation.py — new file: batch LLM narrative generation
+  - Date: 2026-05-31
+  - What changed: Created `_narrative_generation.py` (~200 lines). Single combined LLM call per student generates all 5 monthly narrative types (`risk_summary`, `progress_summary`, `monthly_narrative`, `intervention_recommendation`, `sentiment_analysis`) using `response_format={"type":"json_object"}`. Non-PII context built from numeric/categorical fields (attendance %, HWs behind, efficiency rating, login days, payment balance, fee paid, active status, sections). Idempotent: `generate_student_narratives()` skips types already finalized for the student (FAD-1). `generate_all_monthly_narratives(db)` loops all 221 students, logs progress every 25, caps error list at 10. Returns counts of new/skipped/failed students.
+  - Verification: TypeScript N/A (Python). Module imports cleanly. Triggered via background endpoint below.
+
+- [x] app/routers/ai_insights.py — add POST /ai-insights/generate-monthly-narratives-all
+  - Date: 2026-05-31
+  - What changed: Added `_run_narrative_generation()` background wrapper using `AsyncSessionLocal` (owns its own session independent of the HTTP request lifecycle). Added `POST /ai-insights/generate-monthly-narratives-all` FastAPI endpoint that schedules the background task and returns immediately with a "started" status and next-step instructions.
+  - Verification: Returns 200 immediately; generation runs in background visible in Docker logs.
+
+- [x] app/routers/reports.py — add POST /reports/snapshots/backfill-narratives
+  - Date: 2026-05-31
+  - What changed: Added `POST /reports/snapshots/backfill-narratives`. Runs a single SQL UPDATE using correlated subqueries to copy the latest finalized `ai_insights` content for each of the 5 narrative types into `warehouse.snapshot_ai_narratives` rows where the column is NULL (COALESCE preserves any existing content). Returns counts of snapshots updated vs still null. Idempotent: COALESCE never overwrites existing values.
+  - Verification: Docker rebuild succeeded; endpoint callable at POST /reports/snapshots/backfill-narratives.
+
+PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
+
 
 

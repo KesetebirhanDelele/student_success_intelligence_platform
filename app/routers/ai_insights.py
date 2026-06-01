@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,7 @@ from app.routers._router_helpers import (
 )
 from app.schemas import APIResponse
 from app.services.ai_insights import INSIGHT_TYPES, get_or_generate
+from app.services._narrative_generation import generate_all_monthly_narratives
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai-insights")
@@ -59,6 +60,41 @@ def _insight_item(insight: AIInsight) -> dict:
         # Replay classification (RSV-1) — LIVE vs REPLAY distinguishable
         **replay_visibility_fields(insight),
     }
+
+
+async def _run_narrative_generation() -> None:
+    """Background wrapper — owns its own DB session so the HTTP session can close."""
+    from app.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        result = await generate_all_monthly_narratives(db)
+    logger.info({"event": "narrative_generation_complete", "result": result})
+
+
+@router.post("/generate-monthly-narratives-all")
+async def generate_monthly_narratives_all(
+    background_tasks: BackgroundTasks,
+) -> APIResponse:
+    """
+    Generate the 5 monthly narrative types (risk_summary, progress_summary,
+    monthly_narrative, intervention_recommendation, sentiment_analysis) for all
+    students using the configured LLM.  Runs as a background task — returns
+    immediately.  Idempotent: students with all 5 types already finalized are
+    skipped (FAD-1).
+
+    After this completes, call POST /reports/snapshots/backfill-narratives to
+    copy the new narratives into existing snapshot_ai_narratives rows, then
+    POST /reports/monthly/generate-all to refresh report content.
+    """
+    background_tasks.add_task(_run_narrative_generation)
+    return APIResponse.ok({
+        "status": "started",
+        "message": (
+            "Narrative generation running in background. "
+            "Watch Docker logs for progress. "
+            "When complete, call POST /reports/snapshots/backfill-narratives "
+            "then POST /reports/monthly/generate-all for each month."
+        ),
+    })
 
 
 @router.get("/{user_id}/{insight_type}")
