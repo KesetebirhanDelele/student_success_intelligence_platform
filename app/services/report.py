@@ -294,7 +294,13 @@ async def _insert_monthly_report(
             :content_json, :now, :now, 'report_service',
             :correlation_id, :execution_mode
         )
-        ON CONFLICT (report_idempotency_key) DO NOTHING
+        ON CONFLICT (cohort_id, report_month, lineage_version) DO UPDATE SET
+            report_content_json = EXCLUDED.report_content_json,
+            template_version    = EXCLUDED.template_version,
+            report_idempotency_key = EXCLUDED.report_idempotency_key,
+            generated_at        = EXCLUDED.generated_at,
+            published_at        = EXCLUDED.published_at,
+            source_snapshot_fingerprint_json = EXCLUDED.source_snapshot_fingerprint_json
         RETURNING id
     """), {
         "cohort_id": str(student_id),
@@ -312,12 +318,7 @@ async def _insert_monthly_report(
     if row:
         await db.commit()
         return row[0]
-
-    # Conflict: report already exists — return existing id
-    existing = (await db.execute(text(
-        "SELECT id FROM warehouse.monthly_reports WHERE report_idempotency_key = :k"
-    ), {"k": idem_key})).fetchone()
-    return existing[0] if existing else 0
+    return 0
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
