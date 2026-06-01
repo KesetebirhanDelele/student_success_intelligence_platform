@@ -1438,7 +1438,7 @@ PROGRESS.md audit: 8 code files changed (alembic/versions/0004_student_mirror_hi
 
 PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
 
-## Phase 69 — AI Narrative Generation for Monthly Reports
+## Phase 69 — AI Narrative Generation for Monthly Reports (continued: bug fixes) — AI Narrative Generation for Monthly Reports
 
 - [x] app/services/_narrative_generation.py — new file: batch LLM narrative generation
   - Date: 2026-05-31
@@ -1455,7 +1455,17 @@ PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
   - What changed: Added `POST /reports/snapshots/backfill-narratives`. Runs a single SQL UPDATE using correlated subqueries to copy the latest finalized `ai_insights` content for each of the 5 narrative types into `warehouse.snapshot_ai_narratives` rows where the column is NULL (COALESCE preserves any existing content). Returns counts of snapshots updated vs still null. Idempotent: COALESCE never overwrites existing values.
   - Verification: Docker rebuild succeeded; endpoint callable at POST /reports/snapshots/backfill-narratives.
 
-PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
+- [x] app/routers/reports.py — fix backfill-narratives: student_id vs user_id column name
+  - Date: 2026-05-31
+  - What changed: `warehouse.student_snapshots` stores user ID as `student_id`, not `user_id`. The correlated subqueries in the UPDATE referenced `ss.user_id` causing `asyncpg.UndefinedColumnError`. Fixed all 5 occurrences to `ss.student_id`.
+  - Verification: `POST /reports/snapshots/backfill-narratives` returned `{"snapshots_backfilled": 663, "snapshots_still_null": 0}`.
+
+- [x] app/services/report.py — fix report regeneration: UPDATE-first upsert pattern + template version 1.2
+  - Date: 2026-05-31
+  - What changed: Template version bumped to `"1.2"` to enable content refresh. `uq_wmr_published_lineage` is a partial unique index (`WHERE status='REPORT_PUBLISHED'`), unusable as ON CONFLICT target. Replaced with UPDATE-first pattern: try UPDATE on `(cohort_id, report_month, lineage_version, status='REPORT_PUBLISHED')`; if 0 rows updated, INSERT with idempotency-key conflict guard. GET query changed to `ORDER BY id DESC`. This allows generate-all to refresh report content with AI narratives on subsequent calls.
+  - Verification: All 3 months regenerated (`completed_all_segments`). `GET /reports/monthly/32508/2026/5` returns real GPT-4o content in `ai_narratives` section (`ai_content_available: true`, `ai_governance_tier: FINALIZED_COPY`, `risk_summary`, `progress_summary`, `monthly_narrative`, `intervention_recommendation`, `sentiment_classification` all populated).
+
+PROGRESS.md audit (Phase 69 complete): 5 commits total — 3 new files + 5 bug-fix changes. 5 entries written. Audit clean.
 
 
 
