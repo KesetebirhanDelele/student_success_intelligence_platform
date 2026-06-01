@@ -39,7 +39,7 @@ from app.services._report_helpers import (
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATE_VERSION = "1.1"
+_TEMPLATE_VERSION = "1.2"
 
 
 # ── Snapshot readers (raw SQL — warehouse schema) ─────────────────────────────
@@ -411,7 +411,7 @@ async def get_report_content(
         WHERE cohort_id = :cohort_id
           AND report_month = :report_month
           AND status = 'REPORT_PUBLISHED'
-        ORDER BY lineage_version DESC
+        ORDER BY id DESC
         LIMIT 1
     """), {"cohort_id": str(student_id), "report_month": snapshot_month})).mappings().first()
 
