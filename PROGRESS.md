@@ -1419,5 +1419,24 @@
 
 PROGRESS.md audit: 8 code files changed (alembic/versions/0004_student_mirror_history.py, app/services/sync.py, app/routers/sync.py, app/services/snapshot.py, app/services/_report_helpers.py, app/services/report.py, frontend/index.html) + 1 data operation (PostgreSQL deletion) + 1 pipeline run. 9 entries written. Audit clean.
 
+## Phase 68 — Automated Scheduling: Daily Sync + Month-End Capture
+
+- [x] app/services/_scheduled_jobs.py — new file: extracted job logic + 2 new jobs
+  - Date: 2026-05-31
+  - What changed: Created `_scheduled_jobs.py` (196 lines) to keep `scheduler.py` under the 500-line hard ceiling. Contains three async functions: `run_monthly_reports(snapshot_month, execution_mode, config_version_id)` — extracted from the inline body that was in `scheduler.py`; `run_daily_mssql_sync()` — new: calls `sync_from_mssql`, `sync_ipbc_students`, `sync_payments`, `sync_campaign_activity` in sequence, each in its own DB session, with structured logging per call; `run_month_end_capture(snapshot_month)` — new: calls `capture_month_state` to lock the current mirror state before the new month begins. All three functions log start/completion/error with correlation_id and are idempotent (re-running is safe).
+  - Verification: TypeScript N/A (Python). Module imports cleanly; no circular imports (all DB/service imports are deferred inside function bodies).
+
+- [x] app/services/scheduler.py — refactor: thin wrappers + register 2 new jobs
+  - Date: 2026-05-31
+  - What changed: Replaced the 83-line inline `_monthly_report_job` body with a 7-line thin wrapper that reads `_scheduler_config` and delegates to `run_monthly_reports`. Added `_daily_mssql_sync_job` and `_month_end_capture_job` as thin wrappers (~5 lines each). Added `start_daily_sync_job(timezone_str)` (registers `daily_mssql_sync` cron: `hour=1 minute=0`) and `start_month_end_capture_job(timezone_str)` (registers `month_end_state_capture` cron: `day=last hour=23 minute=30`). File reduced from 474 lines to ~430 lines, under the 500-line hard ceiling.
+  - Verification: `scheduler.py` line count confirmed under 500. Imports resolve; no circular imports.
+
+- [x] app/main.py — register daily sync and month-end capture at startup
+  - Date: 2026-05-31
+  - What changed: Added `start_daily_sync_job` and `start_month_end_capture_job` to the import from `app.services.scheduler`. Added `start_daily_sync_job(timezone_str="UTC")` and `start_month_end_capture_job(timezone_str="UTC")` calls in `on_startup`, immediately after `start_monthly_report_job`.
+  - Verification: Docker rebuild succeeded; startup logs show three job registration events: `monthly_report_job_registered`, `daily_sync_job_registered`, `month_end_capture_job_registered`.
+
+PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
+
 
 

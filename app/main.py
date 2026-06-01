@@ -37,7 +37,14 @@ from app.routers import student_timeline as timeline_router
 from app.routers import sync as sync_router
 from app.routers import work_queue as work_queue_router
 from app.routers import reports as reports_router
-from app.services.scheduler import configure_scheduler, start_monthly_report_job, start_scheduler, stop_scheduler
+from app.services.scheduler import (
+    configure_scheduler,
+    start_daily_sync_job,
+    start_month_end_capture_job,
+    start_monthly_report_job,
+    start_scheduler,
+    stop_scheduler,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -120,6 +127,8 @@ async def on_startup() -> None:
         timezone_str=timing.get("timezone_str", settings.SCHEDULER_TIMEZONE),
     )
     start_monthly_report_job(timezone_str="UTC")
+    start_daily_sync_job(timezone_str="UTC")
+    start_month_end_capture_job(timezone_str="UTC")
 
     logger.info(json.dumps({
         "timestamp": bootstrap_ctx.startup_timestamp,
