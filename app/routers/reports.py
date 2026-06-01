@@ -200,27 +200,27 @@ async def backfill_narratives(
         SET
             risk_summary_text = COALESCE(san.risk_summary_text,
                 (SELECT content_text FROM ai_insights
-                 WHERE user_id = ss.user_id AND insight_type = 'risk_summary'
+                 WHERE user_id = ss.student_id AND insight_type = 'risk_summary'
                    AND is_finalized = true
                  ORDER BY created_at DESC LIMIT 1)),
             progress_summary_text = COALESCE(san.progress_summary_text,
                 (SELECT content_text FROM ai_insights
-                 WHERE user_id = ss.user_id AND insight_type = 'progress_summary'
+                 WHERE user_id = ss.student_id AND insight_type = 'progress_summary'
                    AND is_finalized = true
                  ORDER BY created_at DESC LIMIT 1)),
             monthly_narrative_text = COALESCE(san.monthly_narrative_text,
                 (SELECT content_text FROM ai_insights
-                 WHERE user_id = ss.user_id AND insight_type = 'monthly_narrative'
+                 WHERE user_id = ss.student_id AND insight_type = 'monthly_narrative'
                    AND is_finalized = true
                  ORDER BY created_at DESC LIMIT 1)),
             intervention_recommendation_text = COALESCE(san.intervention_recommendation_text,
                 (SELECT content_text FROM ai_insights
-                 WHERE user_id = ss.user_id AND insight_type = 'intervention_recommendation'
+                 WHERE user_id = ss.student_id AND insight_type = 'intervention_recommendation'
                    AND is_finalized = true
                  ORDER BY created_at DESC LIMIT 1)),
             trend_interpretation_text = COALESCE(san.trend_interpretation_text,
                 (SELECT content_text FROM ai_insights
-                 WHERE user_id = ss.user_id AND insight_type = 'sentiment_analysis'
+                 WHERE user_id = ss.student_id AND insight_type = 'sentiment_analysis'
                    AND is_finalized = true
                  ORDER BY created_at DESC LIMIT 1))
         FROM warehouse.student_snapshots ss
