@@ -282,7 +282,41 @@ async def _insert_monthly_report(
     content_json = json.dumps(report_content)
     now = datetime.now(timezone.utc)
 
-    result = await db.execute(text("""
+    params = {
+        "cohort_id": str(student_id),
+        "report_month": snapshot_month,
+        "template_version": _TEMPLATE_VERSION,
+        "lineage_version": lineage_version,
+        "idem_key": idem_key,
+        "fp_json": fp_json,
+        "content_json": content_json,
+        "now": now,
+        "correlation_id": uuid.UUID(correlation_id) if correlation_id else None,
+        "execution_mode": execution_mode,
+    }
+
+    # UPDATE existing published report (handles template-version refreshes)
+    up = await db.execute(text("""
+        UPDATE warehouse.monthly_reports
+        SET report_content_json = :content_json,
+            template_version    = :template_version,
+            report_idempotency_key = :idem_key,
+            generated_at        = :now,
+            published_at        = :now,
+            source_snapshot_fingerprint_json = :fp_json
+        WHERE cohort_id      = :cohort_id
+          AND report_month   = :report_month
+          AND lineage_version = :lineage_version
+          AND status         = 'REPORT_PUBLISHED'
+        RETURNING id
+    """), params)
+    up_row = up.fetchone()
+    if up_row:
+        await db.commit()
+        return up_row[0]
+
+    # No existing row — INSERT fresh
+    ins = await db.execute(text("""
         INSERT INTO warehouse.monthly_reports (
             cohort_id, report_month, template_version, lineage_version,
             status, report_idempotency_key, source_snapshot_fingerprint_json,
@@ -294,31 +328,19 @@ async def _insert_monthly_report(
             :content_json, :now, :now, 'report_service',
             :correlation_id, :execution_mode
         )
-        ON CONFLICT (cohort_id, report_month, lineage_version) DO UPDATE SET
-            report_content_json = EXCLUDED.report_content_json,
-            template_version    = EXCLUDED.template_version,
-            report_idempotency_key = EXCLUDED.report_idempotency_key,
-            generated_at        = EXCLUDED.generated_at,
-            published_at        = EXCLUDED.published_at,
-            source_snapshot_fingerprint_json = EXCLUDED.source_snapshot_fingerprint_json
+        ON CONFLICT (report_idempotency_key) DO NOTHING
         RETURNING id
-    """), {
-        "cohort_id": str(student_id),
-        "report_month": snapshot_month,
-        "template_version": _TEMPLATE_VERSION,
-        "lineage_version": lineage_version,
-        "idem_key": idem_key,
-        "fp_json": fp_json,
-        "content_json": content_json,
-        "now": now,
-        "correlation_id": uuid.UUID(correlation_id) if correlation_id else None,
-        "execution_mode": execution_mode,
-    })
-    row = result.fetchone()
-    if row:
+    """), params)
+    ins_row = ins.fetchone()
+    if ins_row:
         await db.commit()
-        return row[0]
-    return 0
+        return ins_row[0]
+
+    # Idempotency: exact duplicate already exists
+    existing = (await db.execute(text(
+        "SELECT id FROM warehouse.monthly_reports WHERE report_idempotency_key = :k"
+    ), {"k": idem_key})).fetchone()
+    return existing[0] if existing else 0
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
