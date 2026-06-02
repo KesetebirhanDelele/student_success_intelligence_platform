@@ -1820,12 +1820,27 @@ async function loadReportForMonth(uid) {
 // SYNC ACTIONS
 // ════════════════════════════════════════════════════════
 async function syncMssql() {
-  document.getElementById('sync-result').textContent = 'Syncing…';
-  const r = await api('/sync/mssql', { method: 'POST' });
-  const d = r.data || {};
-  document.getElementById('sync-result').innerHTML =
-    `<span class="badge ${d.status==='success'?'bg-success':d.status==='partial_success'?'bg-warning text-dark':'bg-danger'}">${d.status}</span> Scanned: ${d.rows_scanned} | Added: ${d.added} | Updated: ${d.updated} | Failed: ${d.rows_failed}` +
-    (d.error ? ` | Error: ${escH(d.error)}` : '');
+  const el = document.getElementById('sync-result');
+  el.textContent = 'Syncing JRP students…';
+  const r1 = await api('/sync/mssql', { method: 'POST' });
+  const d1 = r1.data || {};
+
+  el.textContent = 'Syncing IPBC students…';
+  const r2 = await api('/sync/ipbc-students', { method: 'POST' });
+  const d2 = r2.data || {};
+
+  el.textContent = 'Syncing payments…';
+  const r3 = await api('/sync/payments', { method: 'POST' });
+  const d3 = r3.data || {};
+
+  const totalScanned = (d1.rows_scanned || 0) + (d2.rows_scanned || 0);
+  const totalAdded   = (d1.added || 0) + (d2.added || 0);
+  const anyError = d1.error || d2.error || d3.error;
+  const overallStatus = anyError ? 'partial_success' : 'success';
+  el.innerHTML =
+    `<span class="badge ${overallStatus==='success'?'bg-success':'bg-warning text-dark'}">${overallStatus}</span> ` +
+    `JRP: ${d1.rows_scanned||0} | IPBC: ${d2.rows_scanned||0} | Total synced: ${totalAdded}` +
+    (anyError ? ` | Error: ${escH(String(anyError))}` : '');
 }
 
 async function syncInterviewPrep() {
