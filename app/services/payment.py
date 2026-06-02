@@ -65,4 +65,6 @@ def build_payment_row(s: StudentTriggerData) -> dict:
         "is_bundle_deal": is_bundle,
         "pct_paid": pct_paid,
         "payment_risk": payment_risk_label(actual_bal),
+        "plan_name": d.get("plan_name"),
+        "down_payment_amt": d.get("down_payment_amt"),
     }

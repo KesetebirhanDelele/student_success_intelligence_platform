@@ -68,6 +68,20 @@ _PLACEMENT_INTERVIEW_QUERY = """
 SELECT * FROM vw_ColaberryInterviewPreparation_UpcomingInterviews_Processed
 """
 
+# Cross-database query: PlanName + DownPaymentAmt for IPBC students.
+# vw_IPBC_DownPaymentTracking lives in the CCPP database (same SQL Server instance).
+# We pull both tables separately and join in Python so we can discover the view's
+# available columns at runtime rather than hardcoding a join key.
+_IPBC_PLAN_QUERY = """
+SELECT PlanName, DOWNPAYMENTAMT, AMOUNTPAID, IPBC_StartDate, *
+FROM [CCPP].[dbo].[vw_IPBC_DownPaymentTracking]
+"""
+
+_IPBC_STUDENT_EMAIL_QUERY = """
+SELECT UserID, Email, FirstName, LastName, IPBC_StartDate
+FROM [dbo].[AI_Chatbot_TriggerData_IPBC]
+"""
+
 
 def _fetch_sync(query: str) -> tuple[list[dict], Optional[str]]:
     """Synchronous SQL Server fetch — run in a thread via asyncio.to_thread."""
@@ -155,6 +169,130 @@ async def sync_payments(db: AsyncSession) -> dict[str, Any]:
     return {
         "status": "ok",
         "total_fetched": len(rows),
+        "updated": updated,
+        "skipped": skipped,
+        "error": None,
+    }
+
+
+# ── IPBC payment plan sync ───────────────────────────────────────────────────
+
+_PLAN_UPDATE_SQL = """
+UPDATE ai_chatbot_triggerdata
+SET
+    plan_name        = :plan_name,
+    down_payment_amt = :down_payment_amt
+WHERE "UserID" = :user_id
+"""
+
+
+def _normalize_email(val: Any) -> str:
+    return (str(val) or "").strip().lower()
+
+
+async def sync_ipbc_payment_plans(db: AsyncSession) -> dict[str, Any]:
+    """
+    Pull IPBC payment plan data from CCPP.dbo.vw_IPBC_DownPaymentTracking and
+    patch plan_name + down_payment_amt in ai_chatbot_triggerdata.
+
+    Join strategy (in priority order):
+      1. Email match (case-insensitive) — if view has an Email column
+      2. Name match (FirstName + LastName) — if view has name columns
+    Falls back gracefully with a warning if no join key is available in the view.
+    """
+    plan_rows, err1 = await asyncio.to_thread(_fetch_sync, _IPBC_PLAN_QUERY)
+    student_rows, err2 = await asyncio.to_thread(_fetch_sync, _IPBC_STUDENT_EMAIL_QUERY)
+
+    if err1:
+        logger.warning(json.dumps({
+            "service": "payment_sync", "event": "ipbc_plan_fetch_failed", "error": err1,
+        }))
+        return {"synced": 0, "error": err1, "status": "failed"}
+
+    if err2:
+        logger.warning(json.dumps({
+            "service": "payment_sync", "event": "ipbc_student_email_fetch_failed", "error": err2,
+        }))
+        return {"synced": 0, "error": err2, "status": "failed"}
+
+    if not plan_rows:
+        return {"synced": 0, "error": None, "status": "ok", "note": "no_plan_rows"}
+
+    # Discover join key from view's columns
+    view_cols = {k.lower() for k in plan_rows[0].keys()} if plan_rows else set()
+    has_email = "email" in view_cols
+    has_name = "firstname" in view_cols and "lastname" in view_cols
+
+    # Build lookup from view rows
+    plan_by_email: dict[str, dict] = {}
+    plan_by_name: dict[str, dict] = {}
+    for row in plan_rows:
+        if has_email and row.get("Email"):
+            plan_by_email[_normalize_email(row["Email"])] = row
+        if has_name:
+            fn = (row.get("FirstName") or "").strip().lower()
+            ln = (row.get("LastName") or "").strip().lower()
+            if fn and ln:
+                plan_by_name[f"{fn}|{ln}"] = row
+
+    if not has_email and not has_name:
+        logger.warning(json.dumps({
+            "service": "payment_sync",
+            "event": "ipbc_plan_no_join_key",
+            "view_cols": sorted(view_cols),
+            "note": "vw_IPBC_DownPaymentTracking has neither Email nor FirstName+LastName — cannot match to students",
+        }))
+        return {"synced": 0, "error": "no_join_key", "status": "failed", "view_cols": sorted(view_cols)}
+
+    updated = skipped = 0
+    for student in student_rows:
+        uid_raw = student.get("UserID")
+        if not uid_raw:
+            skipped += 1
+            continue
+        try:
+            uid = int(uid_raw)
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
+
+        plan_row = None
+        if has_email and student.get("Email"):
+            plan_row = plan_by_email.get(_normalize_email(student["Email"]))
+        if plan_row is None and has_name:
+            fn = (student.get("FirstName") or "").strip().lower()
+            ln = (student.get("LastName") or "").strip().lower()
+            if fn and ln:
+                plan_row = plan_by_name.get(f"{fn}|{ln}")
+
+        if plan_row is None:
+            skipped += 1
+            continue
+
+        plan_name = plan_row.get("PlanName") or plan_row.get("planname")
+        down_pmt = float(plan_row.get("DOWNPAYMENTAMT") or plan_row.get("downpaymentamt") or 0)
+
+        result = await db.execute(text(_PLAN_UPDATE_SQL), {
+            "user_id": uid,
+            "plan_name": str(plan_name) if plan_name else None,
+            "down_payment_amt": down_pmt,
+        })
+        if result.rowcount > 0:
+            updated += 1
+        else:
+            skipped += 1
+
+    await db.commit()
+    logger.info(json.dumps({
+        "service": "payment_sync", "event": "ipbc_plan_sync_complete",
+        "plan_rows_fetched": len(plan_rows), "student_rows_fetched": len(student_rows),
+        "updated": updated, "skipped": skipped,
+        "join_key": "email" if has_email else "name",
+    }))
+    return {
+        "status": "ok",
+        "plan_rows_fetched": len(plan_rows),
+        "student_rows_fetched": len(student_rows),
         "updated": updated,
         "skipped": skipped,
         "error": None,

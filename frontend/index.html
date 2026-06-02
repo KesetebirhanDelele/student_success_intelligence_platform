@@ -1204,8 +1204,10 @@ async function loadPaymentTab() {
   const cols = [
     { key:'display_name', label:'Name' },
     { key:'UserID', label:'ID' },
+    { key:'plan_name', label:'Plan', render: r => r.plan_name ? `<span class="badge bg-secondary">${escH(r.plan_name)}</span>` : '<span class="text-muted">—</span>' },
     { key:'CurrentSection', label:'Section', render: r => escH(r.CurrentSection||r.PathName||'—') },
     { key:'ClassValue', label:'Class Value', render: r => fmtCur(r.ClassValue) },
+    { key:'down_payment_amt', label:'Down Pmt', render: r => r.down_payment_amt != null ? fmtCur(r.down_payment_amt) : '—' },
     { key:'Total_Payments', label:'Paid', render: r => fmtCur(r.Total_Payments) },
     { key:'Total_Credits', label:'Credits', render: r => fmtCur(r.Total_Credits) },
     { key:'actual_balance', label:'Actual Balance', render: r => {
@@ -1903,13 +1905,17 @@ async function syncMssql() {
   const r3 = await api('/sync/payments', { method: 'POST' });
   const d3 = r3.data || {};
 
+  el.textContent = 'Syncing IPBC payment plans…';
+  const r4 = await api('/sync/ipbc-payment-plans', { method: 'POST' });
+  const d4 = r4.data || {};
+
   const totalScanned = (d1.rows_scanned || 0) + (d2.rows_scanned || 0);
   const totalAdded   = (d1.added || 0) + (d2.added || 0);
-  const anyError = d1.error || d2.error || d3.error;
+  const anyError = d1.error || d2.error || d3.error || d4.error;
   const overallStatus = anyError ? 'partial_success' : 'success';
   el.innerHTML =
     `<span class="badge ${overallStatus==='success'?'bg-success':'bg-warning text-dark'}">${overallStatus}</span> ` +
-    `JRP: ${d1.rows_scanned||0} | IPBC: ${d2.rows_scanned||0} | Total synced: ${totalAdded}` +
+    `JRP: ${d1.rows_scanned||0} | IPBC: ${d2.rows_scanned||0} | Total synced: ${totalAdded} | Plans updated: ${d4.updated||0}` +
     (anyError ? ` | Error: ${escH(String(anyError))}` : '');
 }
 

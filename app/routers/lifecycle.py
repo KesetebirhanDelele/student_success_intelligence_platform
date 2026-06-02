@@ -105,9 +105,11 @@ def _compute_common(rows: list[dict]) -> list[dict]:
         r.setdefault("instructor_email", None)
         r.setdefault("mm_user_id", None)
         r.setdefault("days_to_market", None)
+        # plan_name and down_payment_amt are now stored columns (synced from CCPP)
+        # setdefault only kicks in for students with no plan data yet
         r.setdefault("plan_name", None)
         r.setdefault("agreement_signed", None)
-        r.setdefault("down_payment", None)
+        r["down_payment"] = r.get("down_payment_amt")
         # Engagement-only nulls
         r.setdefault("certified_date", None)
         r.setdefault("ssis_start_date", None)

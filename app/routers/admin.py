@@ -60,7 +60,7 @@ async def run_pipeline(
     then call POST /admin/finalize-reports to backfill + regenerate reports.
     """
     from app.services.sync import sync_from_mssql, sync_ipbc_students
-    from app.services.payment_sync import sync_payments
+    from app.services.payment_sync import sync_payments, sync_ipbc_payment_plans
     from app.services.snapshot import assemble_all_active_snapshots
 
     snapshot_month = date(req.year, req.month, 1)
@@ -73,9 +73,13 @@ async def run_pipeline(
     ipbc = await sync_ipbc_students(db)
     logger.info({"event": "pipeline_ipbc_sync_done", "rows_scanned": ipbc.get("rows_scanned", 0)})
 
-    # Step 3: Payments
+    # Step 3: JRP payments
     payments = await sync_payments(db)
     logger.info({"event": "pipeline_payments_sync_done"})
+
+    # Step 3b: IPBC payment plans (PlanName + DownPaymentAmt from CCPP)
+    ipbc_plans = await sync_ipbc_payment_plans(db)
+    logger.info({"event": "pipeline_ipbc_plans_sync_done", "updated": ipbc_plans.get("updated", 0)})
 
     # Step 4: Assemble snapshots
     snapshots = await assemble_all_active_snapshots(
@@ -95,6 +99,7 @@ async def run_pipeline(
         "students_synced": total_students,
         "jrp_scanned": jrp.get("rows_scanned", 0),
         "ipbc_scanned": ipbc.get("rows_scanned", 0),
+        "ipbc_plans_updated": ipbc_plans.get("updated", 0),
         "snapshots": snapshots,
         "ai_narratives": "generating_in_background",
         "next_step": (

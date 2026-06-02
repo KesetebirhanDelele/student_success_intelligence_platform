@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import APIResponse
-from app.services.payment_sync import sync_payments, sync_placement_interviews
+from app.services.payment_sync import sync_payments, sync_ipbc_payment_plans, sync_placement_interviews
 from app.services.sync import (
     capture_month_state,
     sync_campaign_activity, sync_from_mssql, sync_interview_prep,
@@ -58,6 +58,17 @@ async def manual_payment_sync(db: AsyncSession = Depends(get_db)) -> APIResponse
     ClassFeesPaid, PaymentBalance per student. SHADOW-safe.
     """
     result = await sync_payments(db)
+    return APIResponse.ok(result)
+
+
+@router.post("/sync/ipbc-payment-plans")
+async def manual_ipbc_plan_sync(db: AsyncSession = Depends(get_db)) -> APIResponse:
+    """
+    Sync PlanName + DownPaymentAmt from CCPP.dbo.vw_IPBC_DownPaymentTracking
+    into ai_chatbot_triggerdata.plan_name + down_payment_amt.
+    Run after /sync/ipbc-students so student rows exist to update.
+    """
+    result = await sync_ipbc_payment_plans(db)
     return APIResponse.ok(result)
 
 

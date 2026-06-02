@@ -53,6 +53,10 @@ class StudentTriggerData(Base):
     LastLoginDays: Mapped[Optional[int]] = mapped_column(Integer)
     LastSubmitted: Mapped[Optional[str]] = mapped_column(String(200))
 
+    # Phase 6 — IPBC payment plan data from CCPP.vw_IPBC_DownPaymentTracking
+    plan_name: Mapped[Optional[str]] = mapped_column(String(200))
+    down_payment_amt: Mapped[Optional[float]] = mapped_column(Float)
+
 
 class StudentInterviewPrep(Base):
     """Mirror of AI_ChatBot_TriggerData_InterviewPrep — schema unknown; stored as JSONB."""

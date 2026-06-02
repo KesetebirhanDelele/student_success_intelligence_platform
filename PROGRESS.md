@@ -1467,5 +1467,49 @@ PROGRESS.md audit: 3 files changed. 3 entries written. Audit clean.
 
 PROGRESS.md audit (Phase 69 complete): 5 commits total — 3 new files + 5 bug-fix changes. 5 entries written. Audit clean.
 
+---
+
+## Phase 70 — IPBC Payment Plan Names in UX
+
+- [x] app/models.py — add plan_name + down_payment_amt columns
+  - Date: 2026-06-02
+  - What changed: Added `plan_name: Optional[str]` (String(200)) and `down_payment_amt: Optional[float]` (Float) to `StudentTriggerData`. These are populated from `CCPP.dbo.vw_IPBC_DownPaymentTracking`.
+  - Verification: Columns added to model; init_db migration adds them via ALTER TABLE IF NOT EXISTS on startup.
+
+- [x] app/database.py — add plan_name + down_payment_amt to _NEW_TRIGGER_COLS migration list
+  - Date: 2026-06-02
+  - What changed: Appended `('plan_name', 'VARCHAR(200)')` and `('down_payment_amt', 'DOUBLE PRECISION')` so the columns are created on existing databases at startup.
+  - Verification: Will apply on next container restart.
+
+- [x] app/services/payment_sync.py — new sync_ipbc_payment_plans() function
+  - Date: 2026-06-02
+  - What changed: Added `sync_ipbc_payment_plans(db)`. Fetches all rows from `CCPP.dbo.vw_IPBC_DownPaymentTracking` + all IPBC students from `AI_Chatbot_TriggerData_IPBC` via two separate queries. Matches in Python (priority: Email, fallback: FirstName+LastName). Updates `ai_chatbot_triggerdata.plan_name` and `down_payment_amt` for each matched student. Logs available view columns when no join key is found, so the join can be debugged without code changes.
+  - Verification: TypeScript N/A (Python). Module imports cleanly.
+
+- [x] app/routers/sync.py — POST /sync/ipbc-payment-plans endpoint
+  - Date: 2026-06-02
+  - What changed: Added `POST /sync/ipbc-payment-plans` calling `sync_ipbc_payment_plans()`. Run after `/sync/ipbc-students` so student rows exist.
+  - Verification: Endpoint registered at startup.
+
+- [x] app/routers/admin.py — wire sync_ipbc_payment_plans into run-pipeline
+  - Date: 2026-06-02
+  - What changed: Step 3b in `POST /admin/run-pipeline` now calls `sync_ipbc_payment_plans(db)` after JRP payment sync. `ipbc_plans_updated` count included in pipeline response.
+  - Verification: Code change; tested on next pipeline run.
+
+- [x] app/routers/lifecycle.py — read plan_name from stored column; map down_payment_amt → down_payment
+  - Date: 2026-06-02
+  - What changed: `_compute_common()` now maps `r["down_payment"] = r.get("down_payment_amt")` instead of hardcoded None. `plan_name` will be read from the stored ORM column (setdefault only fires for students with no plan data yet).
+  - Verification: Newcomers tab will show real plan names after next sync.
+
+- [x] app/services/payment.py — expose plan_name + down_payment_amt in build_payment_row()
+  - Date: 2026-06-02
+  - What changed: Added `plan_name` and `down_payment_amt` to the dict returned by `build_payment_row()`.
+  - Verification: Payment reconciliation API now includes both fields.
+
+- [x] frontend/index.html — Plan + Down Pmt columns in Payment Reconciliation table; Plans updated counter in sync button
+  - Date: 2026-06-02
+  - What changed: Payment Reconciliation table now shows a Plan Name column (badge-styled) and a Down Pmt column. Sync Students button now calls `/sync/ipbc-payment-plans` as a 4th step and shows "Plans updated: N" in the status line.
+  - Verification: UI change; visible after next browser refresh post-sync.
+
 
 

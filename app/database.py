@@ -61,6 +61,8 @@ _NEW_TRIGGER_COLS = [
     ('LastActivitySection', 'VARCHAR(300)'),
     ('LastLoginDays', 'INTEGER'),
     ('LastSubmitted', 'VARCHAR(200)'),
+    ('plan_name', 'VARCHAR(200)'),
+    ('down_payment_amt', 'DOUBLE PRECISION'),
 ]
 
 # Phase 48 — governance attribution columns per table
