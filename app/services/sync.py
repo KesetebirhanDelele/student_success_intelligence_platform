@@ -405,7 +405,14 @@ async def sync_from_mssql(db: Any) -> Dict[str, Any]:
         "service": "sync", "event": "mssql_sync_complete",
         "synced": count, "total_fetched": len(rows),
     }))
-    return {"synced": count, "total_fetched": len(rows), "error": None, "status": "ok"}
+    return {
+        "status": "success",
+        "rows_scanned": len(rows),
+        "added": count,
+        "updated": 0,
+        "rows_failed": 0,
+        "error": None,
+    }
 
 
 async def sync_ipbc_students(db: Any) -> Dict[str, Any]:
