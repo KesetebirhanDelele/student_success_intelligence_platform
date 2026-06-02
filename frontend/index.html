@@ -205,6 +205,30 @@
   <div class="section-label mb-3">Work Queues</div>
   <div id="work-queue-summary" class="row g-2 mb-4"></div>
 
+  <!-- Full Pipeline -->
+  <div class="section-label mb-3">Full Pipeline</div>
+  <div class="card border-0 shadow-sm mb-4" style="border-left:4px solid var(--color-primary) !important">
+    <div class="card-header fw-bold">Generate Monthly Reports</div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">Run both steps in order. Step 1 syncs all students and starts AI analysis (~5-10 min). When logs show completion, run Step 2 to build reports.</p>
+      <div class="d-flex gap-2 flex-wrap align-items-center mb-2">
+        <div class="me-2">
+          <label class="form-label small fw-medium mb-1">Year</label>
+          <input type="number" id="pipeline-year" class="form-control form-control-sm" value="2026" style="width:80px">
+        </div>
+        <div class="me-3">
+          <label class="form-label small fw-medium mb-1">Month</label>
+          <input type="number" id="pipeline-month" class="form-control form-control-sm" value="5" min="1" max="12" style="width:70px">
+        </div>
+        <div class="align-self-end">
+          <button class="btn btn-sm btn-primary me-2" onclick="runPipelineStep1()">Step 1 — Sync + Snapshots + AI</button>
+          <button class="btn btn-sm btn-outline-primary" onclick="runPipelineStep2()">Step 2 — Finalize Reports</button>
+        </div>
+      </div>
+      <div id="pipeline-result" class="mt-2 small"></div>
+    </div>
+  </div>
+
   <!-- GHL Sync + Manual Sync -->
   <div class="section-label mb-3">Data Sync</div>
   <div class="row g-3 mb-4">
@@ -1814,6 +1838,52 @@ async function loadReportForMonth(uid) {
       <tr><th>Execution Mode</th><td><span class="${d.execution_mode==='SHADOW'?'mode-shadow':'mode-live'}">${escH(d.execution_mode||'—')}</span></td></tr>
       <tr><th>Schema Fingerprint</th><td style="font-size:.62rem">${escH(gov.fingerprint_schema_version||'—')}</td></tr>
     </tbody></table>`;
+}
+
+// ════════════════════════════════════════════════════════
+// FULL PIPELINE
+// ════════════════════════════════════════════════════════
+async function runPipelineStep1() {
+  const el = document.getElementById('pipeline-result');
+  const year  = parseInt(document.getElementById('pipeline-year').value);
+  const month = parseInt(document.getElementById('pipeline-month').value);
+  el.innerHTML = '<span class="text-muted">Running Step 1: syncing students, assembling snapshots, starting AI narratives…</span>';
+  const r = await api('/admin/run-pipeline', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year, month, execution_mode: 'SHADOW' }),
+  });
+  const d = r.data || {};
+  if (r.status === 'success') {
+    el.innerHTML =
+      `<span class="badge bg-success">Step 1 complete</span> ` +
+      `JRP: ${d.jrp_scanned} | IPBC: ${d.ipbc_scanned} | Total students: ${d.students_synced} | ` +
+      `Snapshots: ${JSON.stringify(d.snapshots?.assembled ?? d.snapshots)} | ` +
+      `<strong>AI narratives running in background.</strong> Watch server logs, then click Step 2.`;
+  } else {
+    el.innerHTML = `<span class="badge bg-danger">Error</span> ${escH(JSON.stringify(r.error || d))}`;
+  }
+}
+
+async function runPipelineStep2() {
+  const el = document.getElementById('pipeline-result');
+  const year  = parseInt(document.getElementById('pipeline-year').value);
+  const month = parseInt(document.getElementById('pipeline-month').value);
+  el.innerHTML = '<span class="text-muted">Running Step 2: backfilling narratives + generating reports…</span>';
+  const r = await api('/admin/finalize-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ year, month, execution_mode: 'SHADOW' }),
+  });
+  const d = r.data || {};
+  if (r.status === 'success') {
+    el.innerHTML =
+      `<span class="badge bg-success">Complete</span> ` +
+      `Narratives backfilled: ${d.narratives_backfilled} | Still null: ${d.narratives_still_null} | ` +
+      `Reports generated for ${Object.keys(d.reports || {}).join(', ')}.`;
+  } else {
+    el.innerHTML = `<span class="badge bg-danger">Error</span> ${escH(JSON.stringify(r.error || d))}`;
+  }
 }
 
 // ════════════════════════════════════════════════════════

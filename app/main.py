@@ -37,6 +37,7 @@ from app.routers import student_timeline as timeline_router
 from app.routers import sync as sync_router
 from app.routers import work_queue as work_queue_router
 from app.routers import reports as reports_router
+from app.routers import admin as admin_router
 from app.services.scheduler import (
     configure_scheduler,
     start_daily_sync_job,
@@ -212,6 +213,7 @@ app.include_router(ghl_sync_router.router, tags=["GHLSync"])
 app.include_router(lifecycle_router.router, tags=["Lifecycle"])
 app.include_router(quick_actions_router.router, tags=["QuickActions"])
 app.include_router(reports_router.router, tags=["Reports"])
+app.include_router(admin_router.router, tags=["Admin"])
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
