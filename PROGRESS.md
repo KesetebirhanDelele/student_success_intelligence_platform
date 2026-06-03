@@ -1469,7 +1469,38 @@ PROGRESS.md audit (Phase 69 complete): 5 commits total — 3 new files + 5 bug-f
 
 ---
 
-## Phase 70 — IPBC Payment Plan Names in UX
+## Phase 70 — Deployment Readiness, Sync Fix & Full Pipeline UI
+
+- [x] docker-compose.yml — comment out port 5432 exposure
+  - Date: 2026-05-31
+  - What changed: Commented out `ports: - "5432:5432"` so PostgreSQL is not publicly accessible. API reaches it over the internal Docker network (`db:5432`). Added `healthcheck` to `db` service so `api` waits for Postgres to be ready before starting.
+  - Verification: `docker compose up` succeeds; `api` service healthy; Postgres unreachable from outside the VPS.
+
+- [x] app/services/sync.py — fix sync_from_mssql() return dict field names
+  - Date: 2026-05-31
+  - What changed: `sync_from_mssql()` was returning `{"synced": count, "total_fetched": len(rows), "status": "ok"}` but the frontend expected `rows_scanned`, `added`, `updated`, `rows_failed`, `status: "success"`. Fixed return to `{"status": "success", "rows_scanned": len(rows), "added": count, "updated": 0, "rows_failed": 0, "error": None}`. This caused the Sync button to show "undefined" for all four stats.
+  - Verification: Sync button now shows correct counts after fix.
+
+- [x] frontend/index.html — syncMssql() calls 3 endpoints sequentially + Full Pipeline UI section
+  - Date: 2026-05-31
+  - What changed: `syncMssql()` now calls `/sync/mssql` (JRP), `/sync/ipbc-students` (IPBC), `/sync/payments` in sequence and aggregates totals. Added a "Full Pipeline" card above the Data Sync section with Year/Month inputs, a Step 1 button (`runPipelineStep1()` → `POST /admin/run-pipeline`) and a Step 2 button (`runPipelineStep2()` → `POST /admin/finalize-reports`).
+  - Verification: All three sync calls succeed; pipeline buttons visible in UI.
+
+- [x] app/routers/admin.py — new file: two-step pipeline endpoints
+  - Date: 2026-05-31
+  - What changed: Created `app/routers/admin.py`. `POST /admin/run-pipeline` — syncs JRP + IPBC + payments, assembles snapshots for the requested month, and starts AI narrative generation as a FastAPI `BackgroundTask`. Returns immediately with student counts and a "next step" message. `POST /admin/finalize-reports` — backfills finalized AI narratives from `ai_insights` into `warehouse.snapshot_ai_narratives` (COALESCE, never overwrites), then generates cohort reports for all 5 segments for the requested month. Idempotent: safe to re-run.
+  - Verification: Both endpoints return 200; pipeline runs visible in Docker logs.
+
+- [x] app/main.py — register admin router
+  - Date: 2026-05-31
+  - What changed: Added `from app.routers import admin as admin_router` import and `app.include_router(admin_router.router, tags=["Admin"])` at the end of the Phase 4 router block.
+  - Verification: `/admin/run-pipeline` and `/admin/finalize-reports` reachable after container restart.
+
+PROGRESS.md audit (Phase 70 complete): 5 files changed — docker-compose.yml, sync.py, index.html, admin.py (new), main.py. 5 entries written. Audit clean.
+
+---
+
+## Phase 71 — IPBC Payment Plan Names in UX
 
 - [x] app/models.py — add plan_name + down_payment_amt columns
   - Date: 2026-06-02
@@ -1511,5 +1542,4 @@ PROGRESS.md audit (Phase 69 complete): 5 commits total — 3 new files + 5 bug-f
   - What changed: Payment Reconciliation table now shows a Plan Name column (badge-styled) and a Down Pmt column. Sync Students button now calls `/sync/ipbc-payment-plans` as a 4th step and shows "Plans updated: N" in the status line.
   - Verification: UI change; visible after next browser refresh post-sync.
 
-
-
+PROGRESS.md audit (Phase 71 complete): 8 files changed — models.py, database.py, payment_sync.py, sync.py (new endpoint), admin.py (plan sync wired), lifecycle.py, payment.py, index.html. 8 entries written. Audit clean.
